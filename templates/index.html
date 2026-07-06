@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Raspberry Pi AI Vision Desk Assistant</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <main class="page-shell">
+        <header class="hero-card">
+            <p class="eyebrow">Local Raspberry Pi Dashboard</p>
+            <h1>Raspberry Pi AI Vision Desk Assistant</h1>
+            <p class="hero-copy">
+                Capture a fresh image, preprocess it, and send it to OpenAI Vision from one simple local dashboard.
+            </p>
+        </header>
+
+        <section class="control-card">
+            <form method="post" class="control-form">
+                <label for="mode" class="field-label">AI Mode</label>
+                <select id="mode" name="mode" class="mode-select">
+                    {% for value, label in mode_options %}
+                    <option value="{{ value }}" {% if selected_mode == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+
+                <div class="button-grid">
+                    <button type="submit" formaction="{{ url_for('capture') }}" class="action-button">Capture Image</button>
+                    <button type="submit" formaction="{{ url_for('analyze') }}" class="action-button">Analyze Image</button>
+                    <button type="submit" formaction="{{ url_for('capture_analyze') }}" class="action-button primary-button">Capture + Analyze</button>
+                </div>
+            </form>
+
+            <form method="post" action="{{ url_for('clear') }}" class="clear-form">
+                <button type="submit" class="clear-button">Clear</button>
+            </form>
+        </section>
+
+        <section class="message-grid">
+            <article class="message-card">
+                <h2>Status</h2>
+                <p class="message-text">{{ status or "Ready. Choose a mode and start the pipeline." }}</p>
+            </article>
+
+            <article class="message-card error-card {% if not error %}muted-card{% endif %}">
+                <h2>Error</h2>
+                <p class="message-text">{{ error or "No errors." }}</p>
+            </article>
+        </section>
+
+        <section class="answer-card">
+            <h2>AI Answer</h2>
+            <div class="answer-box">{{ answer or "No AI answer yet. Click Analyze Image or Capture + Analyze." }}</div>
+        </section>
+
+        <section class="preview-grid">
+            <article class="preview-card">
+                <h2>Captured Image</h2>
+                {% if captured_exists and captured_url %}
+                <img src="{{ captured_url }}" alt="Captured image preview" class="preview-image">
+                {% else %}
+                <p class="empty-state">No captured image yet. Click Capture Image to create one.</p>
+                {% endif %}
+            </article>
+
+            <article class="preview-card">
+                <h2>Processed Image</h2>
+                {% if processed_url %}
+                <img src="{{ processed_url }}" alt="Processed image preview" class="preview-image">
+                {% elif processed_note %}
+                <p class="empty-state">{{ processed_note }}</p>
+                {% else %}
+                <p class="empty-state">No processed image yet. Click Analyze Image or Capture + Analyze to generate one.</p>
+                {% endif %}
+            </article>
+        </section>
+    </main>
+</body>
+</html>

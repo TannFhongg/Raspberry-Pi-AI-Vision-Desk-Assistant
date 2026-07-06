@@ -1,0 +1,16 @@
+[Unit]
+Description=Raspberry Pi AI Vision Desk Assistant
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/raspberry-pi-ai-vision-assistant
+EnvironmentFile=/home/pi/raspberry-pi-ai-vision-assistant/.env
+ExecStart=/home/pi/raspberry-pi-ai-vision-assistant/.venv/bin/python app.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

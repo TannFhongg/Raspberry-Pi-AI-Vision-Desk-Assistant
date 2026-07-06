@@ -1,0 +1,229 @@
+:root {
+    --bg: #f4efe6;
+    --panel: #fffaf2;
+    --panel-strong: #f8f0df;
+    --text: #1f2a2c;
+    --muted: #5d6769;
+    --accent: #204c53;
+    --accent-strong: #17383d;
+    --warm: #c9782f;
+    --error: #9f3428;
+    --border: rgba(32, 76, 83, 0.16);
+    --shadow: 0 16px 40px rgba(31, 42, 44, 0.08);
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    min-height: 100vh;
+    font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+    color: var(--text);
+    background:
+        radial-gradient(circle at top left, rgba(201, 120, 47, 0.18), transparent 26rem),
+        linear-gradient(180deg, #f9f5ed 0%, var(--bg) 48%, #efe5d6 100%);
+}
+
+.page-shell {
+    width: min(1080px, calc(100% - 2rem));
+    margin: 0 auto;
+    padding: 1.5rem 0 2.5rem;
+}
+
+.hero-card,
+.control-card,
+.message-card,
+.answer-card,
+.preview-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 22px;
+    box-shadow: var(--shadow);
+}
+
+.hero-card {
+    padding: 1.5rem;
+    margin-bottom: 1rem;
+    background:
+        linear-gradient(135deg, rgba(32, 76, 83, 0.92), rgba(23, 56, 61, 0.96)),
+        var(--panel);
+    color: #fff9ef;
+}
+
+.hero-card h1 {
+    margin: 0.35rem 0 0.75rem;
+    font-size: clamp(2rem, 5vw, 3rem);
+    line-height: 1.05;
+}
+
+.eyebrow {
+    margin: 0;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-size: 0.86rem;
+    color: rgba(255, 249, 239, 0.78);
+}
+
+.hero-copy {
+    margin: 0;
+    max-width: 44rem;
+    font-size: 1.05rem;
+    line-height: 1.6;
+    color: rgba(255, 249, 239, 0.88);
+}
+
+.control-card {
+    padding: 1.25rem;
+    margin-bottom: 1rem;
+}
+
+.control-form {
+    display: grid;
+    gap: 1rem;
+}
+
+.field-label,
+.message-card h2,
+.answer-card h2,
+.preview-card h2 {
+    display: block;
+    margin: 0 0 0.55rem;
+    font-size: 1.1rem;
+    font-weight: 700;
+}
+
+.mode-select {
+    width: 100%;
+    min-height: 3.35rem;
+    padding: 0.9rem 1rem;
+    border-radius: 16px;
+    border: 1px solid var(--border);
+    font-size: 1.05rem;
+    background: #fff;
+    color: var(--text);
+}
+
+.button-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 0.8rem;
+}
+
+.action-button,
+.clear-button {
+    min-height: 4rem;
+    border: none;
+    border-radius: 18px;
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
+}
+
+.action-button {
+    background: var(--panel-strong);
+    color: var(--accent-strong);
+    box-shadow: inset 0 0 0 1px rgba(23, 56, 61, 0.08);
+}
+
+.primary-button {
+    background: linear-gradient(135deg, var(--warm), #a85f20);
+    color: #fff8ef;
+}
+
+.clear-form {
+    margin-top: 0.9rem;
+}
+
+.clear-button {
+    width: 100%;
+    background: #ece2d1;
+    color: var(--text);
+}
+
+.action-button:hover,
+.clear-button:hover {
+    transform: translateY(-1px);
+}
+
+.message-grid,
+.preview-grid {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    margin-bottom: 1rem;
+}
+
+.message-card,
+.answer-card,
+.preview-card {
+    padding: 1.2rem;
+}
+
+.message-text,
+.empty-state,
+.answer-box {
+    margin: 0;
+    font-size: 1rem;
+    line-height: 1.7;
+}
+
+.error-card {
+    border-color: rgba(159, 52, 40, 0.22);
+    background: #fff5f3;
+}
+
+.muted-card {
+    background: #fbf7ef;
+}
+
+.answer-card {
+    margin-bottom: 1rem;
+}
+
+.answer-box {
+    padding: 1rem 1.1rem;
+    border-radius: 18px;
+    background: #fff;
+    border: 1px solid var(--border);
+    min-height: 8rem;
+    white-space: pre-wrap;
+}
+
+.preview-image {
+    width: 100%;
+    border-radius: 18px;
+    background: #efe6d8;
+    border: 1px solid var(--border);
+    object-fit: contain;
+    aspect-ratio: 4 / 3;
+}
+
+.empty-state {
+    padding: 1rem;
+    border-radius: 18px;
+    background: #fbf7ef;
+    color: var(--muted);
+    border: 1px dashed rgba(32, 76, 83, 0.2);
+}
+
+@media (max-width: 720px) {
+    .page-shell {
+        width: min(100% - 1rem, 100%);
+        padding-top: 0.75rem;
+    }
+
+    .hero-card,
+    .control-card,
+    .message-card,
+    .answer-card,
+    .preview-card {
+        border-radius: 18px;
+    }
+
+    .hero-card {
+        padding: 1.25rem;
+    }
+}
