@@ -105,6 +105,16 @@ Copy `.env.example` to `.env` and update the values:
 OPENAI_API_KEY=your_openai_api_key_here
 OPENAI_MODEL=gpt-5.4-mini
 FLASK_SECRET_KEY=change_this_for_local_flask_sessions
+ENABLE_GPIO_BUTTON=1
+GPIO_BUTTON_PIN=17
+UI_SCREEN_WIDTH=320
+UI_SCREEN_HEIGHT=480
+UI_DISPLAY_ORIENTATION=portrait
+UI_BASE_FONT_SIZE=20
+UI_TITLE_FONT_SIZE=34
+UI_STATUS_FONT_SIZE=28
+UI_BUTTON_FONT_SIZE=24
+UI_TOUCH_TARGET=68
 ```
 
 ## Phase 1: OpenAI Vision Test
@@ -174,6 +184,7 @@ Other useful examples:
 ```bash
 python main.py --mode summarize
 python main.py --mode summarize_document
+python main.py --mode analyze_image
 python main.py --mode read_text --backend picamera2
 python main.py --mode professional_assistant --backend opencv --camera-index 0
 python main.py --mode read_text --grayscale
@@ -181,22 +192,36 @@ python main.py --mode read_text --grayscale
 
 ## Phase 5: Flask Web UI
 
-Start the web dashboard:
+Start the touchscreen UI:
 
 ```bash
 python app.py
 ```
 
-Or with Flask:
+The UI is optimized for small Raspberry Pi touchscreens and shows a simple `Ready -> Processing -> Done/Error` flow with large buttons and readable text.
 
-```bash
-flask run --host=0.0.0.0 --port=5000
-```
-
-Open the UI locally:
+Open the UI locally on the Pi:
 
 ```text
 http://127.0.0.1:5000
+```
+
+Open it fullscreen in Chromium kiosk mode:
+
+```bash
+chromium-browser --kiosk --app=http://127.0.0.1:5000
+```
+
+Landscape touchscreen example:
+
+```bash
+UI_SCREEN_WIDTH=480 UI_SCREEN_HEIGHT=320 UI_DISPLAY_ORIENTATION=landscape python app.py
+```
+
+You can also use Flask directly:
+
+```bash
+flask run --host=0.0.0.0 --port=5000
 ```
 
 Open it from another device on the same network:
@@ -213,7 +238,9 @@ hostname -I
 
 ## Phase 6: GPIO Button Trigger
 
-Run the GPIO button listener:
+The Flask app can start the GPIO button listener automatically when `ENABLE_GPIO_BUTTON=1`.
+
+You can still run the standalone GPIO button listener:
 
 ```bash
 python test_gpio_button.py
@@ -224,6 +251,7 @@ The default mode is `solve_problem`. You can override it:
 ```bash
 python test_gpio_button.py --mode read_text
 python test_gpio_button.py --mode summarize
+python test_gpio_button.py --mode analyze_image
 python test_gpio_button.py --mode professional_assistant --backend picamera2
 python test_gpio_button.py --mode solve_problem --backend opencv --camera-index 0
 ```
@@ -331,6 +359,8 @@ Note:
 
 - You may need to edit the service file paths for your actual repo location
 - You may need to change `User=pi` if your Raspberry Pi uses a different username
+- The service loads `.env`, so screen size, orientation, and GPIO settings can be adjusted there
+- For a built-in display, pair the service with a Chromium kiosk launch on the Pi desktop session
 
 ## Portfolio Description
 
@@ -338,9 +368,7 @@ See [docs/upwork_project_description.md](docs/upwork_project_description.md).
 
 ## Future Improvements
 
-- Add background task execution for the Flask UI
 - Add a result history log instead of only `latest_result.txt`
 - Add GPIO feedback LED or buzzer
 - Add OCR-first preprocessing presets
-- Add touchscreen-friendly fullscreen mode
 - Add offline fallback analysis options
