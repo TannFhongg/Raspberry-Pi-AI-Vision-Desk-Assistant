@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 import time
+from typing import Callable
 
 from pipeline import PipelineError, PipelineResult, run_capture_analyze, save_latest_result
 
@@ -27,6 +28,7 @@ class GPIOButtonTrigger:
         grayscale: bool = False,
         max_dimension: int = 1600,
         result_path: str = "data/latest_result.txt",
+        trigger_action: Callable[[], bool] | None = None,
     ) -> None:
         self.pin = pin
         self.debounce_seconds = debounce_seconds
@@ -38,6 +40,7 @@ class GPIOButtonTrigger:
         self.grayscale = grayscale
         self.max_dimension = max_dimension
         self.result_path = result_path
+        self.trigger_action = trigger_action
         self._lock = threading.Lock()
         self._busy = False
         self._button = None
@@ -87,6 +90,10 @@ class GPIOButtonTrigger:
 
     def _handle_press(self) -> None:
         """Trigger a background pipeline run when the button is pressed."""
+        if self.trigger_action is not None:
+            self._handle_custom_trigger()
+            return
+
         with self._lock:
             if self._busy:
                 print("Pipeline is already running. Ignoring button press.")
@@ -95,6 +102,19 @@ class GPIOButtonTrigger:
 
         worker = threading.Thread(target=self._run_pipeline, daemon=True)
         worker.start()
+
+    def _handle_custom_trigger(self) -> None:
+        """Run an externally-managed capture action from the same button press."""
+        try:
+            started = self.trigger_action()
+        except Exception as exc:
+            print(f"Error: {exc}")
+            return
+
+        if started:
+            print("Button pressed")
+        else:
+            print("Pipeline is already running. Ignoring button press.")
 
     def _run_pipeline(self) -> None:
         """Run the shared capture-analyze pipeline and save the latest result."""

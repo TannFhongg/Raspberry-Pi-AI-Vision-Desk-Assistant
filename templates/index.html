@@ -2,79 +2,149 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Raspberry Pi AI Vision Desk Assistant</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>AI Vision Assistant</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
-<body>
-    <main class="page-shell">
-        <header class="hero-card">
-            <p class="eyebrow">Local Raspberry Pi Dashboard</p>
-            <h1>Raspberry Pi AI Vision Desk Assistant</h1>
-            <p class="hero-copy">
-                Capture a fresh image, preprocess it, and send it to OpenAI Vision from one simple local dashboard.
-            </p>
-        </header>
+<body
+    class="orientation-{{ ui_config.orientation }}"
+    style="
+        --screen-width: {{ ui_config.screen_width }}px;
+        --screen-height: {{ ui_config.screen_height }}px;
+        --base-font-size: {{ ui_config.base_font_size }}px;
+        --title-font-size: {{ ui_config.title_font_size }}px;
+        --status-font-size: {{ ui_config.status_font_size }}px;
+        --button-font-size: {{ ui_config.button_font_size }}px;
+        --touch-target: {{ ui_config.touch_target }}px;
+    "
+>
+    <main class="device-shell screen-{{ screen }}">
+        {% if screen == "mode_select" %}
+        <section class="screen-section">
+            <header class="screen-header">
+                <p class="eyebrow">Choose Mode</p>
+                <h1>Mode</h1>
+                <p class="screen-copy">Pick the one task you want the assistant to focus on.</p>
+            </header>
 
-        <section class="control-card">
-            <form method="post" class="control-form">
-                <label for="mode" class="field-label">AI Mode</label>
-                <select id="mode" name="mode" class="mode-select">
-                    {% for value, label in mode_options %}
-                    <option value="{{ value }}" {% if selected_mode == value %}selected{% endif %}>{{ label }}</option>
-                    {% endfor %}
-                </select>
+            <div class="mode-list">
+                {% for value, label in mode_options %}
+                <form method="post" action="{{ url_for('select_mode') }}">
+                    <input type="hidden" name="mode" value="{{ value }}">
+                    <button type="submit" class="mode-button {% if selected_mode == value %}mode-button-active{% endif %}">
+                        {{ label }}
+                    </button>
+                </form>
+                {% endfor %}
+            </div>
 
-                <div class="button-grid">
-                    <button type="submit" formaction="{{ url_for('capture') }}" class="action-button">Capture Image</button>
-                    <button type="submit" formaction="{{ url_for('analyze') }}" class="action-button">Analyze Image</button>
-                    <button type="submit" formaction="{{ url_for('capture_analyze') }}" class="action-button primary-button">Capture + Analyze</button>
-                </div>
+            <form method="post" action="{{ url_for('back') }}" class="footer-form">
+                <button type="submit" class="secondary-button">Back</button>
             </form>
-
-            <form method="post" action="{{ url_for('clear') }}" class="clear-form">
-                <button type="submit" class="clear-button">Clear</button>
-            </form>
         </section>
+        {% elif screen == "processing" %}
+        <section class="screen-section">
+            <header class="screen-header">
+                <p class="eyebrow">AI Vision Assistant</p>
+                <h1>Processing...</h1>
+            </header>
 
-        <section class="message-grid">
-            <article class="message-card">
-                <h2>Status</h2>
-                <p class="message-text">{{ status or "Ready. Choose a mode and start the pipeline." }}</p>
-            </article>
+            <section class="status-panel">
+                <p class="status-label">{{ status }}</p>
+                <p class="status-detail">{{ detail }}</p>
+            </section>
 
-            <article class="message-card error-card {% if not error %}muted-card{% endif %}">
-                <h2>Error</h2>
-                <p class="message-text">{{ error or "No errors." }}</p>
-            </article>
+            <ol class="progress-list" aria-label="Capture progress">
+                {% for step in progress_steps %}
+                <li class="progress-step progress-{{ step.state }}">
+                    <span class="progress-dot"></span>
+                    <span>{{ step.label }}</span>
+                </li>
+                {% endfor %}
+            </ol>
+
+            <footer class="mode-footer">Mode: {{ selected_mode_label }}</footer>
         </section>
+        {% elif screen == "result" %}
+        <section class="screen-section">
+            <header class="screen-header">
+                <p class="eyebrow">AI Vision Assistant</p>
+                <h1>{{ status }}</h1>
+            </header>
 
-        <section class="answer-card">
-            <h2>AI Answer</h2>
-            <div class="answer-box">{{ answer or "No AI answer yet. Click Analyze Image or Capture + Analyze." }}</div>
+            <section class="answer-panel">
+                <p class="answer-label">Answer</p>
+                <div class="answer-box">{{ answer_html }}</div>
+            </section>
+
+            <div class="button-stack">
+                <form method="post" action="{{ url_for('capture') }}">
+                    <button type="submit" class="primary-button">New Capture</button>
+                </form>
+                <form method="post" action="{{ url_for('back') }}">
+                    <button type="submit" class="secondary-button">Back</button>
+                </form>
+            </div>
+
+            <footer class="mode-footer">Mode: {{ selected_mode_label }}</footer>
         </section>
+        {% elif screen == "error" %}
+        <section class="screen-section">
+            <header class="screen-header">
+                <p class="eyebrow">AI Vision Assistant</p>
+                <h1>{{ status }}</h1>
+            </header>
 
-        <section class="preview-grid">
-            <article class="preview-card">
-                <h2>Captured Image</h2>
-                {% if captured_exists and captured_url %}
-                <img src="{{ captured_url }}" alt="Captured image preview" class="preview-image">
-                {% else %}
-                <p class="empty-state">No captured image yet. Click Capture Image to create one.</p>
+            <section class="status-panel status-error">
+                <p class="status-detail">{{ error }}</p>
+                {% if show_debug and error_detail %}
+                <p class="debug-text">{{ error_detail }}</p>
                 {% endif %}
-            </article>
+            </section>
 
-            <article class="preview-card">
-                <h2>Processed Image</h2>
-                {% if processed_url %}
-                <img src="{{ processed_url }}" alt="Processed image preview" class="preview-image">
-                {% elif processed_note %}
-                <p class="empty-state">{{ processed_note }}</p>
-                {% else %}
-                <p class="empty-state">No processed image yet. Click Analyze Image or Capture + Analyze to generate one.</p>
-                {% endif %}
-            </article>
+            <div class="button-stack">
+                <form method="post" action="{{ url_for('retry') }}">
+                    <button type="submit" class="primary-button">Try Again</button>
+                </form>
+                <form method="post" action="{{ url_for('back') }}">
+                    <button type="submit" class="secondary-button">Back</button>
+                </form>
+            </div>
+
+            <footer class="mode-footer">Mode: {{ selected_mode_label }}</footer>
         </section>
+        {% else %}
+        <section class="screen-section">
+            <header class="screen-header">
+                <p class="eyebrow">Standalone Desk Assistant</p>
+                <h1>AI Vision Assistant</h1>
+            </header>
+
+            <section class="status-panel">
+                <p class="status-label">{{ status }}</p>
+                <p class="status-detail">{{ detail }}</p>
+            </section>
+
+            <div class="button-stack home-stack">
+                <form method="post" action="{{ url_for('capture') }}">
+                    <button type="submit" class="primary-button capture-button">Capture</button>
+                </form>
+                <form method="get" action="{{ url_for('mode_select') }}">
+                    <button type="submit" class="secondary-button">Mode</button>
+                </form>
+            </div>
+
+            <footer class="mode-footer">Mode: {{ selected_mode_label }}</footer>
+        </section>
+        {% endif %}
     </main>
+
+    {% if auto_refresh_ms %}
+    <script>
+        window.setTimeout(function () {
+            window.location.reload();
+        }, {{ auto_refresh_ms }});
+    </script>
+    {% endif %}
 </body>
 </html>

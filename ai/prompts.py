@@ -6,23 +6,37 @@ MODE_ALIASES: dict[str, str] = {
     "summarize": "summarize_document",
 }
 
+READABILITY_SUFFIX = (
+    "Format the answer for fast reading on a small screen. "
+    "Use short paragraphs and bullet points when helpful."
+)
+
 PROMPTS: dict[str, str] = {
     "read_text": (
         "Read the visible text in this image and return a concise transcription. "
         "Keep line breaks only when they help readability. If some text is unclear, "
-        "briefly note the unreadable parts."
+        "briefly note the unreadable parts. "
+        f"{READABILITY_SUFFIX}"
     ),
     "summarize_document": (
         "Summarize the document shown in this image in a concise, beginner-friendly way. "
-        "Focus on the main ideas, key headings, and important details."
+        "Focus on the main ideas, key headings, and important details. "
+        f"{READABILITY_SUFFIX}"
     ),
     "solve_problem": (
         "Analyze the image and solve the problem shown. Give the final answer first, then "
         "a short explanation of how you reached it. If the problem is unclear, say what is missing."
+        f" {READABILITY_SUFFIX}"
+    ),
+    "analyze_image": (
+        "Analyze the image and describe the most important details in a practical, human-friendly way. "
+        "Point out anything that looks important, unusual, or useful."
+        f" {READABILITY_SUFFIX}"
     ),
     "professional_assistant": (
         "Act as a professional assistant. Analyze the image and provide a concise, practical "
-        "response that highlights the most useful information or next step."
+        "response that highlights the most useful information or next step. "
+        f"{READABILITY_SUFFIX}"
     ),
 }
 
@@ -34,6 +48,7 @@ def get_available_modes() -> list[str]:
         "summarize",
         "summarize_document",
         "solve_problem",
+        "analyze_image",
         "professional_assistant",
     ]
 
