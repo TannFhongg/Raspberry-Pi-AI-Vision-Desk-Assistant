@@ -4,9 +4,13 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 
 from ai.prompts import get_available_modes
-from pipeline import PipelineError, run_capture_analyze
+from pipeline import PipelineError, run_analyze, run_capture_analyze, run_preprocess
+
+CAPTURED_IMAGE_PATH = Path("static/captured.jpg")
+PROCESSED_IMAGE_PATH = Path("static/processed.jpg")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -43,6 +47,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         help="Resize only if the image longest side is larger than this value.",
     )
+    parser.add_argument(
+        "--skip-capture",
+        action="store_true",
+        help="Reuse static/captured.jpg instead of capturing a new image first.",
+    )
     return parser
 
 
@@ -66,21 +75,47 @@ def main() -> int:
     print(f"Mode selected: {args.mode}")
 
     try:
-        result = run_capture_analyze(
-            mode=args.mode,
-            backend=args.backend,
-            camera_index=args.camera_index,
-            grayscale=args.grayscale,
-            max_dimension=args.max_dimension,
-            status_callback=print,
-        )
+        if args.skip_capture:
+            if not CAPTURED_IMAGE_PATH.is_file():
+                raise PipelineError(
+                    "No captured image found. Please copy a test image to static/captured.jpg or run camera capture first."
+                )
+
+            print(f"Using existing captured image: {CAPTURED_IMAGE_PATH}")
+            preprocess_result = run_preprocess(
+                input_path=str(CAPTURED_IMAGE_PATH),
+                output_path=str(PROCESSED_IMAGE_PATH),
+                grayscale=args.grayscale,
+                max_dimension=args.max_dimension,
+                status_callback=print,
+            )
+            result = run_analyze(
+                mode=args.mode,
+                captured_path=str(CAPTURED_IMAGE_PATH),
+                processed_path=str(preprocess_result.processed_path or PROCESSED_IMAGE_PATH),
+                grayscale=args.grayscale,
+                max_dimension=args.max_dimension,
+                status_callback=print,
+            )
+        else:
+            result = run_capture_analyze(
+                mode=args.mode,
+                backend=args.backend,
+                camera_index=args.camera_index,
+                grayscale=args.grayscale,
+                max_dimension=args.max_dimension,
+                status_callback=print,
+            )
     except PipelineError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
     print("Answer received.")
-    print(f"Camera backend used: {result.camera_backend_used}")
-    print(f"Captured image saved to: {result.captured_path}")
+    if args.skip_capture:
+        print(f"Captured image used: {result.captured_path}")
+    else:
+        print(f"Camera backend used: {result.camera_backend_used}")
+        print(f"Captured image saved to: {result.captured_path}")
     print(f"Processed image saved to: {result.processed_path}")
     print("\nAI Answer:\n")
     print(result.answer or "")

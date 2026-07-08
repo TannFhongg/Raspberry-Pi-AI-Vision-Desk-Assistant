@@ -1,0 +1,11 @@
+{
+  "screen": "home",
+  "selected_mode": "read_text",
+  "status": "Ready",
+  "detail": "Tap Capture or press the button",
+  "answer": "",
+  "error": "",
+  "error_detail": "",
+  "current_step": -1,
+  "updated_at": "2026-07-08T22:30:04"
+}

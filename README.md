@@ -190,6 +190,24 @@ python main.py --mode professional_assistant --backend opencv --camera-index 0
 python main.py --mode read_text --grayscale
 ```
 
+### Run Phase 4 without a camera
+
+You can reuse a saved test image instead of capturing a new one:
+
+```bash
+cp test_images/math_problem.jpg static/captured.jpg
+python main.py --mode solve_problem --skip-capture
+```
+
+Other no-camera examples:
+
+```bash
+python main.py --mode summarize --skip-capture
+python main.py --mode read_text --skip-capture --grayscale
+```
+
+When `--skip-capture` is used, `main.py` loads `static/captured.jpg`, preprocesses it into `static/processed.jpg`, and sends the processed image to OpenAI Vision.
+
 ## Phase 5: Flask Web UI
 
 Start the touchscreen UI:
