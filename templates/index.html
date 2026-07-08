@@ -20,118 +20,134 @@
 >
     <main class="device-shell screen-{{ screen }}">
         {% if screen == "mode_select" %}
-        <section class="screen-section">
-            <header class="screen-header">
+        <section class="screen-section mode-screen">
+            <header class="screen-header compact-header">
                 <p class="eyebrow">Choose Mode</p>
                 <h1>Mode</h1>
                 <p class="screen-copy">Pick the one task you want the assistant to focus on.</p>
             </header>
 
-            <div class="mode-list">
-                {% for value, label in mode_options %}
-                <form method="post" action="{{ url_for('select_mode') }}">
-                    <input type="hidden" name="mode" value="{{ value }}">
-                    <button type="submit" class="mode-button {% if selected_mode == value %}mode-button-active{% endif %}">
-                        {{ label }}
-                    </button>
-                </form>
-                {% endfor %}
-            </div>
+            <div class="mode-body">
+                <div class="mode-list">
+                    {% for value, label in mode_options %}
+                    <form method="post" action="{{ url_for('select_mode') }}">
+                        <input type="hidden" name="mode" value="{{ value }}">
+                        <button type="submit" class="mode-button {% if selected_mode == value %}mode-button-active{% endif %}">
+                            {{ label }}
+                        </button>
+                    </form>
+                    {% endfor %}
+                </div>
 
-            <form method="post" action="{{ url_for('back') }}" class="footer-form">
-                <button type="submit" class="secondary-button">Back</button>
-            </form>
+                <form method="post" action="{{ url_for('back') }}" class="footer-form mode-back-form">
+                    <button type="submit" class="secondary-button">Back</button>
+                </form>
+            </div>
         </section>
         {% elif screen == "processing" %}
-        <section class="screen-section">
-            <header class="screen-header">
+        <section class="screen-section processing-screen">
+            <header class="screen-header compact-header">
                 <p class="eyebrow">AI Vision Assistant</p>
                 <h1>Processing...</h1>
             </header>
 
-            <section class="status-panel">
-                <p class="status-label">{{ status }}</p>
-                <p class="status-detail">{{ detail }}</p>
-            </section>
+            <div class="screen-body processing-body">
+                <section class="status-panel side-panel">
+                    <p class="status-label">{{ status }}</p>
+                    <p class="status-detail">{{ detail }}</p>
+                </section>
 
-            <ol class="progress-list" aria-label="Capture progress">
-                {% for step in progress_steps %}
-                <li class="progress-step progress-{{ step.state }}">
-                    <span class="progress-dot"></span>
-                    <span>{{ step.label }}</span>
-                </li>
-                {% endfor %}
-            </ol>
+                <ol class="progress-list" aria-label="Capture progress">
+                    {% for step in progress_steps %}
+                    <li class="progress-step progress-{{ step.state }}">
+                        <span class="progress-dot"></span>
+                        <span>{{ step.label }}</span>
+                    </li>
+                    {% endfor %}
+                </ol>
+            </div>
 
             <footer class="mode-footer">Mode: {{ selected_mode_label }}</footer>
         </section>
         {% elif screen == "result" %}
-        <section class="screen-section">
-            <header class="screen-header">
+        <section class="screen-section result-screen">
+            <header class="screen-header compact-header">
                 <p class="eyebrow">AI Vision Assistant</p>
                 <h1>{{ status }}</h1>
             </header>
 
-            <section class="answer-panel">
-                <p class="answer-label">Answer</p>
-                <div class="answer-box">{{ answer_html }}</div>
-            </section>
+            <div class="screen-body result-body">
+                <section class="answer-panel answer-card">
+                    <p class="answer-label">Answer</p>
+                    <div class="answer-box">{{ answer_html }}</div>
+                </section>
 
-            <div class="button-stack">
-                <form method="post" action="{{ url_for('capture') }}">
-                    <button type="submit" class="primary-button">New Capture</button>
-                </form>
-                <form method="post" action="{{ url_for('back') }}">
-                    <button type="submit" class="secondary-button">Back</button>
-                </form>
+                <aside class="action-rail">
+                    <div class="button-stack">
+                        <form method="post" action="{{ url_for('capture') }}">
+                            <button type="submit" class="primary-button">New Capture</button>
+                        </form>
+                        <form method="post" action="{{ url_for('back') }}">
+                            <button type="submit" class="secondary-button">Back</button>
+                        </form>
+                    </div>
+                </aside>
             </div>
 
             <footer class="mode-footer">Mode: {{ selected_mode_label }}</footer>
         </section>
         {% elif screen == "error" %}
-        <section class="screen-section">
-            <header class="screen-header">
+        <section class="screen-section error-screen">
+            <header class="screen-header compact-header">
                 <p class="eyebrow">AI Vision Assistant</p>
                 <h1>{{ status }}</h1>
             </header>
 
-            <section class="status-panel status-error">
-                <p class="status-detail">{{ error }}</p>
-                {% if show_debug and error_detail %}
-                <p class="debug-text">{{ error_detail }}</p>
-                {% endif %}
-            </section>
+            <div class="screen-body error-body">
+                <section class="status-panel status-error side-panel">
+                    <p class="status-detail">{{ error }}</p>
+                    {% if show_debug and error_detail %}
+                    <p class="debug-text">{{ error_detail }}</p>
+                    {% endif %}
+                </section>
 
-            <div class="button-stack">
-                <form method="post" action="{{ url_for('retry') }}">
-                    <button type="submit" class="primary-button">Try Again</button>
-                </form>
-                <form method="post" action="{{ url_for('back') }}">
-                    <button type="submit" class="secondary-button">Back</button>
-                </form>
+                <aside class="action-rail">
+                    <div class="button-stack">
+                        <form method="post" action="{{ url_for('retry') }}">
+                            <button type="submit" class="primary-button">Try Again</button>
+                        </form>
+                        <form method="post" action="{{ url_for('back') }}">
+                            <button type="submit" class="secondary-button">Back</button>
+                        </form>
+                    </div>
+                </aside>
             </div>
 
             <footer class="mode-footer">Mode: {{ selected_mode_label }}</footer>
         </section>
         {% else %}
-        <section class="screen-section">
-            <header class="screen-header">
+        <section class="screen-section home-screen">
+            <header class="screen-header compact-header">
                 <p class="eyebrow">Standalone Desk Assistant</p>
                 <h1>AI Vision Assistant</h1>
             </header>
 
-            <section class="status-panel">
-                <p class="status-label">{{ status }}</p>
-                <p class="status-detail">{{ detail }}</p>
-            </section>
+            <div class="screen-body home-body">
+                <section class="status-panel side-panel">
+                    <p class="status-label">{{ status }}</p>
+                    <p class="status-detail">{{ detail }}</p>
+                </section>
 
-            <div class="button-stack home-stack">
-                <form method="post" action="{{ url_for('capture') }}">
-                    <button type="submit" class="primary-button capture-button">Capture</button>
-                </form>
-                <form method="get" action="{{ url_for('mode_select') }}">
-                    <button type="submit" class="secondary-button">Mode</button>
-                </form>
+                <aside class="action-rail">
+                    <div class="button-stack home-stack">
+                        <form method="post" action="{{ url_for('capture') }}">
+                            <button type="submit" class="primary-button capture-button">Capture</button>
+                        </form>
+                        <form method="get" action="{{ url_for('mode_select') }}">
+                            <button type="submit" class="secondary-button">Mode</button>
+                        </form>
+                    </div>
+                </aside>
             </div>
 
             <footer class="mode-footer">Mode: {{ selected_mode_label }}</footer>
