@@ -21,16 +21,15 @@
     <main class="device-shell screen-{{ screen }}">
         {% if screen == "mode_select" %}
         <section class="screen-section mode-screen">
-            <header class="screen-header compact-header">
-                <p class="eyebrow">Choose Mode</p>
-                <h1>Mode</h1>
-                <p class="screen-copy">Pick the one task you want the assistant to focus on.</p>
-            </header>
+            <div class="mode-layout">
+                <header class="mode-hero" aria-labelledby="mode-title">
+                    <h1 id="mode-title">MODE</h1>
+                    <p class="mode-copy">Pick the one task you want the assistant to focus on.</p>
+                </header>
 
-            <div class="mode-body">
-                <div class="mode-list">
+                <div class="mode-list" role="list" aria-label="Mode choices">
                     {% for value, label in mode_options %}
-                    <form method="post" action="{{ url_for('select_mode') }}">
+                    <form method="post" action="{{ url_for('select_mode') }}" class="mode-option-form">
                         <input type="hidden" name="mode" value="{{ value }}">
                         <button type="submit" class="mode-button {% if selected_mode == value %}mode-button-active{% endif %}">
                             {{ label }}
@@ -40,7 +39,7 @@
                 </div>
 
                 <form method="post" action="{{ url_for('back') }}" class="footer-form mode-back-form">
-                    <button type="submit" class="secondary-button">Back</button>
+                    <button type="submit" class="secondary-button">BACK</button>
                 </form>
             </div>
         </section>

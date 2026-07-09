@@ -635,6 +635,186 @@ body:not(.app-screen-home) .home-screen .capture-button {
     min-height: clamp(58px, calc(var(--touch-target) - 4px), 70px);
 }
 
+body.app-screen-mode_select {
+    padding: 0;
+    color: #fff;
+    background: #000;
+}
+
+body.app-screen-mode_select .device-shell {
+    position: relative;
+    width: min(100vw, var(--screen-width));
+    height: min(100vh, var(--screen-height));
+    padding: 0;
+    display: block;
+    border: none;
+    border-radius: var(--home-shell-radius);
+    background:
+        url("figma/shell-bg.png") center / 100% 100% no-repeat,
+        var(--shell-fill);
+    box-shadow: none;
+}
+
+body.app-screen-mode_select .screen-section {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+body.app-screen-mode_select .mode-layout {
+    position: relative;
+    height: 100%;
+}
+
+body.app-screen-mode_select .mode-hero {
+    position: absolute;
+    top: 8.125%;
+    left: 0.833%;
+    width: 98.333%;
+    height: 21.25%;
+    margin: 0;
+    padding: 3.45% 4.6% 2.8%;
+    border-radius: 32px;
+    background: #26a9e4;
+}
+
+body.app-screen-mode_select .mode-hero h1 {
+    margin: 0 0 5px;
+    color: #fff;
+    font-size: clamp(20px, 4.6vw, 22px);
+    font-style: italic;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: 0.01em;
+}
+
+body.app-screen-mode_select .mode-copy {
+    margin: 0;
+    color: #fff;
+    font-size: clamp(12px, 2.7vw, 13px);
+    font-style: italic;
+    font-weight: 700;
+    line-height: 1.15;
+    letter-spacing: 0.005em;
+    white-space: nowrap;
+}
+
+body.app-screen-mode_select .mode-list {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    display: block;
+    overflow: visible;
+}
+
+body.app-screen-mode_select .mode-option-form {
+    position: absolute;
+    width: 23.55%;
+    height: 17.5%;
+}
+
+body.app-screen-mode_select .mode-option-form:nth-child(1) {
+    top: 33.4375%;
+    left: 5.833%;
+}
+
+body.app-screen-mode_select .mode-option-form:nth-child(2) {
+    top: 33.4375%;
+    left: 38.333%;
+}
+
+body.app-screen-mode_select .mode-option-form:nth-child(3) {
+    top: 33.4375%;
+    left: 70.833%;
+}
+
+body.app-screen-mode_select .mode-option-form:nth-child(4) {
+    top: 57.5%;
+    left: 18.958%;
+}
+
+body.app-screen-mode_select .mode-option-form:nth-child(5) {
+    top: 57.5%;
+    left: 51.458%;
+}
+
+body.app-screen-mode_select .mode-button,
+body.app-screen-mode_select .mode-button-active {
+    min-height: 0;
+    height: 100%;
+    padding: 0 clamp(8px, 2.1vw, 10px);
+    border: none;
+    border-radius: clamp(20px, 5vw, 24px);
+    color: #050505;
+    background: linear-gradient(90deg, #cf19f3 0%, #b111f0 100%);
+    font-size: clamp(12px, 2.7vw, 13px);
+    font-style: italic;
+    font-weight: 800;
+    line-height: 1.12;
+    text-align: center;
+    box-shadow: none;
+}
+
+body.app-screen-mode_select .mode-button-active {
+    outline: none;
+}
+
+body.app-screen-mode_select .mode-button:hover,
+body.app-screen-mode_select .mode-button-active:hover,
+body.app-screen-mode_select .secondary-button:hover {
+    filter: none;
+}
+
+body.app-screen-mode_select .mode-button:active,
+body.app-screen-mode_select .mode-button-active:active,
+body.app-screen-mode_select .secondary-button:active {
+    transform: none;
+}
+
+body.app-screen-mode_select .mode-button:focus-visible,
+body.app-screen-mode_select .mode-button-active:focus-visible,
+body.app-screen-mode_select .secondary-button:focus-visible {
+    outline: 3px solid rgba(255, 255, 255, 0.92);
+    outline-offset: 2px;
+}
+
+body.app-screen-mode_select .footer-form {
+    margin: 0;
+}
+
+body.app-screen-mode_select .mode-back-form {
+    position: absolute;
+    top: 81.875%;
+    left: 8.958%;
+    width: 82.083%;
+    height: 13.75%;
+    margin: 0;
+}
+
+body.app-screen-mode_select .secondary-button {
+    min-height: 0;
+    height: clamp(36px, 13.75vh, 44px);
+    padding: 0 24px;
+    border: none;
+    border-radius: clamp(18px, 4.6vw, 22px);
+    color: #050505;
+    background: #d9d9d9;
+    font-size: clamp(14px, 3.1vw, 15px);
+    font-style: italic;
+    font-weight: 800;
+    line-height: 1;
+    box-shadow: none;
+}
+
+body.app-screen-mode_select.orientation-portrait {
+    padding: 0;
+}
+
+body.app-screen-mode_select.orientation-portrait .device-shell {
+    width: min(100vw, var(--screen-width));
+    height: min(100vh, var(--screen-height));
+}
+
 @media (max-height: 360px) {
     body:not(.app-screen-home) {
         padding: 0.25rem;
@@ -743,6 +923,7 @@ body:not(.app-screen-home) .home-screen .capture-button {
     body:not(.app-screen-home) .home-screen .capture-button {
         min-height: 56px;
     }
+
 }
 
 @media (max-width: 360px) {
