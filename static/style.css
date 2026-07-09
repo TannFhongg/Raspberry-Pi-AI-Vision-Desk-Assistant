@@ -1,4 +1,24 @@
 :root {
+    --page-bg: #05070b;
+    --shell-fill: #2f0049;
+    --card-fill: #d9d9d9;
+    --button-fill: #009951;
+    --ink: #180e24;
+    --home-card-left: 7.375%;
+    --home-card-top: 9.375%;
+    --home-card-width: 67.125%;
+    --home-card-height: 82.375%;
+    --home-mode-left: 80%;
+    --home-mode-top: 20.25%;
+    --home-mode-width: 15.75%;
+    --home-mode-height: 19.7%;
+    --home-capture-left: 80.125%;
+    --home-capture-top: 63.2%;
+    --home-capture-width: 15.5%;
+    --home-capture-height: 19.5%;
+    --home-shell-radius: 20px;
+    --home-card-radius: 26px;
+    --home-button-radius: 18px;
     --bg: #090d12;
     --bg-glow: #102131;
     --panel: rgba(18, 24, 32, 0.96);
@@ -19,19 +39,186 @@
 
 html,
 body {
+    width: 100%;
     min-height: 100%;
 }
 
 body {
     margin: 0;
     min-height: 100vh;
-    padding: 0.45rem;
     display: flex;
     align-items: center;
     justify-content: center;
     font-family: "Verdana", "Trebuchet MS", "Segoe UI", sans-serif;
     font-size: clamp(0.95rem, 2.7vw, var(--base-font-size));
     line-height: 1.42;
+}
+
+form {
+    margin: 0;
+}
+
+button {
+    font: inherit;
+    cursor: pointer;
+    touch-action: manipulation;
+}
+
+.device-shell {
+    overflow: hidden;
+}
+
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+body.app-screen-home {
+    padding: 0;
+    background: var(--page-bg);
+}
+
+body.app-screen-home .device-shell {
+    position: relative;
+    width: min(100vw, var(--screen-width));
+    height: min(100vh, var(--screen-height));
+    border-radius: var(--home-shell-radius);
+    background:
+        url("figma/shell-bg.png") center / 100% 100% no-repeat,
+        var(--shell-fill);
+    box-shadow: 0 18px 36px rgba(0, 0, 0, 0.36);
+}
+
+body.app-screen-home .screen-frame {
+    position: relative;
+    width: 100%;
+    height: 100%;
+}
+
+body.app-screen-home .content-card {
+    background:
+        url("figma/content-card-bg.png") center / 100% 100% no-repeat,
+        var(--card-fill);
+    border-radius: var(--home-card-radius);
+}
+
+body.app-screen-home .home-card {
+    position: absolute;
+    left: var(--home-card-left);
+    top: var(--home-card-top);
+    width: var(--home-card-width);
+    height: var(--home-card-height);
+}
+
+body.app-screen-home .home-actions {
+    position: absolute;
+    inset: 0;
+}
+
+body.app-screen-home .home-action {
+    position: absolute;
+    margin: 0;
+}
+
+body.app-screen-home .home-mode-action {
+    left: var(--home-mode-left);
+    top: var(--home-mode-top);
+    width: var(--home-mode-width);
+    height: var(--home-mode-height);
+}
+
+body.app-screen-home .home-capture-action {
+    left: var(--home-capture-left);
+    top: var(--home-capture-top);
+    width: var(--home-capture-width);
+    height: var(--home-capture-height);
+}
+
+body.app-screen-home .figma-button {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    padding: 0;
+    border: none;
+    border-radius: var(--home-button-radius);
+    background:
+        url("figma/action-button-bg.png") center / 100% 100% no-repeat,
+        var(--button-fill);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+body.app-screen-home .figma-button:focus-visible {
+    outline: 3px solid rgba(255, 255, 255, 0.95);
+    outline-offset: 2px;
+}
+
+body.app-screen-home .button-art {
+    display: block;
+    height: auto;
+    user-select: none;
+    pointer-events: none;
+}
+
+body.app-screen-home .button-art-mode {
+    width: 62%;
+}
+
+body.app-screen-home .button-art-capture {
+    width: 77.5%;
+}
+
+body.app-screen-home.orientation-portrait {
+    padding: 0.4rem;
+}
+
+body.app-screen-home.orientation-portrait .device-shell {
+    width: min(calc(100vw - 0.8rem), var(--screen-width));
+    height: min(calc(100vh - 0.8rem), var(--screen-height));
+}
+
+body.app-screen-home.orientation-portrait .home-screen {
+    display: flex;
+    flex-direction: column;
+    gap: 0.7rem;
+    padding: 0.85rem;
+}
+
+body.app-screen-home.orientation-portrait .home-card {
+    position: relative;
+    left: auto;
+    top: auto;
+    width: 100%;
+    height: auto;
+    flex: 1;
+}
+
+body.app-screen-home.orientation-portrait .home-actions {
+    position: relative;
+    inset: auto;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.7rem;
+}
+
+body.app-screen-home.orientation-portrait .home-action {
+    position: relative;
+    left: auto;
+    top: auto;
+    width: 100%;
+    height: 3.9rem;
+}
+
+body:not(.app-screen-home) {
+    padding: 0.45rem;
     color: var(--text);
     background:
         radial-gradient(circle at top, rgba(94, 200, 255, 0.18), transparent 30rem),
@@ -39,7 +226,7 @@ body {
         linear-gradient(180deg, var(--bg-glow) 0%, var(--bg) 58%, #05070b 100%);
 }
 
-.device-shell {
+body:not(.app-screen-home) .device-shell {
     width: min(100%, var(--screen-width));
     height: min(calc(100vh - 0.9rem), var(--screen-height));
     padding: 0.95rem;
@@ -52,10 +239,9 @@ body {
         linear-gradient(180deg, rgba(31, 43, 57, 0.22), rgba(6, 9, 14, 0)),
         var(--panel);
     box-shadow: var(--shadow);
-    overflow: hidden;
 }
 
-.screen-section {
+body:not(.app-screen-home) .screen-section {
     display: flex;
     flex: 1;
     flex-direction: column;
@@ -63,24 +249,24 @@ body {
     min-height: 0;
 }
 
-.screen-header {
+body:not(.app-screen-home) .screen-header {
     display: flex;
     flex-direction: column;
     gap: 0.35rem;
 }
 
-.compact-header {
+body:not(.app-screen-home) .compact-header {
     gap: 0.22rem;
 }
 
-.screen-header h1 {
+body:not(.app-screen-home) .screen-header h1 {
     margin: 0;
     font-size: clamp(1.5rem, 5.2vw, var(--title-font-size));
     line-height: 1.04;
     letter-spacing: 0.01em;
 }
 
-.eyebrow {
+body:not(.app-screen-home) .eyebrow {
     margin: 0;
     font-size: 0.78rem;
     letter-spacing: 0.11em;
@@ -88,7 +274,7 @@ body {
     color: var(--muted);
 }
 
-.screen-copy {
+body:not(.app-screen-home) .screen-copy {
     margin: 0;
     max-width: 26rem;
     color: var(--muted);
@@ -96,65 +282,65 @@ body {
     line-height: 1.35;
 }
 
-.screen-body {
+body:not(.app-screen-home) .screen-body {
     display: flex;
     flex: 1;
     gap: 0.8rem;
     min-height: 0;
 }
 
-.status-panel,
-.answer-panel {
+body:not(.app-screen-home) .status-panel,
+body:not(.app-screen-home) .answer-panel {
     padding: 0.9rem;
     border-radius: 20px;
     border: 1px solid var(--border);
     background: var(--panel-strong);
 }
 
-.side-panel {
+body:not(.app-screen-home) .side-panel {
     min-width: 0;
 }
 
-.status-panel {
+body:not(.app-screen-home) .status-panel {
     display: flex;
     flex-direction: column;
     justify-content: center;
     gap: 0.4rem;
 }
 
-.status-error {
+body:not(.app-screen-home) .status-error {
     border-color: rgba(255, 137, 119, 0.38);
     background: rgba(63, 21, 18, 0.86);
 }
 
-.status-label {
+body:not(.app-screen-home) .status-label {
     margin: 0;
     font-size: clamp(1.35rem, 4.7vw, var(--status-font-size));
     font-weight: 700;
     line-height: 1.02;
 }
 
-.answer-label {
+body:not(.app-screen-home) .answer-label {
     margin: 0;
     font-size: clamp(1.15rem, 3.2vw, 1.35rem);
     font-weight: 700;
     line-height: 1.1;
 }
 
-.status-detail,
-.debug-text {
+body:not(.app-screen-home) .status-detail,
+body:not(.app-screen-home) .debug-text {
     margin: 0;
     color: var(--text);
     font-size: clamp(1rem, 2.7vw, 1.12rem);
     line-height: 1.42;
 }
 
-.debug-text {
+body:not(.app-screen-home) .debug-text {
     color: var(--muted);
     font-size: 0.92rem;
 }
 
-.answer-panel {
+body:not(.app-screen-home) .answer-panel {
     display: flex;
     flex: 1 1 auto;
     flex-direction: column;
@@ -162,11 +348,11 @@ body {
     gap: 0.6rem;
 }
 
-.answer-card {
+body:not(.app-screen-home) .answer-card {
     min-width: 0;
 }
 
-.answer-box {
+body:not(.app-screen-home) .answer-box {
     flex: 1 1 auto;
     min-height: 0;
     padding: 0.9rem;
@@ -182,90 +368,87 @@ body {
     scrollbar-color: rgba(94, 200, 255, 0.7) rgba(255, 255, 255, 0.06);
 }
 
-.answer-box::-webkit-scrollbar,
-.mode-list::-webkit-scrollbar,
-.progress-list::-webkit-scrollbar {
+body:not(.app-screen-home) .answer-box::-webkit-scrollbar,
+body:not(.app-screen-home) .mode-list::-webkit-scrollbar,
+body:not(.app-screen-home) .progress-list::-webkit-scrollbar {
     width: 0.42rem;
 }
 
-.answer-box::-webkit-scrollbar-track,
-.mode-list::-webkit-scrollbar-track,
-.progress-list::-webkit-scrollbar-track {
+body:not(.app-screen-home) .answer-box::-webkit-scrollbar-track,
+body:not(.app-screen-home) .mode-list::-webkit-scrollbar-track,
+body:not(.app-screen-home) .progress-list::-webkit-scrollbar-track {
     background: rgba(255, 255, 255, 0.04);
     border-radius: 999px;
 }
 
-.answer-box::-webkit-scrollbar-thumb,
-.mode-list::-webkit-scrollbar-thumb,
-.progress-list::-webkit-scrollbar-thumb {
+body:not(.app-screen-home) .answer-box::-webkit-scrollbar-thumb,
+body:not(.app-screen-home) .mode-list::-webkit-scrollbar-thumb,
+body:not(.app-screen-home) .progress-list::-webkit-scrollbar-thumb {
     background: rgba(94, 200, 255, 0.52);
     border-radius: 999px;
 }
 
-.answer-box p,
-.answer-box ul {
+body:not(.app-screen-home) .answer-box p,
+body:not(.app-screen-home) .answer-box ul {
     margin: 0 0 0.85rem;
 }
 
-.answer-box ul {
+body:not(.app-screen-home) .answer-box ul {
     padding-left: 1.3rem;
 }
 
-.answer-box li + li {
+body:not(.app-screen-home) .answer-box li + li {
     margin-top: 0.45rem;
 }
 
-.answer-box p:last-child,
-.answer-box ul:last-child {
+body:not(.app-screen-home) .answer-box p:last-child,
+body:not(.app-screen-home) .answer-box ul:last-child {
     margin-bottom: 0;
 }
 
-.answer-empty {
+body:not(.app-screen-home) .answer-empty {
     color: var(--muted);
 }
 
-.button-stack,
-.mode-list {
+body:not(.app-screen-home) .button-stack,
+body:not(.app-screen-home) .mode-list {
     display: grid;
     gap: 0.7rem;
 }
 
-form {
-    margin: 0;
+body:not(.app-screen-home) form {
     width: 100%;
 }
 
-button {
+body:not(.app-screen-home) button {
     width: 100%;
     min-height: var(--touch-target);
     padding: 0.78rem 0.9rem;
     border: none;
     border-radius: 18px;
-    font: inherit;
     font-size: clamp(1.05rem, 3.2vw, var(--button-font-size));
     font-weight: 700;
     letter-spacing: 0.01em;
-    cursor: pointer;
 }
 
-.primary-button,
-.secondary-button,
-.mode-button {
+body:not(.app-screen-home) .primary-button,
+body:not(.app-screen-home) .secondary-button,
+body:not(.app-screen-home) .mode-button {
     transition: filter 120ms ease, transform 120ms ease;
 }
 
-.primary-button {
+body:not(.app-screen-home) .primary-button {
     color: #041019;
     background: linear-gradient(180deg, #82dbff 0%, var(--accent) 52%, var(--accent-strong) 100%);
 }
 
-.secondary-button {
+body:not(.app-screen-home) .secondary-button {
     color: var(--text);
     background: #253140;
     border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.mode-button {
+body:not(.app-screen-home) .mode-button {
     min-height: clamp(44px, calc(var(--touch-target) - 18px), 56px);
     padding: 0.62rem 0.45rem;
     color: var(--text);
@@ -275,35 +458,35 @@ button {
     line-height: 1.15;
 }
 
-.mode-button-active {
+body:not(.app-screen-home) .mode-button-active {
     color: #041019;
     background: linear-gradient(180deg, #8ae0ff 0%, #55c5ff 100%);
 }
 
-.primary-button:hover,
-.secondary-button:hover,
-.mode-button:hover {
+body:not(.app-screen-home) .primary-button:hover,
+body:not(.app-screen-home) .secondary-button:hover,
+body:not(.app-screen-home) .mode-button:hover {
     filter: brightness(1.03);
 }
 
-.primary-button:active,
-.secondary-button:active,
-.mode-button:active {
+body:not(.app-screen-home) .primary-button:active,
+body:not(.app-screen-home) .secondary-button:active,
+body:not(.app-screen-home) .mode-button:active {
     transform: scale(0.99);
 }
 
-.primary-button:focus-visible,
-.secondary-button:focus-visible,
-.mode-button:focus-visible {
+body:not(.app-screen-home) .primary-button:focus-visible,
+body:not(.app-screen-home) .secondary-button:focus-visible,
+body:not(.app-screen-home) .mode-button:focus-visible {
     outline: 3px solid rgba(124, 228, 166, 0.95);
     outline-offset: 2px;
 }
 
-.capture-button {
+body:not(.app-screen-home) .capture-button {
     min-height: calc(var(--touch-target) + 4px);
 }
 
-.action-rail {
+body:not(.app-screen-home) .action-rail {
     width: min(10rem, 36%);
     flex: 0 0 min(10rem, 36%);
     min-width: 0;
@@ -312,11 +495,11 @@ button {
     justify-content: flex-end;
 }
 
-.action-rail .button-stack {
+body:not(.app-screen-home) .action-rail .button-stack {
     width: 100%;
 }
 
-.progress-list {
+body:not(.app-screen-home) .progress-list {
     margin: 0;
     padding: 0;
     list-style: none;
@@ -327,7 +510,7 @@ button {
     overflow: auto;
 }
 
-.progress-step {
+body:not(.app-screen-home) .progress-step {
     display: flex;
     align-items: center;
     gap: 0.65rem;
@@ -341,19 +524,19 @@ button {
     line-height: 1.28;
 }
 
-.progress-active {
+body:not(.app-screen-home) .progress-active {
     color: var(--text);
     background: rgba(94, 200, 255, 0.12);
     border-color: rgba(94, 200, 255, 0.32);
 }
 
-.progress-done {
+body:not(.app-screen-home) .progress-done {
     color: var(--text);
     background: rgba(124, 228, 166, 0.12);
     border-color: rgba(124, 228, 166, 0.28);
 }
 
-.progress-dot {
+body:not(.app-screen-home) .progress-dot {
     width: 0.95rem;
     height: 0.95rem;
     flex: 0 0 0.95rem;
@@ -361,19 +544,19 @@ button {
     background: rgba(255, 255, 255, 0.18);
 }
 
-.progress-active .progress-dot {
+body:not(.app-screen-home) .progress-active .progress-dot {
     background: var(--accent);
 }
 
-.progress-done .progress-dot {
+body:not(.app-screen-home) .progress-done .progress-dot {
     background: var(--success);
 }
 
-.processing-body .side-panel {
+body:not(.app-screen-home) .processing-body .side-panel {
     flex: 0 0 min(10.5rem, 38%);
 }
 
-.mode-body {
+body:not(.app-screen-home) .mode-body {
     display: flex;
     flex: 1;
     flex-direction: column;
@@ -381,7 +564,7 @@ button {
     min-height: 0;
 }
 
-.mode-list {
+body:not(.app-screen-home) .mode-list {
     flex: 1;
     min-height: 0;
     overflow: auto;
@@ -390,16 +573,16 @@ button {
     grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.mode-back-form {
+body:not(.app-screen-home) .mode-back-form {
     margin-top: auto;
 }
 
-.mode-back-form .secondary-button {
+body:not(.app-screen-home) .mode-back-form .secondary-button {
     min-height: clamp(50px, calc(var(--touch-target) - 8px), 62px);
     font-size: clamp(0.98rem, 2.8vw, 1.08rem);
 }
 
-.mode-footer {
+body:not(.app-screen-home) .mode-footer {
     margin: 0;
     padding-top: 0.08rem;
     color: var(--muted);
@@ -408,175 +591,175 @@ button {
     line-height: 1.35;
 }
 
-.footer-form {
+body:not(.app-screen-home) .footer-form {
     margin-top: auto;
 }
 
-.orientation-landscape .screen-body {
+body:not(.app-screen-home).orientation-landscape .screen-body {
     flex-direction: row;
 }
 
-.orientation-landscape .mode-list {
+body:not(.app-screen-home).orientation-landscape .mode-list {
     grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
-.orientation-portrait .screen-body {
+body:not(.app-screen-home).orientation-portrait .screen-body {
     flex-direction: column;
 }
 
-.orientation-portrait .action-rail {
+body:not(.app-screen-home).orientation-portrait .action-rail {
     width: auto;
     flex-basis: auto;
 }
 
-.orientation-portrait .mode-list {
+body:not(.app-screen-home).orientation-portrait .mode-list {
     grid-template-columns: 1fr;
 }
 
-.home-screen .action-rail {
+body:not(.app-screen-home) .home-screen .action-rail {
     width: min(8.8rem, 33%);
     flex-basis: min(8.8rem, 33%);
 }
 
-.home-screen .button-stack {
+body:not(.app-screen-home) .home-screen .button-stack {
     gap: 0.6rem;
 }
 
-.home-screen .primary-button,
-.home-screen .secondary-button {
+body:not(.app-screen-home) .home-screen .primary-button,
+body:not(.app-screen-home) .home-screen .secondary-button {
     min-height: clamp(54px, calc(var(--touch-target) - 8px), 66px);
     font-size: clamp(1rem, 2.9vw, 1.1rem);
 }
 
-.home-screen .capture-button {
+body:not(.app-screen-home) .home-screen .capture-button {
     min-height: clamp(58px, calc(var(--touch-target) - 4px), 70px);
 }
 
 @media (max-height: 360px) {
-    body {
+    body:not(.app-screen-home) {
         padding: 0.25rem;
     }
 
-    .device-shell {
+    body:not(.app-screen-home) .device-shell {
         height: calc(100vh - 0.5rem);
         padding: 0.75rem;
         gap: 0.6rem;
         border-radius: 22px;
     }
 
-    .screen-section {
+    body:not(.app-screen-home) .screen-section {
         gap: 0.6rem;
     }
 
-    .screen-header h1 {
+    body:not(.app-screen-home) .screen-header h1 {
         font-size: clamp(1.35rem, 4.5vw, calc(var(--title-font-size) - 4px));
     }
 
-    .eyebrow {
+    body:not(.app-screen-home) .eyebrow {
         font-size: 0.72rem;
     }
 
-    .screen-copy {
+    body:not(.app-screen-home) .screen-copy {
         font-size: 0.88rem;
     }
 
-    .status-panel,
-    .answer-panel {
+    body:not(.app-screen-home) .status-panel,
+    body:not(.app-screen-home) .answer-panel {
         padding: 0.75rem;
         border-radius: 18px;
     }
 
-    .status-label {
+    body:not(.app-screen-home) .status-label {
         font-size: clamp(1.18rem, 4vw, 1.45rem);
     }
 
-    .status-detail,
-    .debug-text {
+    body:not(.app-screen-home) .status-detail,
+    body:not(.app-screen-home) .debug-text {
         font-size: clamp(0.9rem, 2.5vw, 1rem);
     }
 
-    button {
+    body:not(.app-screen-home) button {
         min-height: clamp(54px, calc(var(--touch-target) - 8px), 68px);
         padding: 0.72rem 0.85rem;
     }
 
-    .capture-button {
+    body:not(.app-screen-home) .capture-button {
         min-height: clamp(56px, calc(var(--touch-target) - 4px), 72px);
     }
 
-    .mode-button {
+    body:not(.app-screen-home) .mode-button {
         min-height: 44px;
         padding: 0.56rem 0.4rem;
         font-size: clamp(0.74rem, 2vw, 0.88rem);
     }
 
-    .action-rail {
+    body:not(.app-screen-home) .action-rail {
         width: min(9.1rem, 40%);
         flex-basis: min(9.1rem, 40%);
     }
 
-    .progress-list {
+    body:not(.app-screen-home) .progress-list {
         grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 0.45rem;
     }
 
-    .progress-step {
+    body:not(.app-screen-home) .progress-step {
         min-height: 2.55rem;
         padding: 0.6rem 0.7rem;
         font-size: clamp(0.84rem, 2.2vw, 0.96rem);
     }
 
-    .progress-dot {
+    body:not(.app-screen-home) .progress-dot {
         width: 0.8rem;
         height: 0.8rem;
         flex-basis: 0.8rem;
     }
 
-    .answer-box {
+    body:not(.app-screen-home) .answer-box {
         padding: 0.8rem;
         font-size: clamp(0.94rem, 2.45vw, 1.04rem);
     }
 
-    .mode-list {
+    body:not(.app-screen-home) .mode-list {
         gap: 0.45rem;
         grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 
-    .mode-footer {
+    body:not(.app-screen-home) .mode-footer {
         font-size: 0.88rem;
     }
 
-    .home-screen .action-rail {
+    body:not(.app-screen-home) .home-screen .action-rail {
         width: min(8rem, 36%);
         flex-basis: min(8rem, 36%);
     }
 
-    .home-screen .primary-button,
-    .home-screen .secondary-button {
+    body:not(.app-screen-home) .home-screen .primary-button,
+    body:not(.app-screen-home) .home-screen .secondary-button {
         min-height: 52px;
         font-size: clamp(0.94rem, 2.6vw, 1.02rem);
     }
 
-    .home-screen .capture-button {
+    body:not(.app-screen-home) .home-screen .capture-button {
         min-height: 56px;
     }
 }
 
 @media (max-width: 360px) {
-    .orientation-landscape .screen-body {
+    body:not(.app-screen-home).orientation-landscape .screen-body {
         gap: 0.65rem;
     }
 
-    .orientation-landscape .action-rail {
+    body:not(.app-screen-home).orientation-landscape .action-rail {
         width: min(8.4rem, 41%);
         flex-basis: min(8.4rem, 41%);
     }
 
-    .screen-header h1 {
+    body:not(.app-screen-home) .screen-header h1 {
         font-size: clamp(1.32rem, 6vw, calc(var(--title-font-size) - 4px));
     }
 
-    .answer-label {
+    body:not(.app-screen-home) .answer-label {
         font-size: 1.05rem;
     }
 }

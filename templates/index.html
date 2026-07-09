@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body
-    class="orientation-{{ ui_config.orientation }}"
+    class="orientation-{{ ui_config.orientation }} app-screen-{{ screen }}"
     style="
         --screen-width: {{ ui_config.screen_width }}px;
         --screen-height: {{ ui_config.screen_height }}px;
@@ -126,31 +126,33 @@
             <footer class="mode-footer">Mode: {{ selected_mode_label }}</footer>
         </section>
         {% else %}
-        <section class="screen-section home-screen">
-            <header class="screen-header compact-header">
-                <p class="eyebrow">Standalone Desk Assistant</p>
-                <h1>AI Vision Assistant</h1>
-            </header>
+        <section class="screen-frame home-screen">
+            <section class="content-card home-card" aria-hidden="true"></section>
+            <div class="sr-only" aria-live="polite">{{ status }}. {{ detail }}. Mode: {{ selected_mode_label }}.</div>
 
-            <div class="screen-body home-body">
-                <section class="status-panel side-panel">
-                    <p class="status-label">{{ status }}</p>
-                    <p class="status-detail">{{ detail }}</p>
-                </section>
+            <div class="home-actions">
+                <form method="get" action="{{ url_for('mode_select') }}" class="home-action home-mode-action">
+                    <button type="submit" class="figma-button image-button">
+                        <span class="sr-only">Mode</span>
+                        <img
+                            src="{{ url_for('static', filename='figma/mode-label.png') }}"
+                            alt=""
+                            class="button-art button-art-mode"
+                        >
+                    </button>
+                </form>
 
-                <aside class="action-rail">
-                    <div class="button-stack home-stack">
-                        <form method="post" action="{{ url_for('capture') }}">
-                            <button type="submit" class="primary-button capture-button">Capture</button>
-                        </form>
-                        <form method="get" action="{{ url_for('mode_select') }}">
-                            <button type="submit" class="secondary-button">Mode</button>
-                        </form>
-                    </div>
-                </aside>
+                <form method="post" action="{{ url_for('capture') }}" class="home-action home-capture-action">
+                    <button type="submit" class="figma-button image-button">
+                        <span class="sr-only">Capture</span>
+                        <img
+                            src="{{ url_for('static', filename='figma/capture-label.png') }}"
+                            alt=""
+                            class="button-art button-art-capture"
+                        >
+                    </button>
+                </form>
             </div>
-
-            <footer class="mode-footer">Mode: {{ selected_mode_label }}</footer>
         </section>
         {% endif %}
     </main>
