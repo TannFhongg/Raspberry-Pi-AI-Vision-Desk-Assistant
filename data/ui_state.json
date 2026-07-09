@@ -1,11 +1,11 @@
 {
   "screen": "home",
-  "selected_mode": "read_text",
+  "selected_mode": "professional_assistant",
   "status": "Ready",
   "detail": "Tap Capture or press the button",
   "answer": "",
   "error": "",
   "error_detail": "",
   "current_step": -1,
-  "updated_at": "2026-07-09T11:53:58"
+  "updated_at": "2026-07-09T12:03:38"
 }
