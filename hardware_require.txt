@@ -2,14 +2,16 @@ Raspberry Pi AI Vision Desk Assistant
 Hardware Requirements
 
 Required:
-- Raspberry Pi 5
+- Raspberry Pi 5 8GB
 - Official Raspberry Pi USB-C power supply (recommended 5V/5A)
 - microSD card (recommended 32GB or larger)
 - Camera:
-  - Raspberry Pi Camera Module, or
-  - Arducam CSI camera, or
+  - Raspberry Pi autofocus camera such as Camera Module 3, or
+  - Arducam autofocus CSI camera such as the 64MP model, or
   - USB webcam
+- 2.5 inch HDMI touchscreen or other attached display when using kiosk mode
 - Internet connection (Wi-Fi or Ethernet)
+- Cooling solution such as a heatsink, fan, or active cooling case
 
 Recommended for setup and testing:
 - HDMI monitor or small HDMI display

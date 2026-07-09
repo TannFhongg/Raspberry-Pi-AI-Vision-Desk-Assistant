@@ -4,8 +4,9 @@
 
 - Confirm Raspberry Pi 5 is powered on and connected to the network
 - Confirm the camera is connected and working
-- Confirm the push button is wired to GPIO17 and GND
+- Confirm the push button is wired to the configured GPIO pin and GND
 - Confirm `.env` contains a valid `OPENAI_API_KEY`
+- Run `python check_hardware.py`
 - Confirm `data/latest_result.txt` and `data/ui_state.json` are writable
 - Start `python app.py` and open `http://127.0.0.1:5000`
 - Preselect a useful demo mode such as `Read Text` or `Solve Problem`

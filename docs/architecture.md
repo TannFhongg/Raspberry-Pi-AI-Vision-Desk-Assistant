@@ -4,6 +4,8 @@
 
 The current project is a small-device AI capture appliance. The Flask UI is no longer a general-purpose dashboard with preview panels; it is a touchscreen-first state machine that drives the same shared pipeline used by the CLI and GPIO flows.
 
+Phase 8 adds a typed device configuration layer, hardware-aware camera control resolution, and a standalone diagnostics path for real Raspberry Pi deployment.
+
 ## Text Diagram
 
 ```text
@@ -11,6 +13,12 @@ The current project is a small-device AI capture appliance. The Flask UI is no l
                          | Terminal CLI         |
                          | main.py              |
                          +----------+-----------+
+                                    |
+                                    v
+          +-------------------------+-------------------------+
+          | Device Settings                                    |
+          | config/settings.py + config/device.yaml            |
+          +-------------------------+-------------------------+
                                     |
                                     v
           +-------------------------+-------------------------+
@@ -23,6 +31,13 @@ The current project is a small-device AI capture appliance. The Flask UI is no l
              | capture.py   |     | preprocess.py       |
              +------+-------+     +----------+----------+
                     |                         |
+                    v
+           +----------------------+
+           | hardware/            |
+           | camera_config.py     |
+           | device_check.py      |
+           +----------------------+
+                    |
                     v                         v
            static/captured.jpg      static/processed.jpg
                         \                 /
@@ -50,11 +65,19 @@ The current project is a small-device AI capture appliance. The Flask UI is no l
               |                                      templates/index.html
               |                                      static/style.css
               +-------------------------> shared pipeline <---------------+
+
+   +----------------------+
+   | check_hardware.py    |
+   | device diagnostics   |
+   +----------------------+
 ```
 
 ## Notes
 
 - `pipeline/runner.py` centralizes capture, preprocess, analyze, and latest-result saving so CLI, Flask, and GPIO behavior stay aligned.
+- `config/settings.py` loads `config/device.yaml` and applies environment overrides so hardware values are no longer hardcoded across entrypoints.
+- `hardware/camera_config.py` resolves autofocus-capable Picamera2 modes, best-fit still resolutions, and best-effort OpenCV controls.
+- `hardware/device_check.py` runs standalone diagnostics for camera, display, internet, OpenAI API reachability, and GPIO readiness.
 - `app.py` persists selected mode and current screen in `data/ui_state.json`, then renders a screen-specific section from `templates/index.html`.
 - The current touchscreen state machine is `home -> processing -> result/error`, with a separate `mode_select` screen for choosing the active AI mode.
 - `/capture`, `/capture-analyze`, and `/analyze` are compatibility routes that currently all start the same background `run_capture_analyze` job.

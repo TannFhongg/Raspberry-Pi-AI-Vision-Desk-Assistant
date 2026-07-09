@@ -15,16 +15,21 @@ from flask import Flask, redirect, render_template, request, url_for
 from markupsafe import Markup, escape
 
 from ai.prompts import normalize_mode
+from config import SettingsError, load_device_settings
 from gpio import GPIOButtonError, GPIOButtonTrigger
 from pipeline import PipelineError, PipelineResult, run_capture_analyze, save_latest_result
 
 load_dotenv()
 
+try:
+    SETTINGS = load_device_settings()
+except SettingsError as exc:
+    raise RuntimeError(f"Invalid device settings: {exc}") from exc
+
 app = Flask(__name__)
 
 UI_STATE_PATH = Path("data/ui_state.json")
 LATEST_RESULT_PATH = Path("data/latest_result.txt")
-DEFAULT_MODE = "read_text"
 VALID_SCREENS = {"home", "processing", "result", "error"}
 UI_MODE_OPTIONS = [
     ("read_text", "Read Text"),
@@ -84,27 +89,39 @@ def _read_orientation_env(name: str, default: str) -> str:
         return default
     return value
 
-
-CAMERA_BACKEND = os.getenv("VISION_CAMERA_BACKEND", "auto").strip().lower() or "auto"
-CAMERA_INDEX = _read_int_env("VISION_CAMERA_INDEX", 0, minimum=0)
-CAPTURE_WIDTH = _read_int_env("VISION_CAPTURE_WIDTH", 1280, minimum=320)
-CAPTURE_HEIGHT = _read_int_env("VISION_CAPTURE_HEIGHT", 720, minimum=240)
-GRAYSCALE = _read_bool_env("VISION_GRAYSCALE", False)
-MAX_DIMENSION = _read_int_env("VISION_MAX_DIMENSION", 1600, minimum=640)
-ENABLE_GPIO_BUTTON = _read_bool_env("ENABLE_GPIO_BUTTON", True)
-GPIO_BUTTON_PIN = _read_int_env("GPIO_BUTTON_PIN", 17, minimum=0)
+CAMERA_BACKEND = SETTINGS.camera.backend
+CAMERA_INDEX = SETTINGS.camera.index
+CAPTURE_WIDTH = SETTINGS.camera.resolution.width
+CAPTURE_HEIGHT = SETTINGS.camera.resolution.height
+CAMERA_AUTOFOCUS_MODE = SETTINGS.camera.autofocus_mode
+CAMERA_EXPOSURE = SETTINGS.camera.exposure
+CAMERA_BRIGHTNESS = SETTINGS.camera.brightness
+CAPTURE_DELAY_SECONDS = SETTINGS.camera.capture_delay_seconds
+GRAYSCALE = SETTINGS.camera.grayscale
+MAX_DIMENSION = SETTINGS.camera.max_dimension
+ENABLE_GPIO_BUTTON = SETTINGS.button.enabled
+GPIO_BUTTON_PIN = SETTINGS.button.pin
 UI_DEBUG = _read_bool_env("UI_DEBUG", False)
 
-UI_SCREEN_WIDTH = _read_int_env("UI_SCREEN_WIDTH", 480, minimum=240, maximum=1920)
-UI_SCREEN_HEIGHT = _read_int_env("UI_SCREEN_HEIGHT", 320, minimum=240, maximum=1920)
+UI_SCREEN_WIDTH = max(240, min(1920, SETTINGS.display.size.width))
+UI_SCREEN_HEIGHT = max(240, min(1920, SETTINGS.display.size.height))
 UI_BASE_FONT_SIZE = _read_int_env("UI_BASE_FONT_SIZE", 20, minimum=16, maximum=42)
 UI_TITLE_FONT_SIZE = _read_int_env("UI_TITLE_FONT_SIZE", 34, minimum=24, maximum=72)
 UI_STATUS_FONT_SIZE = _read_int_env("UI_STATUS_FONT_SIZE", 28, minimum=20, maximum=64)
 UI_BUTTON_FONT_SIZE = _read_int_env("UI_BUTTON_FONT_SIZE", 24, minimum=18, maximum=42)
 UI_TOUCH_TARGET = _read_int_env("UI_TOUCH_TARGET", 68, minimum=52, maximum=96)
-UI_DISPLAY_ORIENTATION = _read_orientation_env("UI_DISPLAY_ORIENTATION", "landscape")
+UI_DISPLAY_ORIENTATION = _read_orientation_env(
+    "UI_DISPLAY_ORIENTATION",
+    SETTINGS.display.orientation,
+)
 UI_PROCESSING_REFRESH_MS = _read_int_env("UI_PROCESSING_REFRESH_MS", 1200, minimum=500, maximum=5000)
 UI_IDLE_REFRESH_MS = _read_int_env("UI_IDLE_REFRESH_MS", 2500, minimum=1000, maximum=10000)
+DEFAULT_MODE = normalize_mode(SETTINGS.ai.default_mode)
+if DEFAULT_MODE == "summarize_document":
+    DEFAULT_MODE = "summarize"
+if DEFAULT_MODE not in dict(UI_MODE_OPTIONS):
+    DEFAULT_MODE = "read_text"
+READY_DETAIL = "Tap Capture or press the button" if ENABLE_GPIO_BUTTON else "Tap Capture to begin"
 
 
 @app.get("/")
@@ -239,6 +256,10 @@ def _run_capture_job(selected_mode: str) -> None:
             height=CAPTURE_HEIGHT,
             grayscale=GRAYSCALE,
             max_dimension=MAX_DIMENSION,
+            autofocus_mode=CAMERA_AUTOFOCUS_MODE,
+            exposure=CAMERA_EXPOSURE,
+            brightness=CAMERA_BRIGHTNESS,
+            capture_delay_seconds=CAPTURE_DELAY_SECONDS,
             status_callback=lambda message: _update_processing_state(selected_mode, message),
         )
         _write_state(
@@ -303,6 +324,7 @@ def _record_error_state(selected_mode: str, error_message: str) -> None:
         answer=error_message,
         mode=normalize_mode(selected_mode),
         camera_backend_used=CAMERA_BACKEND,
+        camera_resolution=None,
         status="error",
     )
     save_latest_result(failure_result, output_path=str(LATEST_RESULT_PATH))
@@ -429,7 +451,7 @@ def _default_ui_state() -> dict[str, Any]:
         "screen": "home",
         "selected_mode": DEFAULT_MODE,
         "status": "Ready",
-        "detail": "Tap Capture or press the button",
+        "detail": READY_DETAIL,
         "answer": "",
         "error": "",
         "error_detail": "",

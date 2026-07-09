@@ -12,23 +12,28 @@ The project is organized in phases so each layer can be tested independently and
 
 ## Features
 
-- Capture images from a Raspberry Pi CSI camera with Picamera2
+- Capture high-resolution images from a Raspberry Pi CSI camera with Picamera2
+- Support autofocus, exposure, brightness, and capture-delay controls on supported camera backends
 - Fall back to OpenCV `VideoCapture` for USB webcams
 - Apply safe OpenCV preprocessing before AI analysis
 - Analyze images with multiple AI modes using the OpenAI Python SDK
 - Run the full pipeline from the terminal
 - Control the same pipeline from a touchscreen-first Flask UI
-- Use a physical GPIO button on `GPIO17` to trigger the same capture flow
+- Use a configurable physical GPIO button to trigger the same capture flow
+- Load device defaults from `config/device.yaml` with environment variable and CLI overrides
+- Run `python check_hardware.py` to verify camera, display, internet, OpenAI, and GPIO readiness
+- Boot straight into the touchscreen UI with Chromium kiosk mode on Raspberry Pi OS Bookworm
 - Save the latest readable pipeline result to `data/latest_result.txt`
 - Persist the current UI mode and screen state in `data/ui_state.json`
 
 ## Hardware Used
 
-- Raspberry Pi 5
-- Raspberry Pi camera / Arducam CSI camera
+- Raspberry Pi 5 8GB
+- Autofocus camera such as Raspberry Pi Camera Module 3 or Arducam 64MP
 - Optional USB webcam
-- Push button connected to `GPIO17` and `GND`
-- Optional HDMI display or small touchscreen
+- 2.5 inch HDMI touchscreen or other small HDMI display
+- Push button connected to the configured GPIO pin and `GND`
+- Case, heatsink, or active cooling for sustained capture workloads
 - Internet connection for OpenAI API access
 
 ## Software Stack
@@ -52,15 +57,19 @@ See [docs/architecture.md](docs/architecture.md) for the current text architectu
 raspberry-pi-ai-vision-assistant/
 |-- ai/
 |-- camera/
+|-- config/
 |-- data/
 |-- deployment/
 |-- docs/
 |-- gpio/
+|-- hardware/
 |-- pipeline/
 |-- static/
 |-- templates/
+|-- tests/
 |-- vision/
 |-- app.py
+|-- check_hardware.py
 |-- main.py
 |-- requirements.txt
 |-- test_ai_vision.py
@@ -77,7 +86,7 @@ Install the camera and OpenCV system packages first:
 
 ```bash
 sudo apt update
-sudo apt install -y python3-picamera2 python3-opencv
+sudo apt install -y python3-picamera2 python3-opencv chromium-browser
 ```
 
 ### Virtual Environment
@@ -109,20 +118,28 @@ OPENAI_MODEL=gpt-5.4-mini
 FLASK_SECRET_KEY=change_this_for_local_flask_sessions
 ```
 
-Useful optional runtime settings:
+Most hardware defaults now live in [config/device.yaml](config/device.yaml). Environment variables still override that file when needed:
 
 ```env
+DEVICE_CONFIG_PATH=config/device.yaml
 ENABLE_GPIO_BUTTON=1
 GPIO_BUTTON_PIN=17
 VISION_CAMERA_BACKEND=auto
 VISION_CAMERA_INDEX=0
-VISION_CAPTURE_WIDTH=1280
-VISION_CAPTURE_HEIGHT=720
+VISION_CAPTURE_WIDTH=4608
+VISION_CAPTURE_HEIGHT=2592
+VISION_AUTOFOCUS_MODE=continuous
+VISION_EXPOSURE=auto
+VISION_BRIGHTNESS=0.0
+VISION_CAPTURE_DELAY_SECONDS=1.0
 VISION_GRAYSCALE=0
 VISION_MAX_DIMENSION=1600
 UI_SCREEN_WIDTH=480
 UI_SCREEN_HEIGHT=320
 UI_DISPLAY_ORIENTATION=landscape
+AI_DEFAULT_MODE=read_text
+STARTUP_BEHAVIOR=kiosk
+STARTUP_URL=http://localhost:5000
 UI_BASE_FONT_SIZE=20
 UI_TITLE_FONT_SIZE=34
 UI_STATUS_FONT_SIZE=28
@@ -130,6 +147,48 @@ UI_BUTTON_FONT_SIZE=24
 UI_TOUCH_TARGET=68
 UI_PROCESSING_REFRESH_MS=1200
 UI_IDLE_REFRESH_MS=2500
+```
+
+## Device Configuration
+
+`config/device.yaml` is the committed hardware baseline for the standalone device. Runtime precedence is:
+
+```text
+config/device.yaml -> environment variables -> CLI flags
+```
+
+Default camera, display, button, AI, and startup settings:
+
+```yaml
+camera:
+  backend: auto
+  index: 0
+  resolution:
+    width: 4608
+    height: 2592
+  autofocus_mode: continuous
+  exposure: auto
+  brightness: 0.0
+  capture_delay_seconds: 1.0
+  grayscale: false
+  max_dimension: 1600
+
+display:
+  size:
+    width: 480
+    height: 320
+  orientation: landscape
+
+button:
+  enabled: true
+  pin: 17
+
+ai:
+  default_mode: read_text
+
+startup:
+  behavior: kiosk
+  url: http://localhost:5000
 ```
 
 ## Phase 1: OpenAI Vision Test
@@ -158,6 +217,18 @@ Force a USB webcam:
 
 ```bash
 python test_camera_capture.py --backend opencv --camera-index 0
+```
+
+High-resolution autofocus example:
+
+```bash
+python test_camera_capture.py --backend picamera2 --width 4608 --height 2592 --autofocus-mode continuous
+```
+
+Manual exposure example:
+
+```bash
+python test_camera_capture.py --backend picamera2 --exposure 12000 --brightness 0.1 --capture-delay 1.5
 ```
 
 Captured output:
@@ -233,6 +304,12 @@ python app.py
 
 The current UI is a kiosk-style, touchscreen-first flow tuned for small Raspberry Pi displays.
 
+For production Pi hardware, Phase 8 targets this default boot behavior:
+
+```text
+Power on -> systemd starts Flask -> Chromium opens http://localhost:5000 in kiosk mode
+```
+
 Screen flow:
 
 - `home`: minimal launcher with `Mode` and `Capture`
@@ -287,6 +364,8 @@ The Flask app can start the GPIO button listener automatically when `ENABLE_GPIO
 
 Inside the Flask app, the button reuses the same background capture job as the touchscreen UI.
 
+Inside the Flask app, the default AI mode comes from `config/device.yaml` unless overridden by environment variables.
+
 You can still run the standalone GPIO button listener:
 
 ```bash
@@ -310,6 +389,22 @@ Latest readable pipeline result:
 ```text
 data/latest_result.txt
 ```
+
+## Phase 8: Hardware Diagnostics
+
+Run the standalone device diagnostic:
+
+```bash
+python check_hardware.py
+```
+
+The script verifies:
+
+- Camera detected and able to capture a still image
+- Display connected when startup behavior is `kiosk`
+- Internet connection available
+- OpenAI API reachable with the configured key and model
+- GPIO available through `gpiozero`
 
 ## Troubleshooting
 
@@ -338,7 +433,14 @@ data/latest_result.txt
 
 - Check CSI camera cable seating
 - Check USB webcam connection
+- Run `python check_hardware.py`
 - Close other apps that may be using the camera
+
+### Autofocus Or Exposure Controls Not Applying
+
+- Confirm you are using a Picamera2-supported autofocus camera
+- Some OpenCV webcam drivers ignore autofocus, exposure, or brightness requests
+- Review any non-fatal warnings printed by `test_camera_capture.py` or `main.py`
 
 ### No Image Available
 
@@ -347,8 +449,8 @@ data/latest_result.txt
 
 ### Touch UI Layout Does Not Fit The Screen
 
-- Adjust `UI_SCREEN_WIDTH` and `UI_SCREEN_HEIGHT`
-- Change `UI_DISPLAY_ORIENTATION` to `portrait`, `landscape`, or `auto`
+- Adjust `display.size.width` and `display.size.height` in `config/device.yaml`
+- Change `display.orientation` or override `UI_DISPLAY_ORIENTATION`
 - Increase or decrease `UI_TOUCH_TARGET` and font sizes for the attached display
 
 ### Reset The UI State
@@ -361,7 +463,14 @@ data/latest_result.txt
 
 - Ensure you are running on a Raspberry Pi
 - Confirm `gpiozero` is installed
-- Confirm the button is wired to `GPIO17` and `GND`
+- Confirm the button is wired to the configured GPIO pin and `GND`
+
+### Kiosk Display Does Not Open On Boot
+
+- Confirm `startup.behavior` is `kiosk`
+- Confirm Chromium is installed and available as `chromium` or `chromium-browser`
+- Copy [deployment/labwc-autostart.example](deployment/labwc-autostart.example) to `~/.config/labwc/autostart`
+- Confirm [deployment/kiosk-launch.sh](deployment/kiosk-launch.sh) is executable on the Pi
 
 ## Demo Checklist
 
@@ -413,8 +522,26 @@ Note:
 
 - You may need to edit the service file paths for your actual repo location
 - You may need to change `User=pi` if your Raspberry Pi uses a different username
-- The service loads `.env`, so camera, screen, orientation, and GPIO settings can be adjusted there
-- For a built-in display, pair the service with a Chromium kiosk launch on the Pi desktop session
+- The service loads `.env`, and `.env` can override `config/device.yaml`
+
+For fullscreen kiosk startup on Raspberry Pi OS Bookworm with `labwc`:
+
+1. Copy [deployment/labwc-autostart.example](deployment/labwc-autostart.example) to `~/.config/labwc/autostart`
+2. Update the repo path inside the copied file if needed
+3. Make [deployment/kiosk-launch.sh](deployment/kiosk-launch.sh) executable on the Pi:
+
+```bash
+chmod +x deployment/kiosk-launch.sh
+```
+
+4. Reboot the Pi and confirm Chromium opens `http://localhost:5000`
+
+Manual fallback commands:
+
+```bash
+python app.py
+chromium-browser http://localhost:5000
+```
 
 ## Portfolio Description
 

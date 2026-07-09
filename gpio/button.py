@@ -6,6 +6,7 @@ import threading
 import time
 from typing import Callable
 
+from config import load_device_settings
 from pipeline import PipelineError, PipelineResult, run_capture_analyze, save_latest_result
 
 
@@ -18,27 +19,45 @@ class GPIOButtonTrigger:
 
     def __init__(
         self,
-        pin: int = 17,
+        pin: int | None = None,
         debounce_seconds: float = 0.2,
-        mode: str = "solve_problem",
-        backend: str = "auto",
-        camera_index: int = 0,
-        width: int = 1280,
-        height: int = 720,
-        grayscale: bool = False,
-        max_dimension: int = 1600,
+        mode: str | None = None,
+        backend: str | None = None,
+        camera_index: int | None = None,
+        width: int | None = None,
+        height: int | None = None,
+        grayscale: bool | None = None,
+        max_dimension: int | None = None,
+        autofocus_mode: str | None = None,
+        exposure: str | int | None = None,
+        brightness: float | None = None,
+        capture_delay_seconds: float | None = None,
         result_path: str = "data/latest_result.txt",
         trigger_action: Callable[[], bool] | None = None,
     ) -> None:
-        self.pin = pin
+        settings = load_device_settings()
+        camera_settings = settings.camera
+        self.pin = settings.button.pin if pin is None else pin
         self.debounce_seconds = debounce_seconds
-        self.mode = mode
-        self.backend = backend
-        self.camera_index = camera_index
-        self.width = width
-        self.height = height
-        self.grayscale = grayscale
-        self.max_dimension = max_dimension
+        self.mode = settings.ai.default_mode if mode is None else mode
+        self.backend = camera_settings.backend if backend is None else backend
+        self.camera_index = camera_settings.index if camera_index is None else camera_index
+        self.width = camera_settings.resolution.width if width is None else width
+        self.height = camera_settings.resolution.height if height is None else height
+        self.grayscale = camera_settings.grayscale if grayscale is None else grayscale
+        self.max_dimension = (
+            camera_settings.max_dimension if max_dimension is None else max_dimension
+        )
+        self.autofocus_mode = (
+            camera_settings.autofocus_mode if autofocus_mode is None else autofocus_mode
+        )
+        self.exposure = camera_settings.exposure if exposure is None else exposure
+        self.brightness = camera_settings.brightness if brightness is None else brightness
+        self.capture_delay_seconds = (
+            camera_settings.capture_delay_seconds
+            if capture_delay_seconds is None
+            else capture_delay_seconds
+        )
         self.result_path = result_path
         self.trigger_action = trigger_action
         self._lock = threading.Lock()
@@ -128,12 +147,22 @@ class GPIOButtonTrigger:
                 height=self.height,
                 grayscale=self.grayscale,
                 max_dimension=self.max_dimension,
+                autofocus_mode=self.autofocus_mode,
+                exposure=self.exposure,
+                brightness=self.brightness,
+                capture_delay_seconds=self.capture_delay_seconds,
                 status_callback=self._print_pipeline_status,
             )
             print("Answer received")
             print(f"Camera backend used: {result.camera_backend_used}")
+            if result.camera_resolution is not None:
+                print(
+                    f"Captured resolution: {result.camera_resolution[0]}x{result.camera_resolution[1]}"
+                )
             print(f"Captured image: {result.captured_path}")
             print(f"Processed image: {result.processed_path}")
+            for warning in result.warnings:
+                print(f"Warning: {warning}")
             if result.answer:
                 print("\nAI Answer:\n")
                 print(result.answer)
@@ -147,6 +176,7 @@ class GPIOButtonTrigger:
                 answer=error_message,
                 mode=self.mode,
                 camera_backend_used=self.backend,
+                camera_resolution=None,
                 status="error",
             )
             save_latest_result(failure_result, output_path=self.result_path)
