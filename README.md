@@ -144,9 +144,9 @@ VISION_CAPTURE_DELAY_SECONDS=1.0
 VISION_GRAYSCALE=0
 VISION_MAX_DIMENSION=1600
 SCREEN_OPTIMIZATION=auto
-UI_SCREEN_WIDTH=480
-UI_SCREEN_HEIGHT=320
-UI_DISPLAY_ORIENTATION=landscape
+UI_SCREEN_WIDTH=320
+UI_SCREEN_HEIGHT=480
+UI_DISPLAY_ORIENTATION=portrait
 AI_DEFAULT_MODE=document_reader
 STARTUP_BEHAVIOR=kiosk
 STARTUP_URL=http://localhost:5000
@@ -194,9 +194,9 @@ camera:
 
 display:
   size:
-    width: 480
-    height: 320
-  orientation: landscape
+    width: 320
+    height: 480
+  orientation: portrait
 
 button:
   enabled: true

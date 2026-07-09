@@ -12,9 +12,12 @@ from PIL import Image, UnidentifiedImageError
 
 from ai.context import build_mode_context
 from ai.modes import get_mode, normalize_mode
-from config import load_device_settings
+from config import SettingsError, load_device_settings
 
 DEFAULT_OPENAI_MODEL = "gpt-5.4-mini"
+DEFAULT_OPENAI_TIMEOUT_SECONDS = 30.0
+DEFAULT_OPENAI_RETRY_ATTEMPTS = 3
+DEFAULT_OPENAI_RETRY_BACKOFF_SECONDS = 2.0
 MAX_IMAGE_SIZE_MB = 10
 MAX_IMAGE_SIZE_BYTES = MAX_IMAGE_SIZE_MB * 1024 * 1024
 SUPPORTED_IMAGE_TYPES: dict[str, str] = {
@@ -42,8 +45,14 @@ class OpenAIVisionClient:
         retry_backoff_seconds: float | None = None,
         sleep_func=None,
     ) -> None:
-        settings = load_device_settings()
-        reliability = settings.reliability
+        try:
+            reliability = load_device_settings().reliability
+        except SettingsError as exc:
+            LOGGER.warning(
+                "Falling back to built-in OpenAI client reliability defaults because device settings could not be loaded: %s",
+                exc,
+            )
+            reliability = None
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         if not self.api_key:
             raise VisionClientError(
@@ -52,20 +61,26 @@ class OpenAIVisionClient:
 
         self.default_model = default_model or os.getenv("OPENAI_MODEL", DEFAULT_OPENAI_MODEL)
         self.timeout_seconds = (
-            reliability.openai_timeout_seconds
-            if timeout_seconds is None
-            else float(timeout_seconds)
+            DEFAULT_OPENAI_TIMEOUT_SECONDS
+            if reliability is None
+            else reliability.openai_timeout_seconds
         )
+        if timeout_seconds is not None:
+            self.timeout_seconds = float(timeout_seconds)
         self.retry_attempts = (
-            reliability.openai_retry_attempts
-            if retry_attempts is None
-            else max(1, int(retry_attempts))
+            DEFAULT_OPENAI_RETRY_ATTEMPTS
+            if reliability is None
+            else reliability.openai_retry_attempts
         )
+        if retry_attempts is not None:
+            self.retry_attempts = max(1, int(retry_attempts))
         self.retry_backoff_seconds = (
-            reliability.openai_retry_backoff_seconds
-            if retry_backoff_seconds is None
-            else max(0.0, float(retry_backoff_seconds))
+            DEFAULT_OPENAI_RETRY_BACKOFF_SECONDS
+            if reliability is None
+            else reliability.openai_retry_backoff_seconds
         )
+        if retry_backoff_seconds is not None:
+            self.retry_backoff_seconds = max(0.0, float(retry_backoff_seconds))
         self._sleep = time.sleep if sleep_func is None else sleep_func
         self._openai, openai_client_class = _import_openai_sdk()
         self.client = openai_client_class(

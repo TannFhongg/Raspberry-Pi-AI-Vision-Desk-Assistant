@@ -126,6 +126,29 @@ class Phase11AppIntegrationTests(unittest.TestCase):
         self.assertNotIn(b"Read Text", response.data)
         self.assertNotIn(b"Solve Problem", response.data)
 
+    def test_home_screen_renders_capture_mode_and_retry_actions(self) -> None:
+        client = app_module.app.test_client()
+
+        response = client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Capture", response.data)
+        self.assertIn(b"Mode", response.data)
+        self.assertIn(b"Retry", response.data)
+        self.assertIn(b'action="/analyze"', response.data)
+        self.assertIn(b'action="/mode"', response.data)
+        self.assertIn(b'action="/retry"', response.data)
+
+    def test_app_defaults_render_portrait_small_screen_shell(self) -> None:
+        client = app_module.app.test_client()
+
+        response = client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"orientation-portrait", response.data)
+        self.assertIn(b"--screen-width: 320px;", response.data)
+        self.assertIn(b"--screen-height: 480px;", response.data)
+
     def test_legacy_mode_selection_is_saved_as_canonical_mode(self) -> None:
         client = app_module.app.test_client()
 

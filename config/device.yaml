@@ -13,9 +13,9 @@ camera:
 
 display:
   size:
-    width: 480
-    height: 320
-  orientation: landscape
+    width: 320
+    height: 480
+  orientation: portrait
 
 button:
   enabled: true

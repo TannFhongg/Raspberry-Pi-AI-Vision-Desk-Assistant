@@ -11,6 +11,7 @@ from unittest.mock import patch
 from PIL import Image
 
 from ai.openai_client import OpenAIVisionClient, VisionClientError
+from config import SettingsError
 
 
 class OpenAIVisionClientReliabilityTests(unittest.TestCase):
@@ -121,6 +122,28 @@ class OpenAIVisionClientReliabilityTests(unittest.TestCase):
 
         self.assertIn("Invalid image file", str(error.exception))
         self.assertEqual(len(instances[0].responses.calls), 0)
+
+    def test_falls_back_to_builtin_reliability_defaults_when_settings_are_unavailable(self) -> None:
+        image_path = _create_valid_image(".png")
+        instances: list[object] = []
+        fake_module, fake_client_class = _build_fake_sdk(
+            side_effects=[SimpleNamespace(output_text="Fallback defaults worked")],
+            instances=instances,
+        )
+
+        with patch(
+            "ai.openai_client.load_device_settings",
+            side_effect=SettingsError("Device config file not found"),
+        ), patch(
+            "ai.openai_client._import_openai_sdk",
+            return_value=(fake_module, fake_client_class),
+        ):
+            client = OpenAIVisionClient(api_key="test-key")
+            answer = client.analyze_image(str(image_path), "document_reader")
+
+        self.assertEqual(answer, "Fallback defaults worked")
+        self.assertEqual(instances[0].init_kwargs["timeout"], 30.0)
+        self.assertEqual(len(instances[0].responses.calls), 1)
 
 
 def _build_settings() -> SimpleNamespace:

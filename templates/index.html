@@ -48,74 +48,89 @@
 >
     <main class="device-shell" aria-label="AI Vision Assistant">
         {% if screen == "mode_select" %}
-        <section class="figma-stage mode-select-stage">
+        <section class="device-screen mode-select-screen">
             <div class="sr-only" aria-live="polite">
                 Mode selection. Current mode: {{ selected_mode_label }}. {{ selected_mode_description }}.
             </div>
 
-            <section class="figma-card mode-card" aria-label="Mode choices">
-                <header class="status-area">
-                    <div>
-                        <p class="status-label">MODE</p>
-                        <p class="status-value">Select assistant</p>
-                        <p class="mode-summary">{{ selected_mode_description }}</p>
-                    </div>
-                    <div class="mode-indicator">
-                        <span>Current</span>
-                        <strong>{{ selected_mode_label }}</strong>
-                    </div>
-                </header>
+            <header class="screen-header mode-header">
+                <div class="brand-block">
+                    <p class="screen-kicker">AI Vision Assistant</p>
+                    <h1 class="screen-title">Choose a mode</h1>
+                    <p class="screen-subtitle">Pick the assistant behavior that matches what the camera sees.</p>
+                </div>
+                <div class="status-panel">
+                    <p class="status-label">CURRENT</p>
+                    <p class="status-value">{{ selected_mode_label }}</p>
+                </div>
+            </header>
 
-                <div class="mode-scroll" role="list">
-                    {% for mode_option in mode_options %}
-                    <form method="post" action="{{ url_for('select_mode') }}" class="mode-option-form">
-                        <input type="hidden" name="mode" value="{{ mode_option.id }}">
-                        <button
-                            type="submit"
-                            class="mode-choice{% if selected_mode == mode_option.id %} mode-choice-active{% endif %}"
-                            {% if is_processing %}disabled{% endif %}
-                        >
-                            <span class="mode-choice-title">{{ mode_option.name }}</span>
-                            <span class="mode-choice-description">{{ mode_option.description }}</span>
-                        </button>
-                    </form>
-                    {% endfor %}
+            <section class="content-panel mode-panel" aria-label="Mode choices">
+                <div class="message-card">
+                    <div class="mode-scroll" role="list">
+                        {% for mode_option in mode_options %}
+                        <form method="post" action="{{ url_for('select_mode') }}" class="mode-option-form">
+                            <input type="hidden" name="mode" value="{{ mode_option.id }}">
+                            <button
+                                type="submit"
+                                class="mode-choice{% if selected_mode == mode_option.id %} mode-choice-active{% endif %}"
+                                {% if is_processing %}disabled{% endif %}
+                            >
+                                <span class="mode-choice-title">{{ mode_option.name }}</span>
+                                <span class="mode-choice-description">{{ mode_option.description }}</span>
+                            </button>
+                        </form>
+                        {% endfor %}
+                    </div>
                 </div>
             </section>
 
-            <aside class="action-rail" aria-label="Mode screen actions">
-                <form method="post" action="{{ url_for('back') }}" class="rail-form mode-rail-form">
-                    <button type="submit" class="figma-button rail-button">BACK</button>
+            <aside class="action-row mode-action-row" aria-label="Mode screen actions">
+                <form method="post" action="{{ url_for('back') }}">
+                    <button type="submit" class="action-button action-button-secondary">Back</button>
                 </form>
             </aside>
         </section>
         {% else %}
-        <section class="figma-stage main-stage">
+        <section class="device-screen main-screen">
             <div class="sr-only" aria-live="polite">
                 {{ status }}. {{ detail }}. Mode: {{ selected_mode_label }}. {{ selected_mode_description }}.
             </div>
 
-            <section class="figma-card answer-card" aria-label="Assistant response">
-                <header class="status-area">
-                    <div>
-                        <p class="status-label">STATUS</p>
-                        <p class="status-value">{{ display_status }}</p>
-                    </div>
-                    <div class="mode-indicator">
-                        <span>Current mode</span>
-                        <strong>{{ selected_mode_label }}</strong>
-                    </div>
-                </header>
+            <header class="screen-header">
+                <div class="brand-block">
+                    <p class="screen-kicker">AI Vision Assistant</p>
+                    <h1 class="screen-title">{{ selected_mode_label }}</h1>
+                    <p class="screen-subtitle">{{ selected_mode_description }}</p>
+                </div>
+                <div class="status-panel">
+                    <p class="status-label">STATUS</p>
+                    <p class="status-value">{{ display_status }}</p>
+                </div>
+            </header>
 
-                <div class="answer-area" tabindex="0">
+            <section class="content-panel" aria-label="Assistant response">
+                <div class="message-card">
                     {% if screen == "processing" %}
-                    <div class="state-copy processing-copy">
-                        <p class="state-kicker">Working</p>
-                        <p class="state-title">{{ processing_headline }}</p>
-                        <p class="state-detail">{{ detail }}</p>
+                    <div class="processing-layout">
+                        <div class="state-copy processing-copy">
+                            <p class="state-kicker">Working</p>
+                            <p class="state-title">{{ processing_headline }}</p>
+                            <p class="state-detail">{{ detail }}</p>
+                        </div>
+                        <ol class="progress-list" aria-label="Processing steps">
+                            {% for step in progress_steps %}
+                            <li class="progress-step progress-step-{{ step.state }}">
+                                <span class="progress-marker" aria-hidden="true"></span>
+                                <span>{{ step.label }}</span>
+                            </li>
+                            {% endfor %}
+                        </ol>
                     </div>
                     {% elif screen == "result" %}
-                    <div class="answer-copy">{{ answer_html }}</div>
+                    <div class="answer-area" tabindex="0">
+                        <div class="answer-copy">{{ answer_html }}</div>
+                    </div>
                     {% elif screen == "error" %}
                     <div class="state-copy error-copy">
                         <p class="state-kicker">{{ error_title }}</p>
@@ -136,20 +151,34 @@
                 </div>
             </section>
 
-            <aside class="action-rail" aria-label="Primary actions">
-                <form method="get" action="{{ url_for('mode_select') }}" class="rail-form mode-rail-form">
-                    <button type="submit" class="figma-button rail-button" {% if is_processing %}disabled{% endif %}>MODE</button>
+            <aside class="action-row" aria-label="Primary actions">
+                <form method="post" action="{{ url_for('capture') }}">
+                    <button
+                        type="submit"
+                        class="action-button action-button-primary"
+                        {% if is_processing %}disabled{% endif %}
+                    >
+                        Capture
+                    </button>
                 </form>
-
-                {% if screen == "error" %}
-                <form method="post" action="{{ url_for('retry') }}" class="rail-form capture-rail-form">
-                    <button type="submit" class="figma-button rail-button capture-button" {% if is_processing %}disabled{% endif %}>Retry</button>
+                <form method="get" action="{{ url_for('mode_select') }}">
+                    <button
+                        type="submit"
+                        class="action-button action-button-secondary"
+                        {% if is_processing %}disabled{% endif %}
+                    >
+                        Mode
+                    </button>
                 </form>
-                {% else %}
-                <form method="post" action="{{ url_for('capture') }}" class="rail-form capture-rail-form">
-                    <button type="submit" class="figma-button rail-button capture-button" {% if is_processing %}disabled{% endif %}>Capture</button>
+                <form method="post" action="{{ url_for('retry') }}">
+                    <button
+                        type="submit"
+                        class="action-button action-button-accent"
+                        {% if is_processing %}disabled{% endif %}
+                    >
+                        Retry
+                    </button>
                 </form>
-                {% endif %}
             </aside>
         </section>
         {% endif %}
