@@ -538,6 +538,70 @@ LED behavior with the optional single-color GPIO LED:
 
 The current lifecycle state is now persisted in `data/ui_state.json` as `device_state`, and the idle touchscreen screens auto-refresh when the GPIO listener is active so button-only interaction updates the kiosk display without a keyboard.
 
+## Phase 13: Assistant Modes
+
+Phase 13 upgrades the assistant layer from a single generic prompt into a shared mode system used by the CLI, Flask UI, and GPIO trigger.
+
+Current user-facing modes:
+
+- `document_reader`
+- `math_solver`
+- `meeting_assistant`
+- `engineering_mode`
+- `general_vision`
+
+Phase 13 behavior:
+
+- the canonical mode registry lives in `ai/modes.py`
+- hidden per-mode OpenAI instructions are built in `ai/context.py`
+- the currently selected UI mode is persisted in `data/ui_state.json`
+- the default device mode comes from `config/device.yaml` or `AI_DEFAULT_MODE`
+- legacy mode names such as `read_text`, `summarize_document`, `solve_problem`, and `analyze_image` are still accepted as aliases
+
+Examples:
+
+```bash
+python main.py --mode document_reader
+python main.py --mode math_solver
+python main.py --mode meeting_assistant
+python test_ai_vision.py --image test_images/document.jpg --mode engineering_mode
+python test_gpio_button.py --mode general_vision
+```
+
+## Phase 14: Reliability, Logging, And Health Monitoring
+
+Phase 14 adds runtime reliability features so the assistant behaves more like a deployable device instead of a one-off script.
+
+Phase 14 improvements:
+
+- OpenAI requests use configurable timeout, retry count, and exponential backoff settings
+- uncaught process and thread exceptions are routed into the shared logging system
+- rotating runtime logs are written to `logs/app.log` and `logs/error.log`
+- a background health monitor can write snapshots to `data/health_status.json`
+- health checks avoid intrusive camera probing while the device is already busy
+- reliability settings can be controlled from `config/device.yaml` or environment overrides
+
+Key reliability settings:
+
+```env
+RELIABILITY_LOG_LEVEL=INFO
+RELIABILITY_LOG_MAX_BYTES=1048576
+RELIABILITY_LOG_BACKUP_COUNT=5
+RELIABILITY_HEALTH_MONITOR_ENABLED=1
+RELIABILITY_HEALTH_CHECK_INTERVAL_SECONDS=60
+RELIABILITY_CAMERA_PROBE_INTERVAL_SECONDS=300
+RELIABILITY_OPENAI_TIMEOUT_SECONDS=30
+RELIABILITY_OPENAI_RETRY_ATTEMPTS=3
+RELIABILITY_OPENAI_RETRY_BACKOFF_SECONDS=2
+```
+
+Useful checks:
+
+```bash
+python check_hardware.py
+journalctl -u ai-vision-assistant.service -f
+```
+
 ## Troubleshooting
 
 ### Missing `OPENAI_API_KEY`
