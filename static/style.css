@@ -105,11 +105,13 @@ button:disabled {
 
 .status-label,
 .status-value,
+.mode-summary,
 .mode-indicator span,
 .mode-indicator strong,
 .state-kicker,
 .state-title,
 .state-detail,
+.state-note,
 .debug-text,
 .answer-copy p,
 .answer-copy ul {
@@ -130,6 +132,14 @@ button:disabled {
     font-size: 22px;
     font-weight: 900;
     line-height: 1.02;
+}
+
+.mode-summary {
+    margin-top: 8px;
+    color: var(--ink-soft);
+    font-size: 12px;
+    font-weight: 800;
+    line-height: 1.2;
 }
 
 .mode-indicator {
@@ -231,6 +241,14 @@ button:disabled {
     line-height: 1.2;
 }
 
+.state-note {
+    margin-top: 9px;
+    color: var(--ink-soft);
+    font-size: 14px;
+    font-weight: 800;
+    line-height: 1.25;
+}
+
 .processing-copy .state-title {
     color: var(--figma-shell);
 }
@@ -328,9 +346,8 @@ button:disabled {
     margin-top: 11px;
     padding-right: 5px;
     overflow-y: auto;
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-auto-rows: minmax(43px, auto);
+    display: flex;
+    flex-direction: column;
     gap: 8px;
     scrollbar-width: auto;
     scrollbar-color: var(--figma-shell) rgba(47, 0, 73, 0.16);
@@ -342,20 +359,40 @@ button:disabled {
 
 .mode-choice {
     width: 100%;
-    min-height: 43px;
-    padding: 7px 8px;
+    min-height: 56px;
+    padding: 10px 11px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
     color: var(--white);
     background: var(--figma-shell);
     border-radius: 10px;
-    font-size: 13px;
-    font-weight: 900;
     line-height: 1.1;
     text-align: left;
+}
+
+.mode-choice-title {
+    display: block;
+    font-size: 14px;
+    font-weight: 900;
+}
+
+.mode-choice-description {
+    display: block;
+    color: rgba(255, 255, 255, 0.82);
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.25;
 }
 
 .mode-choice-active {
     color: var(--white);
     background: var(--figma-green);
+}
+
+.mode-choice-active .mode-choice-description {
+    color: rgba(255, 255, 255, 0.9);
 }
 
 .mode-choice:active {
@@ -445,6 +482,10 @@ button:disabled {
         font-size: 16px;
     }
 
+    .state-note {
+        font-size: 12px;
+    }
+
     .figma-button {
         font-size: 12px;
     }
@@ -454,12 +495,19 @@ button:disabled {
     }
 
     .mode-scroll {
-        grid-auto-rows: minmax(36px, auto);
         gap: 6px;
     }
 
     .mode-choice {
-        min-height: 36px;
-        font-size: 11px;
+        min-height: 48px;
+        padding: 8px 9px;
+    }
+
+    .mode-choice-title {
+        font-size: 12px;
+    }
+
+    .mode-choice-description {
+        font-size: 10px;
     }
 }

@@ -14,24 +14,29 @@ class ScreenOptimizationResolutionTests(unittest.TestCase):
     """Verify auto/on/off screen optimization behavior by mode."""
 
     def test_auto_enables_screen_optimization_for_text_modes(self) -> None:
+        self.assertTrue(should_use_screen_optimization("document_reader", "auto"))
+        self.assertTrue(should_use_screen_optimization("math_solver", "auto"))
+        self.assertTrue(should_use_screen_optimization("meeting_assistant", "auto"))
+        self.assertFalse(should_use_screen_optimization("engineering_mode", "auto"))
+        self.assertFalse(should_use_screen_optimization("general_vision", "auto"))
+
+    def test_legacy_aliases_still_normalize_for_auto_screen_optimization(self) -> None:
         self.assertTrue(should_use_screen_optimization("read_text", "auto"))
-        self.assertTrue(should_use_screen_optimization("summarize", "auto"))
         self.assertTrue(should_use_screen_optimization("summarize_document", "auto"))
         self.assertTrue(should_use_screen_optimization("solve_problem", "auto"))
-        self.assertFalse(should_use_screen_optimization("analyze_image", "auto"))
         self.assertFalse(should_use_screen_optimization("professional_assistant", "auto"))
 
     def test_on_forces_screen_optimization_for_all_modes(self) -> None:
-        self.assertTrue(should_use_screen_optimization("analyze_image", "on"))
-        self.assertTrue(should_use_screen_optimization("professional_assistant", "on"))
+        self.assertTrue(should_use_screen_optimization("engineering_mode", "on"))
+        self.assertTrue(should_use_screen_optimization("general_vision", "on"))
 
     def test_off_disables_screen_optimization_for_all_modes(self) -> None:
-        self.assertFalse(should_use_screen_optimization("read_text", "off"))
-        self.assertFalse(should_use_screen_optimization("professional_assistant", "off"))
+        self.assertFalse(should_use_screen_optimization("document_reader", "off"))
+        self.assertFalse(should_use_screen_optimization("general_vision", "off"))
 
     def test_invalid_screen_optimization_setting_raises_value_error(self) -> None:
         with self.assertRaises(ValueError):
-            should_use_screen_optimization("read_text", "sometimes")
+            should_use_screen_optimization("document_reader", "sometimes")
 
 
 class ProcessedFreshnessTests(unittest.TestCase):

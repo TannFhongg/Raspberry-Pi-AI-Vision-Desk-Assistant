@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from ai.prompts import get_available_modes
+from ai.prompts import get_available_modes, normalize_mode
 from config import SettingsError, load_device_settings
 from gpio import GPIOButtonError, GPIOButtonTrigger
 
@@ -17,9 +17,10 @@ def build_parser(settings) -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--mode",
-        default="solve_problem",
+        default=settings.ai.default_mode,
+        type=normalize_mode,
         choices=get_available_modes(),
-        help="AI mode to use when the button is pressed.",
+        help="Assistant mode to use when the button is pressed. Legacy mode aliases are also accepted.",
     )
     parser.add_argument(
         "--backend",

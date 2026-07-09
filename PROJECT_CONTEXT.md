@@ -34,7 +34,9 @@ Shared core:
 - `vision/perspective.py`: quadrilateral ordering, scaling, and four-point perspective correction
 - `vision/enhance_text.py`: denoise, brightness correction, CLAHE contrast, and text sharpening
 - `ai/openai_client.py`: OpenAI Responses API wrapper for image analysis with friendly app errors
-- `ai/prompts.py`: supported mode definitions, alias handling, and prompt builder
+- `ai/modes.py`: canonical assistant mode registry, alias handling, and UI metadata
+- `ai/context.py`: hidden backend context builder for mode-specific OpenAI instructions
+- `ai/prompts.py`: compatibility shim for older mode/prompt imports
 - `hardware/status.py`: shared `READY`, `CAPTURING`, `PROCESSING`, `DONE`, and `ERROR` lifecycle helpers for the UI and hardware flows
 - `hardware/button.py`: canonical gpiozero-based short-press capture and long-press clear controller with debounce and duplicate-trigger protection
 - `hardware/led.py`: optional single-color GPIO LED indicator that mirrors the shared device lifecycle
@@ -53,18 +55,21 @@ Runtime artifacts:
 
 ## Supported AI Modes
 
-Defined in `ai/prompts.py`:
+Defined in `ai/modes.py`:
 
-- `read_text`
-- `summarize`
-- `summarize_document`
-- `solve_problem`
-- `analyze_image`
-- `professional_assistant`
+- `document_reader`
+- `math_solver`
+- `meeting_assistant`
+- `engineering_mode`
+- `general_vision`
 
-`summarize` is an alias for `summarize_document`.
+Legacy aliases are still accepted:
 
-With `SCREEN_OPTIMIZATION=auto`, the advanced screen/document optimization path is enabled by default only for `read_text`, `summarize_document`, and `solve_problem`.
+- `read_text`, `summarize`, `summarize_document` -> `document_reader`
+- `solve_problem` -> `math_solver`
+- `analyze_image`, `professional_assistant` -> `general_vision`
+
+With `SCREEN_OPTIMIZATION=auto`, the advanced screen/document optimization path is enabled by default only for `document_reader`, `math_solver`, and `meeting_assistant`.
 
 ## Web UI Behavior
 
@@ -150,7 +155,7 @@ Security note: keep `.env` out of git and keep `.env.example` limited to placeho
 Run OpenAI Vision on an existing image:
 
 ```bash
-python test_ai_vision.py --image test_images/document.jpg --mode summarize_document
+python test_ai_vision.py --image test_images/document.jpg --mode document_reader
 ```
 
 Capture from camera:
@@ -177,12 +182,12 @@ python test_screen_vision.py --input test_images/screen_photo.jpg --detect-scree
 Run full terminal pipeline:
 
 ```bash
-python main.py --mode solve_problem
-python main.py --mode analyze_image
-python main.py --mode read_text --backend picamera2
-python main.py --mode professional_assistant --backend opencv --camera-index 0
-python main.py --mode read_text --skip-capture --screen-optimization on
-python main.py --mode read_text --skip-capture --screen-optimization off
+python main.py --mode math_solver
+python main.py --mode engineering_mode
+python main.py --mode document_reader --backend picamera2
+python main.py --mode general_vision --backend opencv --camera-index 0
+python main.py --mode document_reader --skip-capture --screen-optimization on
+python main.py --mode document_reader --skip-capture --screen-optimization off
 ```
 
 Run Flask touchscreen UI:
@@ -207,8 +212,8 @@ Run GPIO button listener:
 
 ```bash
 python test_gpio_button.py
-python test_gpio_button.py --mode read_text
-python test_gpio_button.py --mode professional_assistant --backend picamera2
+python test_gpio_button.py --mode document_reader
+python test_gpio_button.py --mode general_vision --backend picamera2
 ```
 
 ## Hardware Context

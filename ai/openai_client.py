@@ -6,7 +6,8 @@ import base64
 import os
 from pathlib import Path
 
-from ai.prompts import build_prompt
+from ai.context import build_mode_context
+from ai.modes import get_mode, normalize_mode
 
 DEFAULT_OPENAI_MODEL = "gpt-5.4-mini"
 MAX_IMAGE_SIZE_MB = 10
@@ -48,22 +49,28 @@ class OpenAIVisionClient:
         image_file = self._validate_image_file(image_path)
 
         try:
-            prompt = build_prompt(mode, extra_instruction)
+            canonical_mode = normalize_mode(mode)
+            instructions = build_mode_context(canonical_mode, extra_instruction)
         except ValueError as exc:
             raise VisionClientError(str(exc)) from exc
 
         mime_type = self._get_mime_type(image_file)
         data_url = self._build_data_url(image_file, mime_type)
         selected_model = model or self.default_model
+        selected_mode = get_mode(canonical_mode)
 
         try:
             response = self.client.responses.create(
                 model=selected_model,
+                instructions=instructions,
                 input=[
                     {
                         "role": "user",
                         "content": [
-                            {"type": "input_text", "text": prompt},
+                            {
+                                "type": "input_text",
+                                "text": f"Analyze this image using the {selected_mode.name} mode.",
+                            },
                             {"type": "input_image", "image_url": data_url},
                         ],
                     }

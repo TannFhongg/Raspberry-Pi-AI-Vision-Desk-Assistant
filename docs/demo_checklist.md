@@ -10,7 +10,7 @@
 - Confirm `data/latest_result.txt` and `data/ui_state.json` are writable
 - Start `python app.py` and open `http://127.0.0.1:5000`
 - If demoing the small display, use portrait settings such as `UI_SCREEN_WIDTH=320 UI_SCREEN_HEIGHT=480 UI_DISPLAY_ORIENTATION=portrait`
-- Preselect a useful demo mode such as `Read Text` or `Solve Problem`
+- Preselect a useful demo mode such as `Document Reader` or `Math Solver`
 
 ## Demo Flow
 

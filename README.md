@@ -147,7 +147,7 @@ SCREEN_OPTIMIZATION=auto
 UI_SCREEN_WIDTH=480
 UI_SCREEN_HEIGHT=320
 UI_DISPLAY_ORIENTATION=landscape
-AI_DEFAULT_MODE=read_text
+AI_DEFAULT_MODE=document_reader
 STARTUP_BEHAVIOR=kiosk
 STARTUP_URL=http://localhost:5000
 UI_BASE_FONT_SIZE=20
@@ -201,7 +201,7 @@ led:
   active_high: true
 
 ai:
-  default_mode: read_text
+  default_mode: document_reader
 
 vision:
   screen_optimization: auto
@@ -211,12 +211,24 @@ startup:
   url: http://localhost:5000
 ```
 
+## Assistant Modes
+
+The Phase 13 assistant experience uses 5 user-facing modes:
+
+- `document_reader`
+- `math_solver`
+- `meeting_assistant`
+- `engineering_mode`
+- `general_vision`
+
+Legacy mode values such as `read_text`, `summarize_document`, `solve_problem`, `analyze_image`, and `professional_assistant` are still accepted as aliases for backward compatibility.
+
 ## Phase 1: OpenAI Vision Test
 
 Send an existing image file to OpenAI Vision:
 
 ```bash
-python test_ai_vision.py --image test_images/document.jpg --mode summarize_document
+python test_ai_vision.py --image test_images/document.jpg --mode document_reader
 ```
 
 ## Phase 2: Camera Capture
@@ -282,18 +294,18 @@ static/processed.jpg
 Run the full pipeline from the terminal:
 
 ```bash
-python main.py --mode solve_problem
+python main.py --mode math_solver
 ```
 
 Other useful examples:
 
 ```bash
-python main.py --mode summarize
-python main.py --mode summarize_document
-python main.py --mode analyze_image
-python main.py --mode read_text --backend picamera2
-python main.py --mode professional_assistant --backend opencv --camera-index 0
-python main.py --mode read_text --grayscale
+python main.py --mode document_reader
+python main.py --mode meeting_assistant
+python main.py --mode engineering_mode
+python main.py --mode document_reader --backend picamera2
+python main.py --mode general_vision --backend opencv --camera-index 0
+python main.py --mode document_reader --grayscale
 ```
 
 ### Run Phase 4 without a camera
@@ -302,19 +314,19 @@ You can reuse a saved test image instead of capturing a new one:
 
 ```bash
 cp test_images/math_problem.jpg static/captured.jpg
-python main.py --mode solve_problem --skip-capture
+python main.py --mode math_solver --skip-capture
 ```
 
 Other no-camera examples:
 
 ```bash
-python main.py --mode summarize --skip-capture
-python main.py --mode read_text --skip-capture --grayscale
-python main.py --mode read_text --skip-capture --screen-optimization on
-python main.py --mode read_text --skip-capture --screen-optimization off
+python main.py --mode meeting_assistant --skip-capture
+python main.py --mode document_reader --skip-capture --grayscale
+python main.py --mode document_reader --skip-capture --screen-optimization on
+python main.py --mode document_reader --skip-capture --screen-optimization off
 ```
 
-When `--skip-capture` is used, `main.py` loads `static/captured.jpg`, preprocesses it into `static/processed.jpg`, and sends the processed image to OpenAI Vision. With `SCREEN_OPTIMIZATION=auto`, the advanced screen/document path is enabled by default for `read_text`, `summarize`, `summarize_document`, and `solve_problem`.
+When `--skip-capture` is used, `main.py` loads `static/captured.jpg`, preprocesses it into `static/processed.jpg`, and sends the processed image to OpenAI Vision. With `SCREEN_OPTIMIZATION=auto`, the advanced screen/document path is enabled by default for `document_reader`, `math_solver`, and `meeting_assistant`.
 
 ## Phase 5: Flask Touchscreen UI
 
@@ -337,7 +349,7 @@ Power on -> systemd starts Flask -> Chromium opens http://localhost:5000 in kios
 Screen flow:
 
 - `home`: ready screen showing the current mode, status, and large `Capture`, `Mode`, and `Retry` buttons
-- `mode_select`: dedicated mode picker for `Read Text`, `Summarize Document`, `Solve Problem`, `Analyze Image`, and `Professional Assistant`
+- `mode_select`: dedicated mode picker for `Document Reader`, `Math Solver`, `Meeting Assistant`, `Engineering Mode`, and `General Vision`
 - `processing`: auto-refreshing progress screen with simplified centered status and a `Thinking...` state during AI analysis
 - `result`: readable answer screen with a large scrollable answer box and persistent `Capture`, `Mode`, and `Retry` buttons
 - `error`: classified `Camera error`, `Network error`, `API error`, or generic error screen with the same touch-friendly action row
@@ -396,14 +408,14 @@ You can still run the standalone GPIO button listener:
 python test_gpio_button.py
 ```
 
-The default mode is `solve_problem`. You can override it:
+The default mode is `document_reader`. You can override it:
 
 ```bash
-python test_gpio_button.py --mode read_text
-python test_gpio_button.py --mode summarize
-python test_gpio_button.py --mode analyze_image
-python test_gpio_button.py --mode professional_assistant --backend picamera2
-python test_gpio_button.py --mode solve_problem --backend opencv --camera-index 0
+python test_gpio_button.py --mode document_reader
+python test_gpio_button.py --mode math_solver
+python test_gpio_button.py --mode engineering_mode
+python test_gpio_button.py --mode general_vision --backend picamera2
+python test_gpio_button.py --mode meeting_assistant --backend opencv --camera-index 0
 ```
 
 The script keeps listening until `Ctrl+C`.

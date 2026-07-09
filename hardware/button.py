@@ -6,6 +6,7 @@ import threading
 import time
 from typing import Any, Callable
 
+from ai.modes import normalize_mode
 from config import load_device_settings
 from hardware.led import LEDIndicator
 from hardware.status import (
@@ -57,7 +58,7 @@ class GPIOButtonTrigger:
             button_settings.debounce_seconds if debounce_seconds is None else debounce_seconds
         )
         self.hold_seconds = button_settings.hold_seconds if hold_seconds is None else hold_seconds
-        self.mode = settings.ai.default_mode if mode is None else mode
+        self.mode = normalize_mode(settings.ai.default_mode if mode is None else mode)
         self.backend = camera_settings.backend if backend is None else backend
         self.camera_index = camera_settings.index if camera_index is None else camera_index
         self.width = camera_settings.resolution.width if width is None else width

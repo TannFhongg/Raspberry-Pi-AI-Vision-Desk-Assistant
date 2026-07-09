@@ -58,7 +58,7 @@ class Phase11AppIntegrationTests(unittest.TestCase):
             with self.subTest(state=state):
                 app_module._write_device_state(
                     state,
-                    selected_mode="read_text",
+                    selected_mode="document_reader",
                     detail=extra.get("detail"),
                     answer=extra.get("answer", ""),
                     error=extra.get("error", ""),
@@ -73,7 +73,7 @@ class Phase11AppIntegrationTests(unittest.TestCase):
         self.latest_result_path.write_text("Old result\n", encoding="utf-8")
         app_module._write_device_state(
             DeviceState.DONE,
-            selected_mode="read_text",
+            selected_mode="document_reader",
             answer="Persistent answer",
             current_step=4,
         )
@@ -95,7 +95,7 @@ class Phase11AppIntegrationTests(unittest.TestCase):
         client = app_module.app.test_client()
         app_module._write_device_state(
             DeviceState.DONE,
-            selected_mode="solve_problem",
+            selected_mode="math_solver",
             answer="Line one",
             current_step=4,
         )
@@ -108,6 +108,57 @@ class Phase11AppIntegrationTests(unittest.TestCase):
         self.assertEqual(state["device_state"], "DONE")
         self.assertEqual(state["screen"], "result")
         self.assertEqual(state["answer"], "Line one")
+
+    def test_mode_screen_shows_only_new_mode_names_and_descriptions(self) -> None:
+        client = app_module.app.test_client()
+
+        response = client.get("/mode")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Document Reader", response.data)
+        self.assertIn(b"Math Solver", response.data)
+        self.assertIn(b"Meeting Assistant", response.data)
+        self.assertIn(b"Engineering Mode", response.data)
+        self.assertIn(b"General Vision", response.data)
+        self.assertIn(b"Extract key text and summarize documents or screens.", response.data)
+        self.assertNotIn(b"Read Text", response.data)
+        self.assertNotIn(b"Solve Problem", response.data)
+
+    def test_legacy_mode_selection_is_saved_as_canonical_mode(self) -> None:
+        client = app_module.app.test_client()
+
+        response = client.post("/mode/select", data={"mode": "solve_problem"})
+
+        self.assertEqual(response.status_code, 302)
+        state = app_module._load_ui_state()
+        self.assertEqual(state["selected_mode"], "math_solver")
+
+    def test_legacy_saved_mode_renders_with_new_label(self) -> None:
+        client = app_module.app.test_client()
+        self.ui_state_path.write_text(
+            (
+                "{\n"
+                '  "screen": "home",\n'
+                '  "device_state": "READY",\n'
+                '  "selected_mode": "read_text",\n'
+                '  "status": "Ready",\n'
+                '  "detail": "Tap Capture to begin",\n'
+                '  "answer": "",\n'
+                '  "error": "",\n'
+                '  "error_detail": "",\n'
+                '  "current_step": -1,\n'
+                '  "updated_at": "2026-07-09T22:00:00"\n'
+                "}\n"
+            ),
+            encoding="utf-8",
+        )
+
+        response = client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Document Reader", response.data)
+        state = app_module._load_ui_state()
+        self.assertEqual(state["selected_mode"], "document_reader")
 
 
 class _FakeLEDIndicator:

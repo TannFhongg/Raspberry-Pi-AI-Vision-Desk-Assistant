@@ -6,7 +6,7 @@ import argparse
 import sys
 
 from ai.openai_client import OpenAIVisionClient, VisionClientError
-from ai.prompts import get_available_modes
+from ai.prompts import get_available_modes, normalize_mode
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -23,9 +23,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--mode",
-        default="read_text",
+        default="document_reader",
+        type=normalize_mode,
         choices=available_modes,
-        help="AI mode to use for the analysis.",
+        help="Assistant mode to use for the analysis. Legacy mode aliases are also accepted.",
     )
     parser.add_argument(
         "--question",

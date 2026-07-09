@@ -7,6 +7,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from ai.modes import normalize_mode
+
 
 class DeviceState(str, Enum):
     """Lifecycle states shared by the UI, button controller, and LED."""
@@ -132,9 +134,16 @@ def clear_latest_result_file(
     result_path.parent.mkdir(parents=True, exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    normalized_mode = "n/a"
+    if mode:
+        try:
+            normalized_mode = normalize_mode(mode)
+        except ValueError:
+            normalized_mode = mode
+
     lines = [
         f"Timestamp: {timestamp}",
-        f"Mode: {mode or 'n/a'}",
+        f"Mode: {normalized_mode}",
         "Status: cleared",
         "Message: No result available",
     ]

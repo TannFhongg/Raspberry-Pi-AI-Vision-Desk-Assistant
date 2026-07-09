@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 from flask import Flask, redirect, render_template, request, url_for
 from markupsafe import Markup, escape
 
-from ai.prompts import normalize_mode
+from ai.modes import get_mode, get_ui_mode_options, normalize_mode
 from config import SettingsError, load_device_settings
 from hardware import (
     DeviceState,
@@ -41,17 +41,11 @@ app = Flask(__name__)
 UI_STATE_PATH = Path("data/ui_state.json")
 LATEST_RESULT_PATH = Path("data/latest_result.txt")
 VALID_SCREENS = {"home", "processing", "result", "error"}
-UI_MODE_OPTIONS = [
-    ("read_text", "Read Text"),
-    ("summarize", "Summarize Document"),
-    ("solve_problem", "Solve Problem"),
-    ("analyze_image", "Analyze Image"),
-    ("professional_assistant", "Professional Assistant"),
-]
-MODE_LABELS = dict(UI_MODE_OPTIONS)
+UI_MODE_OPTIONS = get_ui_mode_options()
+MODE_LABELS = {mode.id: mode.name for mode in UI_MODE_OPTIONS}
 PROGRESS_STEPS = [
     "Capturing image",
-    "Reading text",
+    "Preparing image",
     "Analyzing with AI",
     "Preparing answer",
 ]
@@ -132,10 +126,8 @@ UI_DISPLAY_ORIENTATION = _read_orientation_env(
 UI_PROCESSING_REFRESH_MS = _read_int_env("UI_PROCESSING_REFRESH_MS", 1200, minimum=500, maximum=5000)
 UI_IDLE_REFRESH_MS = _read_int_env("UI_IDLE_REFRESH_MS", 2500, minimum=1000, maximum=10000)
 DEFAULT_MODE = normalize_mode(SETTINGS.ai.default_mode)
-if DEFAULT_MODE == "summarize_document":
-    DEFAULT_MODE = "summarize"
-if DEFAULT_MODE not in dict(UI_MODE_OPTIONS):
-    DEFAULT_MODE = "read_text"
+if DEFAULT_MODE not in MODE_LABELS:
+    DEFAULT_MODE = "document_reader"
 READY_DETAIL = "Tap Capture or press the button" if ENABLE_GPIO_BUTTON else "Tap Capture to begin"
 HARDWARE_IDLE_SCREENS = {"home", "result", "error"}
 
@@ -210,7 +202,7 @@ def _build_template_context(screen_override: str | None = None) -> dict[str, Any
         screen = "home"
 
     selected_mode = _to_ui_mode(state["selected_mode"])
-    selected_mode_label = MODE_LABELS.get(selected_mode, MODE_LABELS[DEFAULT_MODE])
+    selected_mode_definition = get_mode(selected_mode)
 
     return {
         "screen": screen,
@@ -220,7 +212,8 @@ def _build_template_context(screen_override: str | None = None) -> dict[str, Any
         "error_detail": state["error_detail"],
         "answer_html": _format_answer_html(state["answer"]),
         "selected_mode": selected_mode,
-        "selected_mode_label": selected_mode_label,
+        "selected_mode_label": selected_mode_definition.name,
+        "selected_mode_description": selected_mode_definition.description,
         "mode_options": UI_MODE_OPTIONS,
         "progress_steps": _build_progress_steps(state["current_step"]),
         "auto_refresh_ms": _get_auto_refresh_ms(screen),
@@ -592,12 +585,11 @@ def _apply_led_state(device_state: DeviceState | str) -> None:
 
 def _to_ui_mode(mode: str) -> str:
     """Normalize internal mode names into the simplified UI values."""
-    normalized = normalize_mode(mode)
-    if normalized == "summarize_document":
-        return "summarize"
-    if normalized not in MODE_LABELS:
+    try:
+        normalized = normalize_mode(mode)
+    except ValueError:
         return DEFAULT_MODE
-    return normalized
+    return normalized if normalized in MODE_LABELS else DEFAULT_MODE
 
 
 def _is_running() -> bool:

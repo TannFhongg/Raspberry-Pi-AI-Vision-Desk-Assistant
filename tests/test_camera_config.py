@@ -91,7 +91,7 @@ def _build_settings() -> DeviceSettings:
             hold_seconds=1.2,
         ),
         led=LEDSettings(enabled=False, pin=27, active_high=True),
-        ai=AISettings(default_mode="read_text"),
+        ai=AISettings(default_mode="document_reader"),
         vision=VisionSettings(screen_optimization="auto"),
         startup=StartupSettings(behavior="kiosk", url="http://localhost:5000"),
         config_path=Path("config/device.yaml"),

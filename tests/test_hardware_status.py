@@ -21,7 +21,7 @@ class DeviceStatusHelperTests(unittest.TestCase):
 
     def test_ready_payload_maps_to_home_screen(self) -> None:
         payload = build_ready_state_payload(
-            selected_mode="read_text",
+            selected_mode="document_reader",
             ready_detail="Tap Capture or press the button",
         )
 
@@ -34,7 +34,7 @@ class DeviceStatusHelperTests(unittest.TestCase):
     def test_done_payload_maps_answer_to_result_screen(self) -> None:
         payload = build_ui_state_payload(
             DeviceState.DONE,
-            selected_mode="summarize",
+            selected_mode="document_reader",
             ready_detail="Ready",
             answer="Answer ready",
             current_step=4,
@@ -48,7 +48,7 @@ class DeviceStatusHelperTests(unittest.TestCase):
     def test_error_payload_maps_error_to_error_screen(self) -> None:
         payload = build_ui_state_payload(
             DeviceState.ERROR,
-            selected_mode="read_text",
+            selected_mode="document_reader",
             ready_detail="Ready",
             error="Camera not found",
             error_detail="Camera backend failed",
@@ -73,5 +73,5 @@ class DeviceStatusHelperTests(unittest.TestCase):
         contents = result_path.read_text(encoding="utf-8")
 
         self.assertIn("Status: cleared", contents)
-        self.assertIn("Mode: solve_problem", contents)
+        self.assertIn("Mode: math_solver", contents)
         self.assertIn("Message: No result available", contents)

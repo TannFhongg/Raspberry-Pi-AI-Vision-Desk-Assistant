@@ -15,7 +15,7 @@ from vision import ImagePreprocessError, preprocess_image, preprocess_output_mat
 DEFAULT_CAPTURED_PATH = Path("static/captured.jpg")
 DEFAULT_PROCESSED_PATH = Path("static/processed.jpg")
 DEFAULT_RESULT_PATH = Path("data/latest_result.txt")
-TEXT_HEAVY_MODES = frozenset({"read_text", "summarize_document", "solve_problem"})
+TEXT_HEAVY_MODES = frozenset({"document_reader", "math_solver", "meeting_assistant"})
 VALID_SCREEN_OPTIMIZATIONS = ("auto", "on", "off")
 StatusCallback = Callable[[str], None]
 
@@ -363,9 +363,14 @@ def save_latest_result(
     result_path.parent.mkdir(parents=True, exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        display_mode = normalize_mode(result.mode)
+    except ValueError:
+        display_mode = result.mode
+
     lines = [
         f"Timestamp: {timestamp}",
-        f"Mode: {result.mode}",
+        f"Mode: {display_mode}",
         f"Status: {result.status}",
         f"Camera backend: {result.camera_backend_used or 'n/a'}",
         f"Camera resolution: {_format_resolution(result.camera_resolution)}",

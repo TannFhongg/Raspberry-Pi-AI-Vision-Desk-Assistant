@@ -6,7 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from ai.prompts import get_available_modes
+from ai.prompts import get_available_modes, normalize_mode
 from config import SettingsError, load_device_settings
 from pipeline import PipelineError, run_analyze, run_capture_analyze, run_preprocess
 
@@ -22,8 +22,9 @@ def build_parser(settings) -> argparse.ArgumentParser:
     parser.add_argument(
         "--mode",
         required=True,
+        type=normalize_mode,
         choices=get_available_modes(),
-        help="AI mode to use for the final analysis.",
+        help="Assistant mode to use for the final analysis. Legacy mode aliases are also accepted.",
     )
     parser.add_argument(
         "--backend",

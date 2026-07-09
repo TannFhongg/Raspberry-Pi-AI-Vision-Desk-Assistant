@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 import yaml
+from ai.modes import get_available_modes, normalize_mode
 
 DEFAULT_CONFIG_PATH = Path("config/device.yaml")
 VALID_CAMERA_BACKENDS = ("auto", "picamera2", "opencv")
@@ -215,7 +216,7 @@ def load_device_settings(
             ),
         ),
         ai=AISettings(
-            default_mode=_parse_text(ai.get("default_mode"), "ai.default_mode"),
+            default_mode=_parse_mode(ai.get("default_mode"), "ai.default_mode"),
         ),
         vision=VisionSettings(
             screen_optimization=_parse_choice(
@@ -436,6 +437,18 @@ def _parse_text(value: Any, field_name: str) -> str:
     if not text:
         raise SettingsError(f"Value for '{field_name}' cannot be empty.")
     return text
+
+
+def _parse_mode(value: Any, field_name: str) -> str:
+    """Parse and normalize a supported assistant mode."""
+    raw_mode = _parse_text(value, field_name)
+    try:
+        return normalize_mode(raw_mode)
+    except ValueError as exc:
+        expected = ", ".join(get_available_modes())
+        raise SettingsError(
+            f"Invalid value for '{field_name}': {value!r}. Expected one of: {expected}."
+        ) from exc
 
 
 def _parse_exposure(value: Any) -> str | int:

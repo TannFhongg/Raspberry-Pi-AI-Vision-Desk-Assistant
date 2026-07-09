@@ -78,6 +78,7 @@ Phase 8 adds a typed device configuration layer, hardware-aware camera control r
 - `config/settings.py` loads `config/device.yaml` and applies environment overrides so hardware values are no longer hardcoded across entrypoints.
 - `hardware/camera_config.py` resolves autofocus-capable Picamera2 modes, best-fit still resolutions, and best-effort OpenCV controls.
 - `hardware/device_check.py` runs standalone diagnostics for camera, display, internet, OpenAI API reachability, and GPIO readiness.
+- `ai/modes.py` and `ai/context.py` now separate mode metadata from hidden OpenAI request instructions so the device can switch between professional assistant behaviors cleanly.
 - `app.py` persists selected mode and current screen in `data/ui_state.json`, then renders a screen-specific section from `templates/index.html`.
 - The current touchscreen state machine is `home -> processing -> result/error`, with a separate `mode_select` screen for choosing the active AI mode.
 - `/capture`, `/capture-analyze`, and `/analyze` are compatibility routes that currently all start the same background `run_capture_analyze` job.

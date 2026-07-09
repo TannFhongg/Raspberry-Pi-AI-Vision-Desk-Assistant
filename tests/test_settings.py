@@ -37,7 +37,7 @@ class LoadDeviceSettingsTests(unittest.TestCase):
               enabled: true
               pin: 17
             ai:
-              default_mode: read_text
+              default_mode: document_reader
             vision:
               screen_optimization: auto
             startup:
@@ -57,6 +57,7 @@ class LoadDeviceSettingsTests(unittest.TestCase):
         self.assertFalse(settings.led.enabled)
         self.assertEqual(settings.led.pin, 27)
         self.assertTrue(settings.led.active_high)
+        self.assertEqual(settings.ai.default_mode, "document_reader")
         self.assertEqual(settings.vision.screen_optimization, "auto")
         self.assertEqual(settings.startup.behavior, "kiosk")
 
@@ -84,7 +85,7 @@ class LoadDeviceSettingsTests(unittest.TestCase):
               enabled: true
               pin: 17
             ai:
-              default_mode: read_text
+              default_mode: document_reader
             vision:
               screen_optimization: auto
             startup:
@@ -130,7 +131,7 @@ class LoadDeviceSettingsTests(unittest.TestCase):
         self.assertTrue(settings.led.enabled)
         self.assertEqual(settings.led.pin, 23)
         self.assertFalse(settings.led.active_high)
-        self.assertEqual(settings.ai.default_mode, "solve_problem")
+        self.assertEqual(settings.ai.default_mode, "math_solver")
         self.assertEqual(settings.vision.screen_optimization, "on")
         self.assertEqual(settings.startup.behavior, "manual")
 
@@ -158,7 +159,7 @@ class LoadDeviceSettingsTests(unittest.TestCase):
               enabled: true
               pin: 17
             ai:
-              default_mode: read_text
+              default_mode: document_reader
             vision:
               screen_optimization: auto
             startup:
@@ -194,7 +195,7 @@ class LoadDeviceSettingsTests(unittest.TestCase):
               enabled: true
               pin: 17
             ai:
-              default_mode: read_text
+              default_mode: document_reader
             vision:
               screen_optimization: maybe
             startup:

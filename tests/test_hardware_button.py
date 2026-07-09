@@ -173,4 +173,4 @@ class _FakeCameraSettings:
 
 
 class _FakeAISettings:
-    default_mode = "read_text"
+    default_mode = "document_reader"

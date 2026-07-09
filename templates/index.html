@@ -12,8 +12,8 @@
     {% set processing_headline = "Thinking..." %}
 {% elif detail == "Capturing image" %}
     {% set processing_headline = "Capturing..." %}
-{% elif detail == "Reading text" %}
-    {% set processing_headline = "Reading..." %}
+{% elif detail == "Preparing image" %}
+    {% set processing_headline = "Preparing..." %}
 {% endif %}
 {% set error_text = (error or "")|lower %}
 {% set error_kind = "generic" %}
@@ -50,14 +50,15 @@
         {% if screen == "mode_select" %}
         <section class="figma-stage mode-select-stage">
             <div class="sr-only" aria-live="polite">
-                Mode selection. Current mode: {{ selected_mode_label }}.
+                Mode selection. Current mode: {{ selected_mode_label }}. {{ selected_mode_description }}.
             </div>
 
             <section class="figma-card mode-card" aria-label="Mode choices">
                 <header class="status-area">
                     <div>
                         <p class="status-label">MODE</p>
-                        <p class="status-value">Select focus</p>
+                        <p class="status-value">Select assistant</p>
+                        <p class="mode-summary">{{ selected_mode_description }}</p>
                     </div>
                     <div class="mode-indicator">
                         <span>Current</span>
@@ -66,15 +67,16 @@
                 </header>
 
                 <div class="mode-scroll" role="list">
-                    {% for value, label in mode_options %}
+                    {% for mode_option in mode_options %}
                     <form method="post" action="{{ url_for('select_mode') }}" class="mode-option-form">
-                        <input type="hidden" name="mode" value="{{ value }}">
+                        <input type="hidden" name="mode" value="{{ mode_option.id }}">
                         <button
                             type="submit"
-                            class="mode-choice{% if selected_mode == value %} mode-choice-active{% endif %}"
+                            class="mode-choice{% if selected_mode == mode_option.id %} mode-choice-active{% endif %}"
                             {% if is_processing %}disabled{% endif %}
                         >
-                            {{ label }}
+                            <span class="mode-choice-title">{{ mode_option.name }}</span>
+                            <span class="mode-choice-description">{{ mode_option.description }}</span>
                         </button>
                     </form>
                     {% endfor %}
@@ -90,7 +92,7 @@
         {% else %}
         <section class="figma-stage main-stage">
             <div class="sr-only" aria-live="polite">
-                {{ status }}. {{ detail }}. Mode: {{ selected_mode_label }}.
+                {{ status }}. {{ detail }}. Mode: {{ selected_mode_label }}. {{ selected_mode_description }}.
             </div>
 
             <section class="figma-card answer-card" aria-label="Assistant response">
@@ -127,7 +129,8 @@
                     <div class="state-copy ready-copy">
                         <p class="state-kicker">Ready</p>
                         <p class="state-title">{{ selected_mode_label }}</p>
-                        <p class="state-detail">{{ detail }}</p>
+                        <p class="state-detail">{{ selected_mode_description }}</p>
+                        <p class="state-note">{{ detail }}</p>
                     </div>
                     {% endif %}
                 </div>
