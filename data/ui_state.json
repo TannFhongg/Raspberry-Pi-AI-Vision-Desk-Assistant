@@ -1,11 +1,11 @@
 {
   "screen": "home",
-  "selected_mode": "solve_problem",
+  "selected_mode": "read_text",
   "status": "Ready",
   "detail": "Tap Capture or press the button",
   "answer": "",
   "error": "",
   "error_detail": "",
   "current_step": -1,
-  "updated_at": "2026-07-08T23:34:26"
+  "updated_at": "2026-07-09T11:53:58"
 }
