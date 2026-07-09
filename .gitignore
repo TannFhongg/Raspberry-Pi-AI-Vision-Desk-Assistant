@@ -10,4 +10,4 @@ debug/
 data/latest_result.txt
 data/web_feedback.json
 .env
-.json
+*.json
