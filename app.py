@@ -236,7 +236,7 @@ def _build_template_context(screen_override: str | None = None) -> dict[str, Any
             "orientation": _resolve_orientation(),
         },
     }
-
+ 
 
 def _start_capture_job() -> bool:
     """Start the shared capture workflow unless one is already running."""
