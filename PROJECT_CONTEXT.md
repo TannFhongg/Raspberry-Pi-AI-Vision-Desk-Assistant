@@ -8,7 +8,7 @@ Project root: `C:\Users\Admin\Desktop\Raspberry Pi AI Vision Desk Assistant`
 This repository is a portfolio-ready Raspberry Pi 5 AI vision desk assistant. It demonstrates a full local hardware and software workflow:
 
 ```text
-Camera capture -> OpenCV preprocessing -> OpenAI Vision analysis -> CLI / Touchscreen UI / GPIO result
+Camera capture -> OpenCV preprocessing / screen optimization -> OpenAI Vision analysis -> CLI / Touchscreen UI / GPIO result
 ```
 
 The project is organized in phases so each layer can be tested independently and then composed through a shared pipeline.
@@ -23,12 +23,16 @@ Main entrypoints:
 - `test_ai_vision.py`: one-off OpenAI Vision test using an existing local image
 - `test_camera_capture.py`: one-off camera capture test
 - `test_preprocess.py`: one-off OpenCV preprocessing test
+- `test_screen_vision.py`: one-off long-distance screen/document optimization test with debug outputs
 
 Shared core:
 
 - `pipeline/runner.py`: central orchestration for `run_capture`, `run_preprocess`, `run_analyze`, `run_capture_analyze`, and `save_latest_result`
 - `camera/capture.py`: camera abstraction with `auto`, `picamera2`, and `opencv` backends. Auto tries Picamera2 first, then OpenCV
-- `vision/preprocess.py`: safe preprocessing with optional resize, grayscale, CLAHE contrast, and light sharpening
+- `vision/preprocess.py`: preprocessing orchestration for both the legacy path and the advanced screen/document optimization path
+- `vision/screen_detect.py`: preview-based rectangle detection for screens and documents
+- `vision/perspective.py`: quadrilateral ordering, scaling, and four-point perspective correction
+- `vision/enhance_text.py`: denoise, brightness correction, CLAHE contrast, and text sharpening
 - `ai/openai_client.py`: OpenAI Responses API wrapper for image analysis with friendly app errors
 - `ai/prompts.py`: supported mode definitions, alias handling, and prompt builder
 - `gpio/button.py`: gpiozero-based button trigger with a busy flag to avoid overlapping pipeline runs
@@ -39,6 +43,8 @@ Runtime artifacts:
 
 - `static/captured.jpg`: latest camera capture
 - `static/processed.jpg`: latest preprocessed image
+- `static/processed.jpg.meta.json`: preprocessing sidecar metadata used for freshness checks
+- `debug/`: latest advanced screen/document debug images
 - `data/latest_result.txt`: latest readable pipeline result from Flask or standalone GPIO runs
 - `data/ui_state.json`: saved UI mode, current screen, status text, and answer/error state
 
@@ -54,6 +60,8 @@ Defined in `ai/prompts.py`:
 - `professional_assistant`
 
 `summarize` is an alias for `summarize_document`.
+
+With `SCREEN_OPTIMIZATION=auto`, the advanced screen/document optimization path is enabled by default only for `read_text`, `summarize_document`, and `solve_problem`.
 
 ## Web UI Behavior
 
@@ -112,6 +120,7 @@ VISION_CAPTURE_WIDTH=1280
 VISION_CAPTURE_HEIGHT=720
 VISION_GRAYSCALE=0
 VISION_MAX_DIMENSION=1600
+SCREEN_OPTIMIZATION=auto
 UI_SCREEN_WIDTH=480
 UI_SCREEN_HEIGHT=320
 UI_DISPLAY_ORIENTATION=landscape
@@ -149,6 +158,12 @@ python test_preprocess.py
 python test_preprocess.py --grayscale
 ```
 
+Run advanced screen/document preprocessing:
+
+```bash
+python test_screen_vision.py --input test_images/screen_photo.jpg --detect-screen --enhance
+```
+
 Run full terminal pipeline:
 
 ```bash
@@ -156,6 +171,8 @@ python main.py --mode solve_problem
 python main.py --mode analyze_image
 python main.py --mode read_text --backend picamera2
 python main.py --mode professional_assistant --backend opencv --camera-index 0
+python main.py --mode read_text --skip-capture --screen-optimization on
+python main.py --mode read_text --skip-capture --screen-optimization off
 ```
 
 Run Flask touchscreen UI:
@@ -212,7 +229,7 @@ Docs:
 Observed git status before this file was last updated:
 
 ```text
-clean
+dirty (Phase 9 implementation changes present)
 ```
 
 ## Known Limitations And Follow-ups

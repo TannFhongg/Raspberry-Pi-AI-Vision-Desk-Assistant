@@ -24,6 +24,9 @@ button:
 ai:
   default_mode: read_text
 
+vision:
+  screen_optimization: auto
+
 startup:
   behavior: kiosk
   url: http://localhost:5000

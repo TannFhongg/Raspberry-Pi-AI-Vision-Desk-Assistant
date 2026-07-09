@@ -93,6 +93,12 @@ def build_parser(settings) -> argparse.ArgumentParser:
         help="Resize only if the image longest side is larger than this value.",
     )
     parser.add_argument(
+        "--screen-optimization",
+        default=settings.vision.screen_optimization,
+        choices=("auto", "on", "off"),
+        help="Control long-distance screen/document optimization behavior.",
+    )
+    parser.add_argument(
         "--skip-capture",
         action="store_true",
         help="Reuse static/captured.jpg instead of capturing a new image first.",
@@ -134,8 +140,10 @@ def main() -> int:
             preprocess_result = run_preprocess(
                 input_path=str(CAPTURED_IMAGE_PATH),
                 output_path=str(PROCESSED_IMAGE_PATH),
+                mode=args.mode,
                 grayscale=args.grayscale,
                 max_dimension=args.max_dimension,
+                screen_optimization=args.screen_optimization,
                 status_callback=print,
             )
             result = run_analyze(
@@ -144,8 +152,10 @@ def main() -> int:
                 processed_path=str(preprocess_result.processed_path or PROCESSED_IMAGE_PATH),
                 grayscale=args.grayscale,
                 max_dimension=args.max_dimension,
+                screen_optimization=args.screen_optimization,
                 status_callback=print,
             )
+            result.warnings = (*preprocess_result.warnings, *result.warnings)
         else:
             result = run_capture_analyze(
                 mode=args.mode,
@@ -155,6 +165,7 @@ def main() -> int:
                 height=args.height,
                 grayscale=args.grayscale,
                 max_dimension=args.max_dimension,
+                screen_optimization=args.screen_optimization,
                 autofocus_mode=args.autofocus_mode,
                 exposure=args.exposure,
                 brightness=args.brightness,

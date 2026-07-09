@@ -12,6 +12,7 @@ import yaml
 DEFAULT_CONFIG_PATH = Path("config/device.yaml")
 VALID_CAMERA_BACKENDS = ("auto", "picamera2", "opencv")
 VALID_AUTOFOCUS_MODES = ("continuous", "auto", "off")
+VALID_SCREEN_OPTIMIZATIONS = ("auto", "on", "off")
 VALID_DISPLAY_ORIENTATIONS = ("landscape", "portrait", "auto")
 VALID_STARTUP_BEHAVIORS = ("kiosk", "service_only", "manual")
 
@@ -67,6 +68,13 @@ class AISettings:
 
 
 @dataclass(slots=True)
+class VisionSettings:
+    """Vision pipeline defaults shared across preprocess flows."""
+
+    screen_optimization: str
+
+
+@dataclass(slots=True)
 class StartupSettings:
     """Device startup behavior defaults."""
 
@@ -82,6 +90,7 @@ class DeviceSettings:
     display: DisplaySettings
     button: ButtonSettings
     ai: AISettings
+    vision: VisionSettings
     startup: StartupSettings
     config_path: Path
 
@@ -104,6 +113,7 @@ def load_device_settings(
     display = merged.get("display", {})
     button = merged.get("button", {})
     ai = merged.get("ai", {})
+    vision = merged.get("vision", {})
     startup = merged.get("startup", {})
 
     return DeviceSettings(
@@ -171,6 +181,13 @@ def load_device_settings(
         ai=AISettings(
             default_mode=_parse_text(ai.get("default_mode"), "ai.default_mode"),
         ),
+        vision=VisionSettings(
+            screen_optimization=_parse_choice(
+                vision.get("screen_optimization", "auto"),
+                VALID_SCREEN_OPTIMIZATIONS,
+                "vision.screen_optimization",
+            ),
+        ),
         startup=StartupSettings(
             behavior=_parse_choice(
                 startup.get("behavior"),
@@ -214,6 +231,7 @@ def _apply_environment_overrides(
     merged["display"] = dict(raw_data.get("display", {}))
     merged["button"] = dict(raw_data.get("button", {}))
     merged["ai"] = dict(raw_data.get("ai", {}))
+    merged["vision"] = dict(raw_data.get("vision", {}))
     merged["startup"] = dict(raw_data.get("startup", {}))
 
     camera = merged["camera"]
@@ -260,6 +278,12 @@ def _apply_environment_overrides(
     _set_if_present(merged["button"], "pin", env, "GPIO_BUTTON_PIN")
 
     _set_if_present(merged["ai"], "default_mode", env, "AI_DEFAULT_MODE")
+    _set_if_present(
+        merged["vision"],
+        "screen_optimization",
+        env,
+        "SCREEN_OPTIMIZATION",
+    )
 
     _set_if_present(merged["startup"], "behavior", env, "STARTUP_BEHAVIOR")
     _set_if_present(merged["startup"], "url", env, "STARTUP_URL")
@@ -387,4 +411,3 @@ def _parse_exposure(value: Any) -> str | int:
     if parsed_int <= 0:
         raise SettingsError("camera.exposure must be 'auto' or a positive integer.")
     return parsed_int
-

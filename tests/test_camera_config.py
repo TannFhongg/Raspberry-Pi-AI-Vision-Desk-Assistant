@@ -14,6 +14,7 @@ from config.settings import (
     DisplaySettings,
     ResolutionSettings,
     StartupSettings,
+    VisionSettings,
 )
 from hardware.camera_config import (
     build_camera_request,
@@ -84,6 +85,7 @@ def _build_settings() -> DeviceSettings:
         ),
         button=ButtonSettings(enabled=True, pin=17),
         ai=AISettings(default_mode="read_text"),
+        vision=VisionSettings(screen_optimization="auto"),
         startup=StartupSettings(behavior="kiosk", url="http://localhost:5000"),
         config_path=Path("config/device.yaml"),
     )

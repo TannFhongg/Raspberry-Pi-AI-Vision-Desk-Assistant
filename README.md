@@ -5,7 +5,7 @@
 Raspberry Pi AI Vision Desk Assistant is a portfolio-ready Raspberry Pi 5 project that demonstrates a full local AI vision workflow:
 
 ```text
-Camera Capture -> OpenCV Preprocessing -> OpenAI Vision Analysis -> CLI / Touchscreen UI / GPIO Trigger
+Camera Capture -> OpenCV Preprocessing / Screen Optimization -> OpenAI Vision Analysis -> CLI / Touchscreen UI / GPIO Trigger
 ```
 
 The project is organized in phases so each layer can be tested independently and then combined into a single shared pipeline.
@@ -16,6 +16,7 @@ The project is organized in phases so each layer can be tested independently and
 - Support autofocus, exposure, brightness, and capture-delay controls on supported camera backends
 - Fall back to OpenCV `VideoCapture` for USB webcams
 - Apply safe OpenCV preprocessing before AI analysis
+- Optimize distant monitor/document photos with screen detection, perspective correction, and text enhancement
 - Analyze images with multiple AI modes using the OpenAI Python SDK
 - Run the full pipeline from the terminal
 - Control the same pipeline from a touchscreen-first Flask UI
@@ -75,6 +76,7 @@ raspberry-pi-ai-vision-assistant/
 |-- test_ai_vision.py
 |-- test_camera_capture.py
 |-- test_gpio_button.py
+|-- test_screen_vision.py
 `-- test_preprocess.py
 ```
 
@@ -134,6 +136,7 @@ VISION_BRIGHTNESS=0.0
 VISION_CAPTURE_DELAY_SECONDS=1.0
 VISION_GRAYSCALE=0
 VISION_MAX_DIMENSION=1600
+SCREEN_OPTIMIZATION=auto
 UI_SCREEN_WIDTH=480
 UI_SCREEN_HEIGHT=320
 UI_DISPLAY_ORIENTATION=landscape
@@ -157,7 +160,7 @@ UI_IDLE_REFRESH_MS=2500
 config/device.yaml -> environment variables -> CLI flags
 ```
 
-Default camera, display, button, AI, and startup settings:
+Default camera, display, button, AI, vision, and startup settings:
 
 ```yaml
 camera:
@@ -185,6 +188,9 @@ button:
 
 ai:
   default_mode: read_text
+
+vision:
+  screen_optimization: auto
 
 startup:
   behavior: kiosk
@@ -257,6 +263,25 @@ Processed output:
 static/processed.jpg
 ```
 
+## Phase 9: Long-Distance Screen/Document Vision Optimization
+
+Run the advanced screen/document preprocessing flow on an existing image:
+
+```bash
+python test_screen_vision.py --input test_images/screen_photo.jpg --detect-screen --enhance
+```
+
+If `--detect-screen` and `--enhance` are both omitted, `test_screen_vision.py` enables both by default.
+
+Debug outputs:
+
+```text
+debug/original.jpg
+debug/detected_screen.jpg
+debug/corrected.jpg
+debug/enhanced.jpg
+```
+
 ## Phase 4: Full Terminal Pipeline
 
 Run the full pipeline from the terminal:
@@ -290,9 +315,11 @@ Other no-camera examples:
 ```bash
 python main.py --mode summarize --skip-capture
 python main.py --mode read_text --skip-capture --grayscale
+python main.py --mode read_text --skip-capture --screen-optimization on
+python main.py --mode read_text --skip-capture --screen-optimization off
 ```
 
-When `--skip-capture` is used, `main.py` loads `static/captured.jpg`, preprocesses it into `static/processed.jpg`, and sends the processed image to OpenAI Vision.
+When `--skip-capture` is used, `main.py` loads `static/captured.jpg`, preprocesses it into `static/processed.jpg`, and sends the processed image to OpenAI Vision. With `SCREEN_OPTIMIZATION=auto`, the advanced screen/document path is enabled by default for `read_text`, `summarize`, `summarize_document`, and `solve_problem`.
 
 ## Phase 5: Flask Touchscreen UI
 

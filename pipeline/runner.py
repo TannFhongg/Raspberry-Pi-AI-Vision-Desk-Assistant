@@ -10,11 +10,13 @@ from typing import Callable
 from ai.prompts import normalize_mode
 from config import load_device_settings
 from camera import CameraCaptureError, capture_image
-from vision import ImagePreprocessError, preprocess_image
+from vision import ImagePreprocessError, preprocess_image, preprocess_output_matches
 
 DEFAULT_CAPTURED_PATH = Path("static/captured.jpg")
 DEFAULT_PROCESSED_PATH = Path("static/processed.jpg")
 DEFAULT_RESULT_PATH = Path("data/latest_result.txt")
+TEXT_HEAVY_MODES = frozenset({"read_text", "summarize_document", "solve_problem"})
+VALID_SCREEN_OPTIMIZATIONS = ("auto", "on", "off")
 StatusCallback = Callable[[str], None]
 
 
@@ -49,16 +51,49 @@ def file_mtime(path: str | Path) -> float | None:
     return file_path.stat().st_mtime
 
 
-def is_processed_fresh(captured_path: str | Path, processed_path: str | Path) -> bool:
-    """Return True when the processed image is current for the latest capture."""
-    captured = Path(captured_path)
-    processed = Path(processed_path)
+def is_processed_fresh(
+    captured_path: str | Path,
+    processed_path: str | Path,
+    grayscale: bool = False,
+    max_dimension: int = 1600,
+    detect_screen: bool = False,
+    enhance_text: bool = False,
+) -> bool:
+    """Return True when the processed image matches the current source and options."""
+    return preprocess_output_matches(
+        input_path=captured_path,
+        output_path=processed_path,
+        grayscale=grayscale,
+        max_dimension=max_dimension,
+        detect_screen=detect_screen,
+        enhance_text=enhance_text,
+    )
 
-    if not processed.is_file():
-        return False
-    if not captured.is_file():
+
+def should_use_screen_optimization(mode: str | None, screen_optimization: str) -> bool:
+    """Resolve whether screen/document optimization should run for this mode."""
+    normalized_setting = screen_optimization.strip().lower()
+    if normalized_setting not in VALID_SCREEN_OPTIMIZATIONS:
+        expected = ", ".join(VALID_SCREEN_OPTIMIZATIONS)
+        raise ValueError(
+            f"Invalid screen optimization setting '{screen_optimization}'. Expected one of: {expected}."
+        )
+
+    if normalized_setting == "on":
         return True
-    return processed.stat().st_mtime >= captured.stat().st_mtime
+    if normalized_setting == "off" or mode is None:
+        return False
+
+    return normalize_mode(mode) in TEXT_HEAVY_MODES
+
+
+def resolve_preprocess_options(
+    mode: str | None,
+    screen_optimization: str,
+) -> tuple[bool, bool]:
+    """Resolve preprocess flags for screen detection and enhancement."""
+    use_screen_optimization = should_use_screen_optimization(mode, screen_optimization)
+    return use_screen_optimization, use_screen_optimization
 
 
 def run_capture(
@@ -105,8 +140,10 @@ def run_capture(
 def run_preprocess(
     input_path: str = str(DEFAULT_CAPTURED_PATH),
     output_path: str = str(DEFAULT_PROCESSED_PATH),
+    mode: str | None = None,
     grayscale: bool | None = None,
     max_dimension: int | None = None,
+    screen_optimization: str | None = None,
     status_callback: StatusCallback | None = None,
 ) -> PipelineResult:
     """Preprocess an image only and return a shared pipeline result."""
@@ -117,16 +154,27 @@ def run_preprocess(
         if max_dimension is None
         else max_dimension
     )
+    resolved_screen_optimization = (
+        settings.vision.screen_optimization
+        if screen_optimization is None
+        else screen_optimization
+    )
 
     try:
+        detect_screen, enhance_text = resolve_preprocess_options(
+            mode=mode,
+            screen_optimization=resolved_screen_optimization,
+        )
         _emit_status(status_callback, "Preprocessing image...")
         preprocess_result = preprocess_image(
             input_path=input_path,
             output_path=output_path,
             grayscale=resolved_grayscale,
             max_dimension=resolved_max_dimension,
+            detect_screen=detect_screen,
+            enhance_text=enhance_text,
         )
-    except ImagePreprocessError as exc:
+    except (ImagePreprocessError, ValueError) as exc:
         raise PipelineError(str(exc)) from exc
 
     return PipelineResult(
@@ -137,6 +185,7 @@ def run_preprocess(
         camera_backend_used=None,
         camera_resolution=None,
         status="success",
+        warnings=preprocess_result.warnings,
     )
 
 
@@ -146,6 +195,7 @@ def run_analyze(
     processed_path: str = str(DEFAULT_PROCESSED_PATH),
     grayscale: bool | None = None,
     max_dimension: int | None = None,
+    screen_optimization: str | None = None,
     status_callback: StatusCallback | None = None,
 ) -> PipelineResult:
     """Analyze the latest available image, preprocessing when needed."""
@@ -156,32 +206,59 @@ def run_analyze(
         if max_dimension is None
         else max_dimension
     )
+    resolved_screen_optimization = (
+        settings.vision.screen_optimization
+        if screen_optimization is None
+        else screen_optimization
+    )
     canonical_mode = normalize_mode(mode)
     captured_file = Path(captured_path)
     processed_file = Path(processed_path)
+    preprocess_warnings: tuple[str, ...] = ()
+
+    try:
+        detect_screen, enhance_text = resolve_preprocess_options(
+            mode=canonical_mode,
+            screen_optimization=resolved_screen_optimization,
+        )
+    except ValueError as exc:
+        raise PipelineError(str(exc)) from exc
 
     if not captured_file.is_file() and not processed_file.is_file():
         raise PipelineError("No image available. Please capture an image first.")
 
     final_processed_path = processed_file
-    if captured_file.is_file() and not is_processed_fresh(captured_file, processed_file):
+    if captured_file.is_file() and not is_processed_fresh(
+        captured_file,
+        processed_file,
+        grayscale=resolved_grayscale,
+        max_dimension=resolved_max_dimension,
+        detect_screen=detect_screen,
+        enhance_text=enhance_text,
+    ):
         preprocess_result = run_preprocess(
             input_path=str(captured_file),
             output_path=str(processed_file),
+            mode=canonical_mode,
             grayscale=resolved_grayscale,
             max_dimension=resolved_max_dimension,
+            screen_optimization=resolved_screen_optimization,
             status_callback=status_callback,
         )
         final_processed_path = preprocess_result.processed_path or processed_file
+        preprocess_warnings = preprocess_result.warnings
     elif not processed_file.is_file() and captured_file.is_file():
         preprocess_result = run_preprocess(
             input_path=str(captured_file),
             output_path=str(processed_file),
+            mode=canonical_mode,
             grayscale=resolved_grayscale,
             max_dimension=resolved_max_dimension,
+            screen_optimization=resolved_screen_optimization,
             status_callback=status_callback,
         )
         final_processed_path = preprocess_result.processed_path or processed_file
+        preprocess_warnings = preprocess_result.warnings
 
     try:
         from ai.openai_client import OpenAIVisionClient, VisionClientError
@@ -208,6 +285,7 @@ def run_analyze(
         camera_backend_used=None,
         camera_resolution=None,
         status="success",
+        warnings=preprocess_warnings,
     )
 
 
@@ -221,6 +299,7 @@ def run_capture_analyze(
     processed_path: str = str(DEFAULT_PROCESSED_PATH),
     grayscale: bool | None = None,
     max_dimension: int | None = None,
+    screen_optimization: str | None = None,
     autofocus_mode: str | None = None,
     exposure: str | int | None = None,
     brightness: float | None = None,
@@ -243,8 +322,10 @@ def run_capture_analyze(
     preprocess_result = run_preprocess(
         input_path=str(capture_result.captured_path or captured_path),
         output_path=processed_path,
+        mode=mode,
         grayscale=grayscale,
         max_dimension=max_dimension,
+        screen_optimization=screen_optimization,
         status_callback=status_callback,
     )
     analyze_result = run_analyze(
@@ -253,6 +334,7 @@ def run_capture_analyze(
         processed_path=str(preprocess_result.processed_path or processed_path),
         grayscale=grayscale,
         max_dimension=max_dimension,
+        screen_optimization=screen_optimization,
         status_callback=status_callback,
     )
 
@@ -264,7 +346,11 @@ def run_capture_analyze(
         camera_backend_used=capture_result.camera_backend_used,
         camera_resolution=capture_result.camera_resolution,
         status="success",
-        warnings=capture_result.warnings,
+        warnings=(
+            *capture_result.warnings,
+            *preprocess_result.warnings,
+            *analyze_result.warnings,
+        ),
     )
 
 

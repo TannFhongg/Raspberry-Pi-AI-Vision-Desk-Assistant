@@ -38,6 +38,8 @@ class LoadDeviceSettingsTests(unittest.TestCase):
               pin: 17
             ai:
               default_mode: read_text
+            vision:
+              screen_optimization: auto
             startup:
               behavior: kiosk
               url: http://localhost:5000
@@ -50,6 +52,7 @@ class LoadDeviceSettingsTests(unittest.TestCase):
         self.assertEqual(settings.camera.resolution.width, 4608)
         self.assertEqual(settings.display.size.height, 320)
         self.assertTrue(settings.button.enabled)
+        self.assertEqual(settings.vision.screen_optimization, "auto")
         self.assertEqual(settings.startup.behavior, "kiosk")
 
     def test_environment_overrides_take_precedence(self) -> None:
@@ -77,6 +80,8 @@ class LoadDeviceSettingsTests(unittest.TestCase):
               pin: 17
             ai:
               default_mode: read_text
+            vision:
+              screen_optimization: auto
             startup:
               behavior: kiosk
               url: http://localhost:5000
@@ -96,6 +101,7 @@ class LoadDeviceSettingsTests(unittest.TestCase):
                 "ENABLE_GPIO_BUTTON": "0",
                 "GPIO_BUTTON_PIN": "22",
                 "AI_DEFAULT_MODE": "solve_problem",
+                "SCREEN_OPTIMIZATION": "on",
                 "STARTUP_BEHAVIOR": "manual",
             },
         )
@@ -110,6 +116,7 @@ class LoadDeviceSettingsTests(unittest.TestCase):
         self.assertFalse(settings.button.enabled)
         self.assertEqual(settings.button.pin, 22)
         self.assertEqual(settings.ai.default_mode, "solve_problem")
+        self.assertEqual(settings.vision.screen_optimization, "on")
         self.assertEqual(settings.startup.behavior, "manual")
 
     def test_invalid_yaml_value_raises_settings_error(self) -> None:
@@ -137,6 +144,44 @@ class LoadDeviceSettingsTests(unittest.TestCase):
               pin: 17
             ai:
               default_mode: read_text
+            vision:
+              screen_optimization: auto
+            startup:
+              behavior: kiosk
+              url: http://localhost:5000
+            """
+        )
+
+        with self.assertRaises(SettingsError):
+            load_device_settings(config_path=config_path, env={})
+
+    def test_invalid_screen_optimization_raises_settings_error(self) -> None:
+        config_path = _write_temp_config(
+            """
+            camera:
+              backend: auto
+              index: 0
+              resolution:
+                width: 4608
+                height: 2592
+              autofocus_mode: continuous
+              exposure: auto
+              brightness: 0.0
+              capture_delay_seconds: 1.0
+              grayscale: false
+              max_dimension: 1600
+            display:
+              size:
+                width: 480
+                height: 320
+              orientation: landscape
+            button:
+              enabled: true
+              pin: 17
+            ai:
+              default_mode: read_text
+            vision:
+              screen_optimization: maybe
             startup:
               behavior: kiosk
               url: http://localhost:5000
