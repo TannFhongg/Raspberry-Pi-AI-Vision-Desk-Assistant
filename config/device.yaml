@@ -20,6 +20,13 @@ display:
 button:
   enabled: true
   pin: 17
+  debounce_seconds: 0.15
+  hold_seconds: 1.2
+
+led:
+  enabled: false
+  pin: 27
+  active_high: true
 
 ai:
   default_mode: read_text

@@ -15,6 +15,11 @@ VALID_AUTOFOCUS_MODES = ("continuous", "auto", "off")
 VALID_SCREEN_OPTIMIZATIONS = ("auto", "on", "off")
 VALID_DISPLAY_ORIENTATIONS = ("landscape", "portrait", "auto")
 VALID_STARTUP_BEHAVIORS = ("kiosk", "service_only", "manual")
+DEFAULT_BUTTON_DEBOUNCE_SECONDS = 0.15
+DEFAULT_BUTTON_HOLD_SECONDS = 1.2
+DEFAULT_LED_ENABLED = False
+DEFAULT_LED_PIN = 27
+DEFAULT_LED_ACTIVE_HIGH = True
 
 
 class SettingsError(Exception):
@@ -58,6 +63,17 @@ class ButtonSettings:
 
     enabled: bool
     pin: int
+    debounce_seconds: float
+    hold_seconds: float
+
+
+@dataclass(slots=True)
+class LEDSettings:
+    """Optional GPIO LED defaults."""
+
+    enabled: bool
+    pin: int
+    active_high: bool
 
 
 @dataclass(slots=True)
@@ -89,6 +105,7 @@ class DeviceSettings:
     camera: CameraSettings
     display: DisplaySettings
     button: ButtonSettings
+    led: LEDSettings
     ai: AISettings
     vision: VisionSettings
     startup: StartupSettings
@@ -112,6 +129,7 @@ def load_device_settings(
     camera = merged.get("camera", {})
     display = merged.get("display", {})
     button = merged.get("button", {})
+    led = merged.get("led", {})
     ai = merged.get("ai", {})
     vision = merged.get("vision", {})
     startup = merged.get("startup", {})
@@ -177,6 +195,24 @@ def load_device_settings(
         button=ButtonSettings(
             enabled=_parse_bool(button.get("enabled"), "button.enabled"),
             pin=_parse_int(button.get("pin"), "button.pin", minimum=0),
+            debounce_seconds=_parse_float(
+                button.get("debounce_seconds", DEFAULT_BUTTON_DEBOUNCE_SECONDS),
+                "button.debounce_seconds",
+                minimum=0.0,
+            ),
+            hold_seconds=_parse_float(
+                button.get("hold_seconds", DEFAULT_BUTTON_HOLD_SECONDS),
+                "button.hold_seconds",
+                minimum=0.0,
+            ),
+        ),
+        led=LEDSettings(
+            enabled=_parse_bool(led.get("enabled", DEFAULT_LED_ENABLED), "led.enabled"),
+            pin=_parse_int(led.get("pin", DEFAULT_LED_PIN), "led.pin", minimum=0),
+            active_high=_parse_bool(
+                led.get("active_high", DEFAULT_LED_ACTIVE_HIGH),
+                "led.active_high",
+            ),
         ),
         ai=AISettings(
             default_mode=_parse_text(ai.get("default_mode"), "ai.default_mode"),
@@ -230,6 +266,7 @@ def _apply_environment_overrides(
     merged["camera"] = dict(raw_data.get("camera", {}))
     merged["display"] = dict(raw_data.get("display", {}))
     merged["button"] = dict(raw_data.get("button", {}))
+    merged["led"] = dict(raw_data.get("led", {}))
     merged["ai"] = dict(raw_data.get("ai", {}))
     merged["vision"] = dict(raw_data.get("vision", {}))
     merged["startup"] = dict(raw_data.get("startup", {}))
@@ -276,6 +313,22 @@ def _apply_environment_overrides(
 
     _set_if_present(merged["button"], "enabled", env, "ENABLE_GPIO_BUTTON")
     _set_if_present(merged["button"], "pin", env, "GPIO_BUTTON_PIN")
+    _set_if_present(
+        merged["button"],
+        "debounce_seconds",
+        env,
+        "GPIO_BUTTON_DEBOUNCE_SECONDS",
+    )
+    _set_if_present(
+        merged["button"],
+        "hold_seconds",
+        env,
+        "GPIO_BUTTON_HOLD_SECONDS",
+    )
+
+    _set_if_present(merged["led"], "enabled", env, "ENABLE_GPIO_LED")
+    _set_if_present(merged["led"], "pin", env, "GPIO_LED_PIN")
+    _set_if_present(merged["led"], "active_high", env, "GPIO_LED_ACTIVE_HIGH")
 
     _set_if_present(merged["ai"], "default_mode", env, "AI_DEFAULT_MODE")
     _set_if_present(

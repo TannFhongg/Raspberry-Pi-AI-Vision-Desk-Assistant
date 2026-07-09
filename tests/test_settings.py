@@ -52,6 +52,11 @@ class LoadDeviceSettingsTests(unittest.TestCase):
         self.assertEqual(settings.camera.resolution.width, 4608)
         self.assertEqual(settings.display.size.height, 320)
         self.assertTrue(settings.button.enabled)
+        self.assertAlmostEqual(settings.button.debounce_seconds, 0.15)
+        self.assertAlmostEqual(settings.button.hold_seconds, 1.2)
+        self.assertFalse(settings.led.enabled)
+        self.assertEqual(settings.led.pin, 27)
+        self.assertTrue(settings.led.active_high)
         self.assertEqual(settings.vision.screen_optimization, "auto")
         self.assertEqual(settings.startup.behavior, "kiosk")
 
@@ -100,6 +105,11 @@ class LoadDeviceSettingsTests(unittest.TestCase):
                 "VISION_CAPTURE_DELAY_SECONDS": "2.5",
                 "ENABLE_GPIO_BUTTON": "0",
                 "GPIO_BUTTON_PIN": "22",
+                "GPIO_BUTTON_DEBOUNCE_SECONDS": "0.4",
+                "GPIO_BUTTON_HOLD_SECONDS": "1.8",
+                "ENABLE_GPIO_LED": "1",
+                "GPIO_LED_PIN": "23",
+                "GPIO_LED_ACTIVE_HIGH": "0",
                 "AI_DEFAULT_MODE": "solve_problem",
                 "SCREEN_OPTIMIZATION": "on",
                 "STARTUP_BEHAVIOR": "manual",
@@ -115,6 +125,11 @@ class LoadDeviceSettingsTests(unittest.TestCase):
         self.assertAlmostEqual(settings.camera.capture_delay_seconds, 2.5)
         self.assertFalse(settings.button.enabled)
         self.assertEqual(settings.button.pin, 22)
+        self.assertAlmostEqual(settings.button.debounce_seconds, 0.4)
+        self.assertAlmostEqual(settings.button.hold_seconds, 1.8)
+        self.assertTrue(settings.led.enabled)
+        self.assertEqual(settings.led.pin, 23)
+        self.assertFalse(settings.led.active_high)
         self.assertEqual(settings.ai.default_mode, "solve_problem")
         self.assertEqual(settings.vision.screen_optimization, "on")
         self.assertEqual(settings.startup.behavior, "manual")

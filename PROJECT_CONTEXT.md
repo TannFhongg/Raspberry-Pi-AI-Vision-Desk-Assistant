@@ -35,7 +35,10 @@ Shared core:
 - `vision/enhance_text.py`: denoise, brightness correction, CLAHE contrast, and text sharpening
 - `ai/openai_client.py`: OpenAI Responses API wrapper for image analysis with friendly app errors
 - `ai/prompts.py`: supported mode definitions, alias handling, and prompt builder
-- `gpio/button.py`: gpiozero-based button trigger with a busy flag to avoid overlapping pipeline runs
+- `hardware/status.py`: shared `READY`, `CAPTURING`, `PROCESSING`, `DONE`, and `ERROR` lifecycle helpers for the UI and hardware flows
+- `hardware/button.py`: canonical gpiozero-based short-press capture and long-press clear controller with debounce and duplicate-trigger protection
+- `hardware/led.py`: optional single-color GPIO LED indicator that mirrors the shared device lifecycle
+- `gpio/button.py`: compatibility wrapper that re-exports the new hardware button controller
 - `templates/index.html`: screen-based template for the current Phase 10 touch UI
 - `static/style.css`: portrait-first kiosk styles optimized for `320x480`, with large touch targets, scrollable answer content, and classified error screens
 
@@ -46,7 +49,7 @@ Runtime artifacts:
 - `static/processed.jpg.meta.json`: preprocessing sidecar metadata used for freshness checks
 - `debug/`: latest advanced screen/document debug images
 - `data/latest_result.txt`: latest readable pipeline result from Flask or standalone GPIO runs
-- `data/ui_state.json`: saved UI mode, current screen, status text, and answer/error state
+- `data/ui_state.json`: saved UI mode, current screen, `device_state`, status text, and answer/error state
 
 ## Supported AI Modes
 
@@ -78,10 +81,11 @@ Current touchscreen flow:
 Interaction notes:
 
 - `/capture`, `/capture-analyze`, and `/analyze` currently all start the same background `run_capture_analyze` workflow
-- `/back` and `/clear` both reset the UI to `home` while preserving the selected mode
+- `/back` returns to `home` while preserving the selected mode
+- `/clear` resets the UI to `READY` and clears `data/latest_result.txt`
 - `/retry` re-runs the same shared capture workflow for the currently selected mode
-- when the GPIO listener is started inside Flask, a physical button press reuses the same capture job as the touch UI
-- the home screen auto-refreshes while the embedded GPIO listener is active so hardware-triggered state changes appear without manual reload
+- when the GPIO listener is started inside Flask, short press triggers capture/analyze and long press clears the visible result or error
+- the `home`, `result`, and `error` screens auto-refresh while the embedded GPIO listener is active so hardware-triggered state changes appear without manual reload
 
 ## Setup Notes
 
@@ -115,6 +119,11 @@ OPENAI_MODEL=gpt-5.4-mini
 FLASK_SECRET_KEY=change_this_for_local_flask_sessions
 ENABLE_GPIO_BUTTON=1
 GPIO_BUTTON_PIN=17
+GPIO_BUTTON_DEBOUNCE_SECONDS=0.15
+GPIO_BUTTON_HOLD_SECONDS=1.2
+ENABLE_GPIO_LED=0
+GPIO_LED_PIN=27
+GPIO_LED_ACTIVE_HIGH=1
 VISION_CAMERA_BACKEND=auto
 VISION_CAMERA_INDEX=0
 VISION_CAPTURE_WIDTH=1280
@@ -209,6 +218,7 @@ Required or expected hardware:
 - Raspberry Pi 5
 - Raspberry Pi Camera Module, Arducam CSI camera, or USB webcam
 - Push button connected to GPIO17 and GND
+- Optional LED connected to a configured GPIO pin and GND
 - Internet connection for OpenAI API access
 - Optional HDMI display, small touchscreen, speaker, buzzer, or power bank for demos
 
@@ -230,7 +240,7 @@ Docs:
 Observed git status before this file was last updated:
 
 ```text
-dirty (Phase 10 touchscreen UI and documentation updates present)
+dirty (Phase 11 production hardware button and LED changes present)
 ```
 
 ## Known Limitations And Follow-ups
@@ -242,6 +252,7 @@ dirty (Phase 10 touchscreen UI and documentation updates present)
 - Only the latest result and UI state are stored; there is no history view yet
 - Phase 10 is tuned first for a `320x480` portrait touchscreen and may need further adjustment for other display sizes
 - A fuller background job queue would improve resilience for slow network or model responses
+- Exact button feel and LED timing still need final validation on the target Raspberry Pi hardware
 
 ## Development Guardrails
 

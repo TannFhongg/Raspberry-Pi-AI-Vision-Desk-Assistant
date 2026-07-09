@@ -22,6 +22,7 @@ The project is organized in phases so each layer can be tested independently and
 - Control the same pipeline from a touchscreen-first Flask UI
 - Use a production portrait touchscreen UI optimized for `320x480` Raspberry Pi displays
 - Use a configurable physical GPIO button to trigger the same capture flow
+- Use a production-style hardware state machine with short-press capture, long-press clear, and optional LED feedback
 - Load device defaults from `config/device.yaml` with environment variable and CLI overrides
 - Run `python check_hardware.py` to verify camera, display, internet, OpenAI, and GPIO readiness
 - Boot straight into the touchscreen UI with Chromium kiosk mode on Raspberry Pi OS Bookworm
@@ -127,6 +128,11 @@ Most hardware defaults now live in [config/device.yaml](config/device.yaml). Env
 DEVICE_CONFIG_PATH=config/device.yaml
 ENABLE_GPIO_BUTTON=1
 GPIO_BUTTON_PIN=17
+GPIO_BUTTON_DEBOUNCE_SECONDS=0.15
+GPIO_BUTTON_HOLD_SECONDS=1.2
+ENABLE_GPIO_LED=0
+GPIO_LED_PIN=27
+GPIO_LED_ACTIVE_HIGH=1
 VISION_CAMERA_BACKEND=auto
 VISION_CAMERA_INDEX=0
 VISION_CAPTURE_WIDTH=4608
@@ -186,6 +192,13 @@ display:
 button:
   enabled: true
   pin: 17
+  debounce_seconds: 0.15
+  hold_seconds: 1.2
+
+led:
+  enabled: false
+  pin: 27
+  active_high: true
 
 ai:
   default_mode: read_text
@@ -460,6 +473,32 @@ Chromium kiosk launch:
 ```bash
 chromium-browser --kiosk http://localhost:5000
 ```
+
+## Phase 11: Production Hardware Button And LED
+
+Phase 11 turns the physical controls into a product-style hardware flow shared by the Flask UI and GPIO listener.
+
+Device state machine:
+
+```text
+READY -> CAPTURING -> PROCESSING -> DONE | ERROR
+```
+
+Button behavior:
+
+- short press from `READY`, `DONE`, or `ERROR` starts a new capture and analysis run
+- long press from `READY`, `DONE`, or `ERROR` clears the visible answer or error and returns to `READY`
+- presses are ignored while the device is in `CAPTURING` or `PROCESSING`
+
+LED behavior with the optional single-color GPIO LED:
+
+- `READY`: solid on
+- `CAPTURING`: slow blink
+- `PROCESSING`: medium blink
+- `DONE`: solid on
+- `ERROR`: fast blink
+
+The current lifecycle state is now persisted in `data/ui_state.json` as `device_state`, and the idle touchscreen screens auto-refresh when the GPIO listener is active so button-only interaction updates the kiosk display without a keyboard.
 
 ## Troubleshooting
 

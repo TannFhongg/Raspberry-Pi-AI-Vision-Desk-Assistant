@@ -1,5 +1,6 @@
 {
   "screen": "home",
+  "device_state": "READY",
   "selected_mode": "professional_assistant",
   "status": "Ready",
   "detail": "Tap Capture or press the button",
