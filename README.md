@@ -150,6 +150,15 @@ UI_DISPLAY_ORIENTATION=landscape
 AI_DEFAULT_MODE=document_reader
 STARTUP_BEHAVIOR=kiosk
 STARTUP_URL=http://localhost:5000
+RELIABILITY_LOG_LEVEL=INFO
+RELIABILITY_LOG_MAX_BYTES=1048576
+RELIABILITY_LOG_BACKUP_COUNT=5
+RELIABILITY_HEALTH_MONITOR_ENABLED=1
+RELIABILITY_HEALTH_CHECK_INTERVAL_SECONDS=60
+RELIABILITY_CAMERA_PROBE_INTERVAL_SECONDS=300
+RELIABILITY_OPENAI_TIMEOUT_SECONDS=30
+RELIABILITY_OPENAI_RETRY_ATTEMPTS=3
+RELIABILITY_OPENAI_RETRY_BACKOFF_SECONDS=2
 UI_BASE_FONT_SIZE=20
 UI_TITLE_FONT_SIZE=34
 UI_STATUS_FONT_SIZE=28
@@ -209,7 +218,24 @@ vision:
 startup:
   behavior: kiosk
   url: http://localhost:5000
+
+reliability:
+  log_level: INFO
+  log_max_bytes: 1048576
+  log_backup_count: 5
+  health_monitor_enabled: true
+  health_check_interval_seconds: 60.0
+  camera_probe_interval_seconds: 300.0
+  openai_timeout_seconds: 30.0
+  openai_retry_attempts: 3
+  openai_retry_backoff_seconds: 2.0
 ```
+
+Runtime reliability artifacts:
+
+- `logs/app.log`: rotating general runtime log
+- `logs/error.log`: rotating error-only log
+- `data/health_status.json`: latest system health snapshot
 
 ## Assistant Modes
 
@@ -625,11 +651,20 @@ View live logs:
 journalctl -u ai-vision-assistant.service -f
 ```
 
+Local rotating files are also written to:
+
+```text
+logs/app.log
+logs/error.log
+```
+
 Note:
 
 - You may need to edit the service file paths for your actual repo location
 - You may need to change `User=pi` if your Raspberry Pi uses a different username
 - The service loads `.env`, and `.env` can override `config/device.yaml`
+- The service is configured to auto-restart after crashes with a short restart delay
+- Health snapshots are written to `data/health_status.json` when the health monitor is enabled
 
 For fullscreen kiosk startup on Raspberry Pi OS Bookworm with `labwc`:
 

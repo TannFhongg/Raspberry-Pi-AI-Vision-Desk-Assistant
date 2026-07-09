@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 os.environ.setdefault("ENABLE_GPIO_BUTTON", "0")
 os.environ.setdefault("ENABLE_GPIO_LED", "0")
+os.environ.setdefault("RELIABILITY_HEALTH_MONITOR_ENABLED", "0")
 
 import app as app_module
 
@@ -33,6 +34,7 @@ class Phase11AppIntegrationTests(unittest.TestCase):
         app_module.app.config["TESTING"] = True
         app_module.RUNNING = False
         app_module.GPIO_TRIGGER = None
+        app_module.HEALTH_MONITOR = None
         app_module._reset_ui_state(clear_saved_result=False)
 
     def tearDown(self) -> None:
@@ -160,6 +162,40 @@ class Phase11AppIntegrationTests(unittest.TestCase):
         state = app_module._load_ui_state()
         self.assertEqual(state["selected_mode"], "document_reader")
 
+    def test_humanize_error_maps_reliability_failures(self) -> None:
+        cases = {
+            "Picamera2 could not capture an image.": "Camera disconnected",
+            "Could not connect to OpenAI after 3 attempts. Check your internet connection and try again.": "Network unavailable",
+            "The OpenAI request timed out after 3 attempts. Please try again.": "OpenAI request timed out",
+            "Invalid image file 'static/processed.jpg'. Please capture a new image and try again.": "Invalid image",
+        }
+
+        for raw_error, expected in cases.items():
+            with self.subTest(raw_error=raw_error):
+                self.assertEqual(app_module._humanize_error(raw_error), expected)
+
+    def test_run_capture_job_failure_updates_error_screen(self) -> None:
+        with patch("app.run_capture_analyze", side_effect=app_module.PipelineError("Invalid image file")):
+            app_module._run_capture_job("document_reader")
+
+        state = app_module._load_ui_state()
+        self.assertEqual(state["device_state"], "ERROR")
+        self.assertEqual(state["screen"], "error")
+        self.assertEqual(state["error"], "Invalid image")
+        self.assertIn("Invalid image file", state["error_detail"])
+
+    def test_health_monitor_can_be_started_from_app(self) -> None:
+        fake_monitor = _FakeHealthMonitor()
+
+        with patch.object(app_module.SETTINGS.reliability, "health_monitor_enabled", True), patch(
+            "app.HealthMonitor",
+            return_value=fake_monitor,
+        ):
+            app_module._ensure_health_monitor_started()
+
+        self.assertIs(app_module.HEALTH_MONITOR, fake_monitor)
+        self.assertTrue(fake_monitor.started)
+
 
 class _FakeLEDIndicator:
     """No-op LED used to isolate app state tests from GPIO behavior."""
@@ -169,3 +205,14 @@ class _FakeLEDIndicator:
 
     def set_state(self, device_state: DeviceState | str) -> None:
         self.states.append(device_state)
+
+
+class _FakeHealthMonitor:
+    """Small monitor double used to validate startup wiring."""
+
+    def __init__(self) -> None:
+        self.started = False
+
+    def start(self) -> bool:
+        self.started = True
+        return True

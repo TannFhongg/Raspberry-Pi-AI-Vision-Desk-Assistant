@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import threading
@@ -25,9 +26,11 @@ from hardware import (
     build_ui_state_payload,
     clear_latest_result_file,
     coerce_device_state,
+    is_busy_device_state,
     screen_for_device_state,
 )
 from pipeline import PipelineError, PipelineResult, run_capture_analyze, save_latest_result
+from system import HealthMonitor, configure_logging
 
 load_dotenv()
 
@@ -36,7 +39,14 @@ try:
 except SettingsError as exc:
     raise RuntimeError(f"Invalid device settings: {exc}") from exc
 
+configure_logging(settings=SETTINGS)
+LOGGER = logging.getLogger(__name__)
+LOGGER.info("Flask app startup begin")
+
 app = Flask(__name__)
+app.logger.handlers.clear()
+app.logger.propagate = True
+app.logger.setLevel(logging.getLogger().level)
 
 UI_STATE_PATH = Path("data/ui_state.json")
 LATEST_RESULT_PATH = Path("data/latest_result.txt")
@@ -56,6 +66,7 @@ GPIO_START_LOCK = threading.Lock()
 RUNNING = False
 GPIO_START_ATTEMPTED = False
 GPIO_TRIGGER: GPIOButtonTrigger | None = None
+HEALTH_MONITOR: HealthMonitor | None = None
 
 
 def _read_int_env(
@@ -237,10 +248,12 @@ def _start_capture_job() -> bool:
 
     with RUN_LOCK:
         if RUNNING:
+            LOGGER.info("Capture request ignored because a job is already running")
             return False
         RUNNING = True
 
     selected_mode = _load_ui_state()["selected_mode"]
+    LOGGER.info("Background capture job starting mode=%s", selected_mode)
     _write_device_state(
         DeviceState.CAPTURING,
         selected_mode=selected_mode,
@@ -291,9 +304,12 @@ def _run_capture_job(selected_mode: str) -> None:
             answer=result.answer or "",
             current_step=len(PROGRESS_STEPS),
         )
+        LOGGER.info("Background capture job completed mode=%s", selected_mode)
     except (PipelineError, ValueError) as exc:
+        LOGGER.exception("Background capture job failed mode=%s", selected_mode)
         _record_error_state(selected_mode, str(exc))
     except Exception as exc:
+        LOGGER.exception("Background capture job crashed mode=%s", selected_mode)
         _record_error_state(selected_mode, f"Unexpected error: {exc}")
     finally:
         with RUN_LOCK:
@@ -315,6 +331,12 @@ def _update_processing_state(selected_mode: str, pipeline_message: str) -> None:
 def _record_error_state(selected_mode: str, error_message: str) -> None:
     """Persist a short, readable error state for the touchscreen."""
     friendly_error = _humanize_error(error_message)
+    LOGGER.error(
+        "Persisting device error state mode=%s friendly_error=%s error=%s",
+        selected_mode,
+        friendly_error,
+        error_message,
+    )
     failure_result = PipelineResult(
         captured_path=None,
         processed_path=None,
@@ -413,9 +435,22 @@ def _humanize_error(error_message: str) -> str:
     """Convert technical errors into short, friendly touchscreen messages."""
     normalized = error_message.strip().lower()
     if any(token in normalized for token in ("camera", "picamera2", "opencv")):
-        return "Camera not found"
+        return "Camera disconnected"
     if "could not connect to openai" in normalized or "internet connection" in normalized:
         return "Network unavailable"
+    if any(
+        token in normalized
+        for token in (
+            "invalid image",
+            "valid image",
+            "unsupported image extension",
+            "could not load image",
+            "cannot identify image file",
+        )
+    ):
+        return "Invalid image"
+    if "timed out after" in normalized:
+        return "OpenAI request timed out"
     if any(token in normalized for token in ("timed out", "rate limit", "quota reached")):
         return "OpenAI request failed"
     if any(
@@ -602,6 +637,11 @@ def _bootstrap_ui_state() -> None:
     """Repair stale processing state after a restart."""
     state = _load_ui_state()
     if _get_device_state() in {DeviceState.CAPTURING, DeviceState.PROCESSING}:
+        LOGGER.warning(
+            "Resetting stale UI state after restart previous_screen=%s previous_state=%s",
+            state.get("screen"),
+            state.get("device_state"),
+        )
         _reset_ui_state()
 
 
@@ -627,22 +667,44 @@ def _ensure_gpio_button_listener_started() -> None:
                 get_device_state=_get_device_state,
             )
             GPIO_TRIGGER.start()
-            app.logger.info("GPIO button listener started on pin %s", GPIO_BUTTON_PIN)
+            LOGGER.info("GPIO button listener started on pin %s", GPIO_BUTTON_PIN)
         except GPIOButtonError as exc:
             GPIO_TRIGGER = None
-            app.logger.warning("GPIO button listener disabled: %s", exc)
+            LOGGER.warning("GPIO button listener disabled: %s", exc)
 
 
 def _initialize_led_indicator() -> None:
     """Log LED startup issues and apply the current persisted state."""
     if ENABLE_GPIO_LED and LED_INDICATOR.disabled_reason:
-        app.logger.warning("GPIO LED disabled: %s", LED_INDICATOR.disabled_reason)
+        LOGGER.warning("GPIO LED disabled: %s", LED_INDICATOR.disabled_reason)
     _apply_led_state(_get_device_state())
+
+
+def _health_monitor_busy() -> bool:
+    """Return True when the device should defer intrusive health checks."""
+    return _is_running() or is_busy_device_state(_get_device_state())
+
+
+def _ensure_health_monitor_started() -> None:
+    """Start the optional background health monitor once during app startup."""
+    global HEALTH_MONITOR
+
+    if not SETTINGS.reliability.health_monitor_enabled or HEALTH_MONITOR is not None:
+        return
+
+    HEALTH_MONITOR = HealthMonitor(
+        settings=SETTINGS,
+        is_busy=_health_monitor_busy,
+    )
+    if HEALTH_MONITOR.start():
+        LOGGER.info("Health monitor started")
 
 
 _bootstrap_ui_state()
 _initialize_led_indicator()
 _ensure_gpio_button_listener_started()
+_ensure_health_monitor_started()
+LOGGER.info("Flask app startup complete")
 
 
 if __name__ == "__main__":

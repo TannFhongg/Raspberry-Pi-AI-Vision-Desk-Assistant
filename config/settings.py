@@ -16,11 +16,21 @@ VALID_AUTOFOCUS_MODES = ("continuous", "auto", "off")
 VALID_SCREEN_OPTIMIZATIONS = ("auto", "on", "off")
 VALID_DISPLAY_ORIENTATIONS = ("landscape", "portrait", "auto")
 VALID_STARTUP_BEHAVIORS = ("kiosk", "service_only", "manual")
+VALID_LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
 DEFAULT_BUTTON_DEBOUNCE_SECONDS = 0.15
 DEFAULT_BUTTON_HOLD_SECONDS = 1.2
 DEFAULT_LED_ENABLED = False
 DEFAULT_LED_PIN = 27
 DEFAULT_LED_ACTIVE_HIGH = True
+DEFAULT_LOG_LEVEL = "INFO"
+DEFAULT_LOG_MAX_BYTES = 1_048_576
+DEFAULT_LOG_BACKUP_COUNT = 5
+DEFAULT_HEALTH_MONITOR_ENABLED = True
+DEFAULT_HEALTH_CHECK_INTERVAL_SECONDS = 60.0
+DEFAULT_CAMERA_PROBE_INTERVAL_SECONDS = 300.0
+DEFAULT_OPENAI_TIMEOUT_SECONDS = 30.0
+DEFAULT_OPENAI_RETRY_ATTEMPTS = 3
+DEFAULT_OPENAI_RETRY_BACKOFF_SECONDS = 2.0
 
 
 class SettingsError(Exception):
@@ -100,6 +110,21 @@ class StartupSettings:
 
 
 @dataclass(slots=True)
+class ReliabilitySettings:
+    """Runtime reliability, logging, and retry defaults."""
+
+    log_level: str
+    log_max_bytes: int
+    log_backup_count: int
+    health_monitor_enabled: bool
+    health_check_interval_seconds: float
+    camera_probe_interval_seconds: float
+    openai_timeout_seconds: float
+    openai_retry_attempts: int
+    openai_retry_backoff_seconds: float
+
+
+@dataclass(slots=True)
 class DeviceSettings:
     """Top-level typed settings for the standalone device."""
 
@@ -110,6 +135,7 @@ class DeviceSettings:
     ai: AISettings
     vision: VisionSettings
     startup: StartupSettings
+    reliability: ReliabilitySettings
     config_path: Path
 
 
@@ -134,6 +160,7 @@ def load_device_settings(
     ai = merged.get("ai", {})
     vision = merged.get("vision", {})
     startup = merged.get("startup", {})
+    reliability = merged.get("reliability", {})
 
     return DeviceSettings(
         camera=CameraSettings(
@@ -233,6 +260,69 @@ def load_device_settings(
             ),
             url=_parse_text(startup.get("url"), "startup.url"),
         ),
+        reliability=ReliabilitySettings(
+            log_level=_parse_log_level(
+                reliability.get("log_level", DEFAULT_LOG_LEVEL),
+                "reliability.log_level",
+            ),
+            log_max_bytes=_parse_int(
+                reliability.get("log_max_bytes", DEFAULT_LOG_MAX_BYTES),
+                "reliability.log_max_bytes",
+                minimum=1,
+            ),
+            log_backup_count=_parse_int(
+                reliability.get("log_backup_count", DEFAULT_LOG_BACKUP_COUNT),
+                "reliability.log_backup_count",
+                minimum=0,
+            ),
+            health_monitor_enabled=_parse_bool(
+                reliability.get(
+                    "health_monitor_enabled",
+                    DEFAULT_HEALTH_MONITOR_ENABLED,
+                ),
+                "reliability.health_monitor_enabled",
+            ),
+            health_check_interval_seconds=_parse_float(
+                reliability.get(
+                    "health_check_interval_seconds",
+                    DEFAULT_HEALTH_CHECK_INTERVAL_SECONDS,
+                ),
+                "reliability.health_check_interval_seconds",
+                minimum=1.0,
+            ),
+            camera_probe_interval_seconds=_parse_float(
+                reliability.get(
+                    "camera_probe_interval_seconds",
+                    DEFAULT_CAMERA_PROBE_INTERVAL_SECONDS,
+                ),
+                "reliability.camera_probe_interval_seconds",
+                minimum=1.0,
+            ),
+            openai_timeout_seconds=_parse_float(
+                reliability.get(
+                    "openai_timeout_seconds",
+                    DEFAULT_OPENAI_TIMEOUT_SECONDS,
+                ),
+                "reliability.openai_timeout_seconds",
+                minimum=0.1,
+            ),
+            openai_retry_attempts=_parse_int(
+                reliability.get(
+                    "openai_retry_attempts",
+                    DEFAULT_OPENAI_RETRY_ATTEMPTS,
+                ),
+                "reliability.openai_retry_attempts",
+                minimum=1,
+            ),
+            openai_retry_backoff_seconds=_parse_float(
+                reliability.get(
+                    "openai_retry_backoff_seconds",
+                    DEFAULT_OPENAI_RETRY_BACKOFF_SECONDS,
+                ),
+                "reliability.openai_retry_backoff_seconds",
+                minimum=0.0,
+            ),
+        ),
         config_path=resolved_path,
     )
 
@@ -271,6 +361,7 @@ def _apply_environment_overrides(
     merged["ai"] = dict(raw_data.get("ai", {}))
     merged["vision"] = dict(raw_data.get("vision", {}))
     merged["startup"] = dict(raw_data.get("startup", {}))
+    merged["reliability"] = dict(raw_data.get("reliability", {}))
 
     camera = merged["camera"]
     camera_resolution = dict(camera.get("resolution", {}))
@@ -341,6 +432,50 @@ def _apply_environment_overrides(
 
     _set_if_present(merged["startup"], "behavior", env, "STARTUP_BEHAVIOR")
     _set_if_present(merged["startup"], "url", env, "STARTUP_URL")
+    _set_if_present(merged["reliability"], "log_level", env, "RELIABILITY_LOG_LEVEL")
+    _set_if_present(merged["reliability"], "log_max_bytes", env, "RELIABILITY_LOG_MAX_BYTES")
+    _set_if_present(
+        merged["reliability"],
+        "log_backup_count",
+        env,
+        "RELIABILITY_LOG_BACKUP_COUNT",
+    )
+    _set_if_present(
+        merged["reliability"],
+        "health_monitor_enabled",
+        env,
+        "RELIABILITY_HEALTH_MONITOR_ENABLED",
+    )
+    _set_if_present(
+        merged["reliability"],
+        "health_check_interval_seconds",
+        env,
+        "RELIABILITY_HEALTH_CHECK_INTERVAL_SECONDS",
+    )
+    _set_if_present(
+        merged["reliability"],
+        "camera_probe_interval_seconds",
+        env,
+        "RELIABILITY_CAMERA_PROBE_INTERVAL_SECONDS",
+    )
+    _set_if_present(
+        merged["reliability"],
+        "openai_timeout_seconds",
+        env,
+        "RELIABILITY_OPENAI_TIMEOUT_SECONDS",
+    )
+    _set_if_present(
+        merged["reliability"],
+        "openai_retry_attempts",
+        env,
+        "RELIABILITY_OPENAI_RETRY_ATTEMPTS",
+    )
+    _set_if_present(
+        merged["reliability"],
+        "openai_retry_backoff_seconds",
+        env,
+        "RELIABILITY_OPENAI_RETRY_BACKOFF_SECONDS",
+    )
     return merged
 
 
@@ -423,6 +558,17 @@ def _parse_choice(value: Any, valid_values: tuple[str, ...], field_name: str) ->
     text = _parse_text(value, field_name).lower()
     if text not in valid_values:
         expected = ", ".join(valid_values)
+        raise SettingsError(
+            f"Invalid value for '{field_name}': {value!r}. Expected one of: {expected}."
+        )
+    return text
+
+
+def _parse_log_level(value: Any, field_name: str) -> str:
+    """Parse and validate a supported Python logging level name."""
+    text = _parse_text(value, field_name).upper()
+    if text not in VALID_LOG_LEVELS:
+        expected = ", ".join(VALID_LOG_LEVELS)
         raise SettingsError(
             f"Invalid value for '{field_name}': {value!r}. Expected one of: {expected}."
         )

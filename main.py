@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 from pathlib import Path
 
 from ai.prompts import get_available_modes, normalize_mode
 from config import SettingsError, load_device_settings
 from pipeline import PipelineError, run_analyze, run_capture_analyze, run_preprocess
+from system import configure_logging
 
 CAPTURED_IMAGE_PATH = Path("static/captured.jpg")
 PROCESSED_IMAGE_PATH = Path("static/processed.jpg")
+LOGGER = logging.getLogger(__name__)
 
 
 def build_parser(settings) -> argparse.ArgumentParser:
@@ -125,8 +128,11 @@ def main() -> int:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
+    configure_logging(settings=settings)
+    LOGGER.info("CLI startup begin")
     parser = build_parser(settings)
     args = parser.parse_args()
+    LOGGER.info("CLI startup complete mode=%s skip_capture=%s", args.mode, args.skip_capture)
     print("Starting AI Vision pipeline...")
     print(f"Mode selected: {args.mode}")
 
@@ -174,6 +180,7 @@ def main() -> int:
                 status_callback=print,
             )
     except PipelineError as exc:
+        LOGGER.error("CLI pipeline failed: %s", exc, exc_info=True)
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
@@ -192,6 +199,7 @@ def main() -> int:
         print(f"Warning: {warning}")
     print("\nAI Answer:\n")
     print(result.answer or "")
+    LOGGER.info("CLI pipeline completed successfully mode=%s", args.mode)
     return 0
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+import logging
 from pathlib import Path
 from typing import Callable
 
@@ -18,6 +19,7 @@ DEFAULT_RESULT_PATH = Path("data/latest_result.txt")
 TEXT_HEAVY_MODES = frozenset({"document_reader", "math_solver", "meeting_assistant"})
 VALID_SCREEN_OPTIMIZATIONS = ("auto", "on", "off")
 StatusCallback = Callable[[str], None]
+LOGGER = logging.getLogger(__name__)
 
 
 class PipelineError(Exception):
@@ -109,6 +111,13 @@ def run_capture(
     status_callback: StatusCallback | None = None,
 ) -> PipelineResult:
     """Capture an image only and return a shared pipeline result."""
+    LOGGER.info(
+        "Capture started backend=%s camera_index=%s width=%s height=%s",
+        backend or "default",
+        camera_index,
+        width,
+        height,
+    )
     try:
         _emit_status(status_callback, "Capturing image...")
         capture_result = capture_image(
@@ -123,7 +132,15 @@ def run_capture(
             capture_delay_seconds=capture_delay_seconds,
         )
     except CameraCaptureError as exc:
+        LOGGER.error("Capture failed: %s", exc, exc_info=True)
         raise PipelineError(str(exc)) from exc
+
+    LOGGER.info(
+        "Capture succeeded backend=%s resolution=%s warnings=%s",
+        capture_result.backend_used,
+        capture_result.resolution,
+        len(capture_result.warnings),
+    )
 
     return PipelineResult(
         captured_path=capture_result.output_path,
@@ -165,6 +182,14 @@ def run_preprocess(
             mode=mode,
             screen_optimization=resolved_screen_optimization,
         )
+        LOGGER.info(
+            "Preprocess started input=%s output=%s mode=%s detect_screen=%s enhance_text=%s",
+            input_path,
+            output_path,
+            mode,
+            detect_screen,
+            enhance_text,
+        )
         _emit_status(status_callback, "Preprocessing image...")
         preprocess_result = preprocess_image(
             input_path=input_path,
@@ -175,7 +200,15 @@ def run_preprocess(
             enhance_text=enhance_text,
         )
     except (ImagePreprocessError, ValueError) as exc:
+        LOGGER.error("Preprocess failed: %s", exc, exc_info=True)
         raise PipelineError(str(exc)) from exc
+
+    LOGGER.info(
+        "Preprocess succeeded input=%s output=%s warnings=%s",
+        preprocess_result.input_path,
+        preprocess_result.output_path,
+        len(preprocess_result.warnings),
+    )
 
     return PipelineResult(
         captured_path=preprocess_result.input_path,
@@ -225,6 +258,11 @@ def run_analyze(
         raise PipelineError(str(exc)) from exc
 
     if not captured_file.is_file() and not processed_file.is_file():
+        LOGGER.error(
+            "Analyze failed before request because no image was available captured=%s processed=%s",
+            captured_file,
+            processed_file,
+        )
         raise PipelineError("No image available. Please capture an image first.")
 
     final_processed_path = processed_file
@@ -263,19 +301,33 @@ def run_analyze(
     try:
         from ai.openai_client import OpenAIVisionClient, VisionClientError
     except ImportError as exc:
+        LOGGER.error("OpenAI SDK import failed", exc_info=True)
         raise PipelineError(
             "OpenAI SDK is not installed. Activate your virtual environment and run: pip install -r requirements.txt"
         ) from exc
 
     try:
         client = OpenAIVisionClient()
+        LOGGER.info(
+            "AI analysis started mode=%s captured=%s processed=%s",
+            canonical_mode,
+            captured_file,
+            final_processed_path,
+        )
         _emit_status(status_callback, "Sending image to OpenAI Vision...")
         answer = client.analyze_image(
             image_path=str(final_processed_path),
             mode=canonical_mode,
         )
     except VisionClientError as exc:
+        LOGGER.error("AI analysis failed: %s", exc, exc_info=True)
         raise PipelineError(str(exc)) from exc
+
+    LOGGER.info(
+        "AI analysis succeeded mode=%s answer_chars=%s",
+        canonical_mode,
+        len(answer),
+    )
 
     return PipelineResult(
         captured_path=captured_file if captured_file.is_file() else None,
@@ -307,6 +359,7 @@ def run_capture_analyze(
     status_callback: StatusCallback | None = None,
 ) -> PipelineResult:
     """Run the full capture -> preprocess -> analyze pipeline."""
+    LOGGER.info("Full capture-analyze pipeline started mode=%s", mode)
     capture_result = run_capture(
         output_path=captured_path,
         backend=backend,
@@ -336,6 +389,12 @@ def run_capture_analyze(
         max_dimension=max_dimension,
         screen_optimization=screen_optimization,
         status_callback=status_callback,
+    )
+
+    LOGGER.info(
+        "Full capture-analyze pipeline succeeded mode=%s backend=%s",
+        analyze_result.mode,
+        capture_result.camera_backend_used,
     )
 
     return PipelineResult(
@@ -390,6 +449,7 @@ def save_latest_result(
         lines.append(f"Error: {result.answer or 'Unknown error'}")
 
     result_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    LOGGER.info("Saved latest pipeline result to %s with status=%s", result_path, result.status)
     return result_path
 
 

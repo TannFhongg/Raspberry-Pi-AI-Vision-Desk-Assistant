@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from typing import Any, Callable
@@ -18,6 +19,7 @@ from hardware.status import (
 from pipeline import PipelineError, PipelineResult, run_capture_analyze, save_latest_result
 
 ButtonFactory = Callable[..., Any]
+LOGGER = logging.getLogger(__name__)
 
 
 class GPIOButtonError(Exception):
@@ -108,6 +110,7 @@ class GPIOButtonTrigger:
                 self._button.hold_repeat = False
             self._button.when_held = self._handle_hold
             self._button.when_released = self._handle_release
+            LOGGER.info("GPIO button listener started pin=%s", self.pin)
         except Exception as exc:
             raise GPIOButtonError(
                 f"Could not initialize GPIO button on pin {self.pin}. {exc}"
@@ -140,6 +143,7 @@ class GPIOButtonTrigger:
 
         if self._input_is_blocked():
             print("Device is busy. Ignoring button input.")
+            LOGGER.info("Ignoring GPIO hold because device is busy pin=%s", self.pin)
             return
 
         worker = threading.Thread(
@@ -157,9 +161,11 @@ class GPIOButtonTrigger:
                 return
             if self._busy:
                 print("Pipeline is already running. Ignoring button press.")
+                LOGGER.info("Ignoring GPIO press because pipeline is already running pin=%s", self.pin)
                 return
             if is_busy_device_state(self._current_device_state()):
                 print("Device is busy. Ignoring button input.")
+                LOGGER.info("Ignoring GPIO press because device state is busy pin=%s", self.pin)
                 return
             self._busy = True
 
@@ -176,10 +182,13 @@ class GPIOButtonTrigger:
             started = self.trigger_action()
             if not started and not self._managed_pipeline:
                 print("Pipeline is already running. Ignoring button press.")
+                LOGGER.info("External trigger_action rejected duplicate GPIO press pin=%s", self.pin)
             elif started and not self._managed_pipeline:
                 print("Button pressed")
+                LOGGER.info("GPIO button press accepted pin=%s", self.pin)
         except Exception as exc:
             print(f"Error: {exc}")
+            LOGGER.exception("GPIO trigger action failed pin=%s", self.pin)
         finally:
             with self._lock:
                 self._busy = False
@@ -190,8 +199,10 @@ class GPIOButtonTrigger:
             cleared = self.clear_action()
             if cleared and not self._managed_pipeline:
                 print("Result cleared")
+                LOGGER.info("GPIO clear action succeeded pin=%s", self.pin)
         except Exception as exc:
             print(f"Error: {exc}")
+            LOGGER.exception("GPIO clear action failed pin=%s", self.pin)
 
     def _current_device_state(self) -> DeviceState:
         """Return the externally-managed or internal device state."""
@@ -211,6 +222,7 @@ class GPIOButtonTrigger:
     def _run_managed_pipeline(self) -> bool:
         """Run the shared capture-analyze pipeline and save the latest result."""
         print("Button pressed")
+        LOGGER.info("Managed GPIO pipeline started pin=%s mode=%s", self.pin, self.mode)
         try:
             self._set_managed_state(DeviceState.CAPTURING)
             result = run_capture_analyze(
@@ -242,9 +254,11 @@ class GPIOButtonTrigger:
                 print(result.answer)
             save_latest_result(result, output_path=self.result_path)
             self._set_managed_state(DeviceState.DONE)
+            LOGGER.info("Managed GPIO pipeline succeeded pin=%s mode=%s", self.pin, self.mode)
         except (PipelineError, Exception) as exc:
             error_message = str(exc)
             print(f"Error: {error_message}")
+            LOGGER.exception("Managed GPIO pipeline failed pin=%s mode=%s", self.pin, self.mode)
             failure_result = PipelineResult(
                 captured_path=None,
                 processed_path=None,
@@ -263,6 +277,7 @@ class GPIOButtonTrigger:
         clear_latest_result_file(self.result_path, mode=self.mode)
         self._set_managed_state(DeviceState.READY)
         print("Result cleared")
+        LOGGER.info("Managed GPIO result cleared pin=%s mode=%s", self.pin, self.mode)
         return True
 
     def _set_managed_state(self, device_state: DeviceState | str) -> None:

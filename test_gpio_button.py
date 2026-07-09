@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 
 from ai.prompts import get_available_modes, normalize_mode
 from config import SettingsError, load_device_settings
 from gpio import GPIOButtonError, GPIOButtonTrigger
+from system import configure_logging
+
+LOGGER = logging.getLogger(__name__)
 
 
 def build_parser(settings) -> argparse.ArgumentParser:
@@ -116,8 +120,11 @@ def main() -> int:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
+    configure_logging(settings=settings)
+    LOGGER.info("GPIO button runner startup begin")
     parser = build_parser(settings)
     args = parser.parse_args()
+    LOGGER.info("GPIO button runner startup complete pin=%s mode=%s", args.pin, args.mode)
 
     print("GPIO button test started")
     print(f"Button pin: GPIO{args.pin}")
@@ -144,9 +151,11 @@ def main() -> int:
         trigger.start()
         trigger.wait_forever()
     except GPIOButtonError as exc:
+        LOGGER.error("GPIO button runner failed: %s", exc, exc_info=True)
         print(f"Error: {exc}", file=sys.stderr)
         return 1
     except KeyboardInterrupt:
+        LOGGER.info("GPIO button runner stopped by keyboard interrupt")
         print("Stopping GPIO button test. Goodbye.")
         return 0
 

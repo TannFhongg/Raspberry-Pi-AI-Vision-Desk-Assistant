@@ -43,6 +43,16 @@ class LoadDeviceSettingsTests(unittest.TestCase):
             startup:
               behavior: kiosk
               url: http://localhost:5000
+            reliability:
+              log_level: INFO
+              log_max_bytes: 1048576
+              log_backup_count: 5
+              health_monitor_enabled: true
+              health_check_interval_seconds: 60.0
+              camera_probe_interval_seconds: 300.0
+              openai_timeout_seconds: 30.0
+              openai_retry_attempts: 3
+              openai_retry_backoff_seconds: 2.0
             """
         )
 
@@ -60,6 +70,15 @@ class LoadDeviceSettingsTests(unittest.TestCase):
         self.assertEqual(settings.ai.default_mode, "document_reader")
         self.assertEqual(settings.vision.screen_optimization, "auto")
         self.assertEqual(settings.startup.behavior, "kiosk")
+        self.assertEqual(settings.reliability.log_level, "INFO")
+        self.assertEqual(settings.reliability.log_max_bytes, 1_048_576)
+        self.assertEqual(settings.reliability.log_backup_count, 5)
+        self.assertTrue(settings.reliability.health_monitor_enabled)
+        self.assertAlmostEqual(settings.reliability.health_check_interval_seconds, 60.0)
+        self.assertAlmostEqual(settings.reliability.camera_probe_interval_seconds, 300.0)
+        self.assertAlmostEqual(settings.reliability.openai_timeout_seconds, 30.0)
+        self.assertEqual(settings.reliability.openai_retry_attempts, 3)
+        self.assertAlmostEqual(settings.reliability.openai_retry_backoff_seconds, 2.0)
 
     def test_environment_overrides_take_precedence(self) -> None:
         config_path = _write_temp_config(
@@ -91,6 +110,16 @@ class LoadDeviceSettingsTests(unittest.TestCase):
             startup:
               behavior: kiosk
               url: http://localhost:5000
+            reliability:
+              log_level: INFO
+              log_max_bytes: 1048576
+              log_backup_count: 5
+              health_monitor_enabled: true
+              health_check_interval_seconds: 60.0
+              camera_probe_interval_seconds: 300.0
+              openai_timeout_seconds: 30.0
+              openai_retry_attempts: 3
+              openai_retry_backoff_seconds: 2.0
             """
         )
 
@@ -114,6 +143,15 @@ class LoadDeviceSettingsTests(unittest.TestCase):
                 "AI_DEFAULT_MODE": "solve_problem",
                 "SCREEN_OPTIMIZATION": "on",
                 "STARTUP_BEHAVIOR": "manual",
+                "RELIABILITY_LOG_LEVEL": "DEBUG",
+                "RELIABILITY_LOG_MAX_BYTES": "4096",
+                "RELIABILITY_LOG_BACKUP_COUNT": "2",
+                "RELIABILITY_HEALTH_MONITOR_ENABLED": "0",
+                "RELIABILITY_HEALTH_CHECK_INTERVAL_SECONDS": "30",
+                "RELIABILITY_CAMERA_PROBE_INTERVAL_SECONDS": "120",
+                "RELIABILITY_OPENAI_TIMEOUT_SECONDS": "12.5",
+                "RELIABILITY_OPENAI_RETRY_ATTEMPTS": "4",
+                "RELIABILITY_OPENAI_RETRY_BACKOFF_SECONDS": "1.5",
             },
         )
 
@@ -134,6 +172,15 @@ class LoadDeviceSettingsTests(unittest.TestCase):
         self.assertEqual(settings.ai.default_mode, "math_solver")
         self.assertEqual(settings.vision.screen_optimization, "on")
         self.assertEqual(settings.startup.behavior, "manual")
+        self.assertEqual(settings.reliability.log_level, "DEBUG")
+        self.assertEqual(settings.reliability.log_max_bytes, 4096)
+        self.assertEqual(settings.reliability.log_backup_count, 2)
+        self.assertFalse(settings.reliability.health_monitor_enabled)
+        self.assertAlmostEqual(settings.reliability.health_check_interval_seconds, 30.0)
+        self.assertAlmostEqual(settings.reliability.camera_probe_interval_seconds, 120.0)
+        self.assertAlmostEqual(settings.reliability.openai_timeout_seconds, 12.5)
+        self.assertEqual(settings.reliability.openai_retry_attempts, 4)
+        self.assertAlmostEqual(settings.reliability.openai_retry_backoff_seconds, 1.5)
 
     def test_invalid_yaml_value_raises_settings_error(self) -> None:
         config_path = _write_temp_config(
@@ -165,6 +212,16 @@ class LoadDeviceSettingsTests(unittest.TestCase):
             startup:
               behavior: kiosk
               url: http://localhost:5000
+            reliability:
+              log_level: INFO
+              log_max_bytes: 1048576
+              log_backup_count: 5
+              health_monitor_enabled: true
+              health_check_interval_seconds: 60.0
+              camera_probe_interval_seconds: 300.0
+              openai_timeout_seconds: 30.0
+              openai_retry_attempts: 3
+              openai_retry_backoff_seconds: 2.0
             """
         )
 
@@ -201,6 +258,62 @@ class LoadDeviceSettingsTests(unittest.TestCase):
             startup:
               behavior: kiosk
               url: http://localhost:5000
+            reliability:
+              log_level: INFO
+              log_max_bytes: 1048576
+              log_backup_count: 5
+              health_monitor_enabled: true
+              health_check_interval_seconds: 60.0
+              camera_probe_interval_seconds: 300.0
+              openai_timeout_seconds: 30.0
+              openai_retry_attempts: 3
+              openai_retry_backoff_seconds: 2.0
+            """
+        )
+
+        with self.assertRaises(SettingsError):
+            load_device_settings(config_path=config_path, env={})
+
+    def test_invalid_reliability_value_raises_settings_error(self) -> None:
+        config_path = _write_temp_config(
+            """
+            camera:
+              backend: auto
+              index: 0
+              resolution:
+                width: 4608
+                height: 2592
+              autofocus_mode: continuous
+              exposure: auto
+              brightness: 0.0
+              capture_delay_seconds: 1.0
+              grayscale: false
+              max_dimension: 1600
+            display:
+              size:
+                width: 480
+                height: 320
+              orientation: landscape
+            button:
+              enabled: true
+              pin: 17
+            ai:
+              default_mode: document_reader
+            vision:
+              screen_optimization: auto
+            startup:
+              behavior: kiosk
+              url: http://localhost:5000
+            reliability:
+              log_level: nope
+              log_max_bytes: 1048576
+              log_backup_count: 5
+              health_monitor_enabled: true
+              health_check_interval_seconds: 60.0
+              camera_probe_interval_seconds: 300.0
+              openai_timeout_seconds: 30.0
+              openai_retry_attempts: 3
+              openai_retry_backoff_seconds: 2.0
             """
         )
 
