@@ -1,46 +1,46 @@
 # Project Context
 
-Captured on: 2026-07-06
+Updated on: 2026-07-09
 Project root: `C:\Users\Admin\Desktop\Raspberry Pi AI Vision Desk Assistant`
 
 ## Purpose
 
-This repository is a portfolio-ready Raspberry Pi 5 AI vision desk assistant. It demonstrates a full local hardware/software workflow:
+This repository is a portfolio-ready Raspberry Pi 5 AI vision desk assistant. It demonstrates a full local hardware and software workflow:
 
 ```text
-Camera capture -> OpenCV preprocessing -> OpenAI Vision analysis -> CLI / Flask UI / GPIO result
+Camera capture -> OpenCV preprocessing -> OpenAI Vision analysis -> CLI / Touchscreen UI / GPIO result
 ```
 
-The project is organized in phases so each layer can be tested independently, then composed through a shared pipeline.
+The project is organized in phases so each layer can be tested independently and then composed through a shared pipeline.
 
 ## Current Architecture
 
 Main entrypoints:
 
-- `main.py`: terminal CLI for the full capture, preprocess, and analyze flow.
-- `app.py`: Flask dashboard for capture, analyze, capture+analyze, clear, preview, status, error, and answer display.
-- `test_gpio_button.py`: terminal listener for a physical GPIO button that triggers the full pipeline.
-- `test_ai_vision.py`: one-off OpenAI Vision test using an existing local image.
-- `test_camera_capture.py`: one-off camera capture test.
-- `test_preprocess.py`: one-off OpenCV preprocessing test.
+- `main.py`: terminal CLI for full capture, preprocess, and analyze, or for analyzing an existing captured image with `--skip-capture`
+- `app.py`: touchscreen-first Flask UI with `home`, `mode_select`, `processing`, `result`, and `error` screens
+- `test_gpio_button.py`: standalone terminal listener for a physical GPIO button that triggers the full pipeline
+- `test_ai_vision.py`: one-off OpenAI Vision test using an existing local image
+- `test_camera_capture.py`: one-off camera capture test
+- `test_preprocess.py`: one-off OpenCV preprocessing test
 
 Shared core:
 
-- `pipeline/runner.py`: central orchestration for `run_capture`, `run_preprocess`, `run_analyze`, `run_capture_analyze`, and `save_latest_result`.
-- `camera/capture.py`: camera abstraction with `auto`, `picamera2`, and `opencv` backends. Auto tries Picamera2 first, then OpenCV.
-- `vision/preprocess.py`: safe preprocessing with optional resize, grayscale, CLAHE contrast, and light sharpening.
-- `ai/openai_client.py`: OpenAI Responses API wrapper for image analysis. It validates image type/size and returns friendly app errors.
-- `ai/prompts.py`: supported mode definitions and prompt builder.
-- `gpio/button.py`: gpiozero-based button trigger with a busy flag to avoid overlapping pipeline runs.
+- `pipeline/runner.py`: central orchestration for `run_capture`, `run_preprocess`, `run_analyze`, `run_capture_analyze`, and `save_latest_result`
+- `camera/capture.py`: camera abstraction with `auto`, `picamera2`, and `opencv` backends. Auto tries Picamera2 first, then OpenCV
+- `vision/preprocess.py`: safe preprocessing with optional resize, grayscale, CLAHE contrast, and light sharpening
+- `ai/openai_client.py`: OpenAI Responses API wrapper for image analysis with friendly app errors
+- `ai/prompts.py`: supported mode definitions, alias handling, and prompt builder
+- `gpio/button.py`: gpiozero-based button trigger with a busy flag to avoid overlapping pipeline runs
+- `templates/index.html`: screen-based template for the current touch UI
+- `static/style.css`: Figma-inspired kiosk shell styles for home and mode select, plus responsive dark styles for processing, result, and error screens
 
 Runtime artifacts:
 
-- `static/captured.jpg`: latest camera capture.
-- `static/processed.jpg`: latest preprocessed image.
-- `data/latest_result.txt`: latest GPIO-triggered result.
-- `data/web_feedback.json`: local Flask dashboard feedback state.
-
-These generated files are ignored by git.
+- `static/captured.jpg`: latest camera capture
+- `static/processed.jpg`: latest preprocessed image
+- `data/latest_result.txt`: latest readable pipeline result from Flask or standalone GPIO runs
+- `data/ui_state.json`: saved UI mode, current screen, status text, and answer/error state
 
 ## Supported AI Modes
 
@@ -50,26 +50,29 @@ Defined in `ai/prompts.py`:
 - `summarize`
 - `summarize_document`
 - `solve_problem`
+- `analyze_image`
 - `professional_assistant`
 
 `summarize` is an alias for `summarize_document`.
 
-## Web UI State
+## Web UI Behavior
 
-`app.py` uses Flask sessions only for the selected mode. Larger text feedback is stored in `data/web_feedback.json` to avoid large session cookies.
+`app.py` uses a small JSON state file instead of storing large answer payloads in Flask session cookies.
 
-The UI template is `templates/index.html`, and styling is in `static/style.css`.
+Current touchscreen flow:
 
-Dashboard controls:
+- `home`: minimal launcher with `Mode` and `Capture`
+- `mode_select`: dedicated mode picker that saves the chosen mode and returns to home
+- `processing`: background capture job status with auto-refresh and a four-step progress list
+- `result`: answer screen with `New Capture` and `Back`
+- `error`: friendly failure screen with `Try Again` and `Back`
 
-- AI mode dropdown
-- Capture Image
-- Analyze Image
-- Capture + Analyze
-- Clear
-- Status and error panels
-- AI answer panel
-- Captured and processed image previews
+Interaction notes:
+
+- `/capture`, `/capture-analyze`, and `/analyze` currently all start the same background `run_capture_analyze` workflow
+- `/back` and `/clear` both reset the UI to `home` while preserving the selected mode
+- when the GPIO listener is started inside Flask, a physical button press reuses the same capture job as the touch UI
+- the home screen auto-refreshes while the embedded GPIO listener is active so hardware-triggered state changes appear without manual reload
 
 ## Setup Notes
 
@@ -99,11 +102,29 @@ Environment variables:
 
 ```env
 OPENAI_API_KEY=your_openai_api_key_here
-OPENAI_MODEL=gpt-4o-mini
+OPENAI_MODEL=gpt-5.4-mini
 FLASK_SECRET_KEY=change_this_for_local_flask_sessions
+ENABLE_GPIO_BUTTON=1
+GPIO_BUTTON_PIN=17
+VISION_CAMERA_BACKEND=auto
+VISION_CAMERA_INDEX=0
+VISION_CAPTURE_WIDTH=1280
+VISION_CAPTURE_HEIGHT=720
+VISION_GRAYSCALE=0
+VISION_MAX_DIMENSION=1600
+UI_SCREEN_WIDTH=480
+UI_SCREEN_HEIGHT=320
+UI_DISPLAY_ORIENTATION=landscape
+UI_BASE_FONT_SIZE=20
+UI_TITLE_FONT_SIZE=34
+UI_STATUS_FONT_SIZE=28
+UI_BUTTON_FONT_SIZE=24
+UI_TOUCH_TARGET=68
+UI_PROCESSING_REFRESH_MS=1200
+UI_IDLE_REFRESH_MS=2500
 ```
 
-Security note: `.env.example` currently appears to contain a real OpenAI API key and is modified in the working tree. Do not commit that secret. Rotate the key, then replace it with a placeholder.
+Security note: keep `.env` out of git and keep `.env.example` limited to placeholders only.
 
 ## Common Commands
 
@@ -132,11 +153,12 @@ Run full terminal pipeline:
 
 ```bash
 python main.py --mode solve_problem
+python main.py --mode analyze_image
 python main.py --mode read_text --backend picamera2
 python main.py --mode professional_assistant --backend opencv --camera-index 0
 ```
 
-Run Flask dashboard:
+Run Flask touchscreen UI:
 
 ```bash
 python app.py
@@ -146,6 +168,12 @@ Local URL:
 
 ```text
 http://127.0.0.1:5000
+```
+
+Portrait example:
+
+```bash
+UI_SCREEN_WIDTH=320 UI_SCREEN_HEIGHT=480 UI_DISPLAY_ORIENTATION=portrait python app.py
 ```
 
 Run GPIO button listener:
@@ -164,7 +192,7 @@ Required or expected hardware:
 - Raspberry Pi Camera Module, Arducam CSI camera, or USB webcam
 - Push button connected to GPIO17 and GND
 - Internet connection for OpenAI API access
-- Optional HDMI display, touchscreen, speaker, buzzer, or power bank for demos
+- Optional HDMI display, small touchscreen, speaker, buzzer, or power bank for demos
 
 ## Deployment
 
@@ -174,35 +202,33 @@ Systemd service template:
 
 Docs:
 
-- `docs/architecture.md`: architecture diagram and module notes.
-- `docs/demo_checklist.md`: demo preparation and flow.
-- `docs/upwork_project_description.md`: portfolio/freelance-oriented project description.
-- `hardware_require.txt`: hardware checklist.
+- `docs/architecture.md`: current architecture diagram and module notes
+- `docs/demo_checklist.md`: demo preparation and flow
+- `docs/upwork_project_description.md`: portfolio and freelance-oriented project description
+- `hardware_require.txt`: hardware checklist
 
 ## Current Worktree State
 
-Observed git status before this file was created:
+Observed git status before this file was last updated:
 
 ```text
- M .env.example
+clean
 ```
-
-`PROJECT_CONTEXT.md` did not exist before this snapshot.
 
 ## Known Limitations And Follow-ups
 
-- Full camera and GPIO behavior must be verified on Raspberry Pi hardware.
-- OpenAI analysis requires internet access and a valid API key.
-- Flask actions are synchronous; a background job flow would improve UX for slow analysis.
-- The app currently stores only the latest result, not a result history.
-- Consider adding an LED or buzzer for GPIO feedback.
-- Consider restoring `.env.example` to safe placeholder values after rotating the exposed key.
-- Verify the configured OpenAI model name before a public demo.
+- Full camera and GPIO behavior still needs real Raspberry Pi hardware verification
+- OpenAI analysis requires internet access and a valid API key
+- The touch UI does not currently show live camera preview or captured/processed image thumbnails
+- Web-triggered actions currently funnel into the same full capture and analyze workflow
+- Only the latest result and UI state are stored; there is no history view yet
+- The home and mode-select layouts are tuned around fixed Figma-derived artwork assets
+- A fuller background job queue would improve resilience for slow network or model responses
 
 ## Development Guardrails
 
-- Do not commit `.env` or real secrets.
-- Do not overwrite user changes in `.env.example` without explicit approval.
-- Keep shared behavior in `pipeline/runner.py` so CLI, Flask, and GPIO stay consistent.
-- Keep generated image/result files out of git.
-- Prefer small, phase-based tests when changing camera, preprocessing, AI, or GPIO behavior.
+- Do not commit `.env` or real secrets
+- Do not change `.env.example` placeholders into real values
+- Keep shared behavior in `pipeline/runner.py` so CLI, Flask, and GPIO stay consistent
+- Keep generated image and result files out of git
+- Prefer small, phase-based tests when changing camera, preprocessing, AI, GPIO, or UI state behavior

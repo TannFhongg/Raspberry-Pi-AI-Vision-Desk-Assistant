@@ -2,11 +2,13 @@
 
 ## Project Overview
 
-Raspberry Pi AI Vision Desk Assistant is a portfolio-ready Raspberry Pi 5 project that proves a full local AI vision workflow:
+Raspberry Pi AI Vision Desk Assistant is a portfolio-ready Raspberry Pi 5 project that demonstrates a full local AI vision workflow:
 
-Camera Capture -> OpenCV Preprocessing -> OpenAI Vision Analysis -> Terminal Output / Web UI / GPIO Trigger
+```text
+Camera Capture -> OpenCV Preprocessing -> OpenAI Vision Analysis -> CLI / Touchscreen UI / GPIO Trigger
+```
 
-The project is organized in phases so each layer can be tested independently and then composed into a full working assistant.
+The project is organized in phases so each layer can be tested independently and then combined into a single shared pipeline.
 
 ## Features
 
@@ -15,10 +17,10 @@ The project is organized in phases so each layer can be tested independently and
 - Apply safe OpenCV preprocessing before AI analysis
 - Analyze images with multiple AI modes using the OpenAI Python SDK
 - Run the full pipeline from the terminal
-- Control the pipeline from a local Flask dashboard
-- Trigger the pipeline with a physical GPIO button on GPIO17
-- Save the most recent GPIO-triggered result to `data/latest_result.txt`
-- Package the project with deployment and demo documentation for GitHub portfolio use
+- Control the same pipeline from a touchscreen-first Flask UI
+- Use a physical GPIO button on `GPIO17` to trigger the same capture flow
+- Save the latest readable pipeline result to `data/latest_result.txt`
+- Persist the current UI mode and screen state in `data/ui_state.json`
 
 ## Hardware Used
 
@@ -26,7 +28,7 @@ The project is organized in phases so each layer can be tested independently and
 - Raspberry Pi camera / Arducam CSI camera
 - Optional USB webcam
 - Push button connected to `GPIO17` and `GND`
-- Optional HDMI display
+- Optional HDMI display or small touchscreen
 - Internet connection for OpenAI API access
 
 ## Software Stack
@@ -42,29 +44,29 @@ The project is organized in phases so each layer can be tested independently and
 
 ## System Architecture
 
-See [docs/architecture.md](docs/architecture.md) for the text architecture diagram.
+See [docs/architecture.md](docs/architecture.md) for the current text architecture diagram.
 
 ## Project Structure
 
 ```text
 raspberry-pi-ai-vision-assistant/
-├── ai/
-├── camera/
-├── data/
-├── deployment/
-├── docs/
-├── gpio/
-├── pipeline/
-├── static/
-├── templates/
-├── vision/
-├── app.py
-├── main.py
-├── requirements.txt
-├── test_ai_vision.py
-├── test_camera_capture.py
-├── test_preprocess.py
-└── test_gpio_button.py
+|-- ai/
+|-- camera/
+|-- data/
+|-- deployment/
+|-- docs/
+|-- gpio/
+|-- pipeline/
+|-- static/
+|-- templates/
+|-- vision/
+|-- app.py
+|-- main.py
+|-- requirements.txt
+|-- test_ai_vision.py
+|-- test_camera_capture.py
+|-- test_gpio_button.py
+`-- test_preprocess.py
 ```
 
 ## Setup Instructions
@@ -99,22 +101,35 @@ python -c "import flask, openai, gpiozero; print('Python packages OK')"
 
 ## Environment Variables
 
-Copy `.env.example` to `.env` and update the values:
+Copy `.env.example` to `.env` and update the required values:
 
 ```env
 OPENAI_API_KEY=your_openai_api_key_here
 OPENAI_MODEL=gpt-5.4-mini
 FLASK_SECRET_KEY=change_this_for_local_flask_sessions
+```
+
+Useful optional runtime settings:
+
+```env
 ENABLE_GPIO_BUTTON=1
 GPIO_BUTTON_PIN=17
-UI_SCREEN_WIDTH=320
-UI_SCREEN_HEIGHT=480
-UI_DISPLAY_ORIENTATION=portrait
+VISION_CAMERA_BACKEND=auto
+VISION_CAMERA_INDEX=0
+VISION_CAPTURE_WIDTH=1280
+VISION_CAPTURE_HEIGHT=720
+VISION_GRAYSCALE=0
+VISION_MAX_DIMENSION=1600
+UI_SCREEN_WIDTH=480
+UI_SCREEN_HEIGHT=320
+UI_DISPLAY_ORIENTATION=landscape
 UI_BASE_FONT_SIZE=20
 UI_TITLE_FONT_SIZE=34
 UI_STATUS_FONT_SIZE=28
 UI_BUTTON_FONT_SIZE=24
 UI_TOUCH_TARGET=68
+UI_PROCESSING_REFRESH_MS=1200
+UI_IDLE_REFRESH_MS=2500
 ```
 
 ## Phase 1: OpenAI Vision Test
@@ -208,7 +223,7 @@ python main.py --mode read_text --skip-capture --grayscale
 
 When `--skip-capture` is used, `main.py` loads `static/captured.jpg`, preprocesses it into `static/processed.jpg`, and sends the processed image to OpenAI Vision.
 
-## Phase 5: Flask Web UI
+## Phase 5: Flask Touchscreen UI
 
 Start the touchscreen UI:
 
@@ -216,7 +231,19 @@ Start the touchscreen UI:
 python app.py
 ```
 
-The UI is optimized for small Raspberry Pi touchscreens and shows a simple `Ready -> Processing -> Done/Error` flow with large buttons and readable text.
+The current UI is a kiosk-style, touchscreen-first flow tuned for small Raspberry Pi displays.
+
+Screen flow:
+
+- `home`: minimal launcher with `Mode` and `Capture`
+- `mode_select`: dedicated mode picker for `Read Text`, `Summarize Document`, `Solve Problem`, `Analyze Image`, and `Professional Assistant`
+- `processing`: auto-refreshing progress screen for capture, preprocessing, AI analysis, and answer preparation
+- `result`: readable answer screen with `New Capture` and `Back`
+- `error`: friendly error screen with `Try Again` and `Back`
+
+Tapping `Capture` on the home screen starts the full background capture -> preprocess -> analyze workflow for the currently selected mode.
+
+The selected mode and current screen state are stored in `data/ui_state.json`.
 
 Open the UI locally on the Pi:
 
@@ -230,10 +257,10 @@ Open it fullscreen in Chromium kiosk mode:
 chromium-browser --kiosk --app=http://127.0.0.1:5000
 ```
 
-Landscape touchscreen example:
+Portrait touchscreen example:
 
 ```bash
-UI_SCREEN_WIDTH=480 UI_SCREEN_HEIGHT=320 UI_DISPLAY_ORIENTATION=landscape python app.py
+UI_SCREEN_WIDTH=320 UI_SCREEN_HEIGHT=480 UI_DISPLAY_ORIENTATION=portrait python app.py
 ```
 
 You can also use Flask directly:
@@ -258,6 +285,8 @@ hostname -I
 
 The Flask app can start the GPIO button listener automatically when `ENABLE_GPIO_BUTTON=1`.
 
+Inside the Flask app, the button reuses the same background capture job as the touchscreen UI.
+
 You can still run the standalone GPIO button listener:
 
 ```bash
@@ -276,7 +305,7 @@ python test_gpio_button.py --mode solve_problem --backend opencv --camera-index 
 
 The script keeps listening until `Ctrl+C`.
 
-Latest readable GPIO-triggered result:
+Latest readable pipeline result:
 
 ```text
 data/latest_result.txt
@@ -316,10 +345,17 @@ data/latest_result.txt
 - Run a capture step first
 - Confirm `static/captured.jpg` exists
 
-### Processed Preview Missing In Flask UI
+### Touch UI Layout Does Not Fit The Screen
 
-- This is expected when `static/processed.jpg` is older than the latest `static/captured.jpg`
-- Click `Analyze Image` or `Capture + Analyze` to regenerate it
+- Adjust `UI_SCREEN_WIDTH` and `UI_SCREEN_HEIGHT`
+- Change `UI_DISPLAY_ORIENTATION` to `portrait`, `landscape`, or `auto`
+- Increase or decrease `UI_TOUCH_TARGET` and font sizes for the attached display
+
+### Reset The UI State
+
+- Stop the Flask app
+- Delete `data/ui_state.json` if you want to reset the saved mode and current screen
+- Start `python app.py` again
 
 ### GPIO Not Available
 
@@ -377,7 +413,7 @@ Note:
 
 - You may need to edit the service file paths for your actual repo location
 - You may need to change `User=pi` if your Raspberry Pi uses a different username
-- The service loads `.env`, so screen size, orientation, and GPIO settings can be adjusted there
+- The service loads `.env`, so camera, screen, orientation, and GPIO settings can be adjusted there
 - For a built-in display, pair the service with a Chromium kiosk launch on the Pi desktop session
 
 ## Portfolio Description
@@ -386,7 +422,7 @@ See [docs/upwork_project_description.md](docs/upwork_project_description.md).
 
 ## Future Improvements
 
-- Add a result history log instead of only `latest_result.txt`
+- Add result history instead of only the latest saved output
 - Add GPIO feedback LED or buzzer
-- Add OCR-first preprocessing presets
-- Add offline fallback analysis options
+- Add optional live preview or captured-image confirmation screens
+- Move long-running analysis into a fuller background job model

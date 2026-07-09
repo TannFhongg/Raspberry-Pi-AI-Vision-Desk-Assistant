@@ -2,61 +2,61 @@
 
 ## Overview
 
-The Raspberry Pi AI Vision Desk Assistant is built as a modular local pipeline that can be triggered from three entrypoints:
-
-- terminal CLI
-- Flask web UI
-- GPIO button
+The current project is a small-device AI capture appliance. The Flask UI is no longer a general-purpose dashboard with preview panels; it is a touchscreen-first state machine that drives the same shared pipeline used by the CLI and GPIO flows.
 
 ## Text Diagram
 
 ```text
-                +----------------------+
-                |   Terminal CLI       |
-                |  main.py             |
-                +----------+-----------+
-                           |
-                +----------v-----------+
-                |     Flask Web UI     |
-                |      app.py          |
-                +----------+-----------+
-                           |
-                +----------v-----------+
-                |    GPIO Button       |
-                | test_gpio_button.py  |
-                +----------+-----------+
-                           |
-                           v
-                +----------------------+
-                | Shared Pipeline      |
-                | pipeline/runner.py   |
-                +----+-----------+-----+
-                     |           |
-          +----------v--+     +--v----------------+
-          | camera/     |     | vision/           |
-          | capture.py  |     | preprocess.py     |
-          +----------+--+     +--+----------------+
-                     |           |
-                     v           v
-             static/captured.jpg static/processed.jpg
-                           |
-                           v
-                +----------------------+
-                | ai/openai_client.py  |
-                | OpenAI Vision API    |
-                +----------+-----------+
-                           |
-                           v
-                +----------------------+
-                | Latest Result File   |
-                | data/latest_result.txt
-                +----------------------+
+                         +----------------------+
+                         | Terminal CLI         |
+                         | main.py              |
+                         +----------+-----------+
+                                    |
+                                    v
+          +-------------------------+-------------------------+
+          | Shared Pipeline                                    |
+          | pipeline/runner.py                                 |
+          +-------------+-------------------+------------------+
+                        |                   |
+             +----------v---+     +---------v-----------+
+             | camera/      |     | vision/             |
+             | capture.py   |     | preprocess.py       |
+             +------+-------+     +----------+----------+
+                    |                         |
+                    v                         v
+           static/captured.jpg      static/processed.jpg
+                        \                 /
+                         \               /
+                          \             /
+                           v           v
+                        +----------------------+
+                        | ai/openai_client.py  |
+                        | OpenAI Responses API |
+                        +----------+-----------+
+                                   |
+                                   v
+                        +----------------------+
+                        | data/latest_result   |
+                        | answer / error text  |
+                        +----------------------+
+
+   +----------------------+                     +--------------------------+
+   | GPIO Button          |                     | Flask Touch UI           |
+   | gpio/button.py       |                     | app.py                   |
+   +----------+-----------+                     +------------+-------------+
+              |                                                |
+              |                                                v
+              |                                      data/ui_state.json
+              |                                      templates/index.html
+              |                                      static/style.css
+              +-------------------------> shared pipeline <---------------+
 ```
 
 ## Notes
 
-- `camera/capture.py` supports Picamera2 first with OpenCV fallback for USB webcams
-- `vision/preprocess.py` keeps preprocessing intentionally light
-- `pipeline/runner.py` centralizes capture, preprocess, analyze, and result saving
-- `app.py` uses session + PRG for a simple small-screen-friendly dashboard
-- `gpio/button.py` listens for a physical press and prevents overlapping runs with a busy flag
+- `pipeline/runner.py` centralizes capture, preprocess, analyze, and latest-result saving so CLI, Flask, and GPIO behavior stay aligned.
+- `app.py` persists selected mode and current screen in `data/ui_state.json`, then renders a screen-specific section from `templates/index.html`.
+- The current touchscreen state machine is `home -> processing -> result/error`, with a separate `mode_select` screen for choosing the active AI mode.
+- `/capture`, `/capture-analyze`, and `/analyze` are compatibility routes that currently all start the same background `run_capture_analyze` job.
+- `static/style.css` mixes fixed-position Figma-derived layouts for `home` and `mode_select` with responsive dark card layouts for `processing`, `result`, and `error`.
+- `gpio/button.py` can run standalone or call back into Flask through `trigger_action` so the physical button mirrors the touch workflow without overlapping jobs.
