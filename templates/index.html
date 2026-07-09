@@ -28,6 +28,12 @@
     {% set error_kind = "api" %}
     {% set error_title = "API error" %}
 {% endif %}
+{% set display_status = status %}
+{% if screen == "error" %}
+    {% set display_status = error_title %}
+{% elif screen == "processing" and processing_headline == "Thinking..." %}
+    {% set display_status = "Thinking..." %}
+{% endif %}
 <body
     class="app-screen-{{ screen }} orientation-{{ ui_config.orientation }} {% if is_processing %}app-busy{% endif %} {% if screen == 'error' %}error-kind-{{ error_kind }}{% endif %}"
     style="
@@ -40,23 +46,32 @@
         --touch-target: {{ ui_config.touch_target }}px;
     "
 >
-    <main class="device-shell">
+    <main class="device-shell" aria-label="AI Vision Assistant">
         {% if screen == "mode_select" %}
-        <section class="touchscreen-layout mode-select-layout">
-            <header class="app-header">
-                <p class="app-kicker">AI Vision Assistant</p>
-                <h1 class="app-title">Mode</h1>
-                <p class="app-subtitle">Choose what the assistant should focus on.</p>
-            </header>
+        <section class="figma-stage mode-select-stage">
+            <div class="sr-only" aria-live="polite">
+                Mode selection. Current mode: {{ selected_mode_label }}.
+            </div>
 
-            <section class="content-panel mode-panel">
-                <div class="mode-list" role="list" aria-label="Mode choices">
+            <section class="figma-card mode-card" aria-label="Mode choices">
+                <header class="status-area">
+                    <div>
+                        <p class="status-label">MODE</p>
+                        <p class="status-value">Select focus</p>
+                    </div>
+                    <div class="mode-indicator">
+                        <span>Current</span>
+                        <strong>{{ selected_mode_label }}</strong>
+                    </div>
+                </header>
+
+                <div class="mode-scroll" role="list">
                     {% for value, label in mode_options %}
                     <form method="post" action="{{ url_for('select_mode') }}" class="mode-option-form">
                         <input type="hidden" name="mode" value="{{ value }}">
                         <button
                             type="submit"
-                            class="mode-button{% if selected_mode == value %} mode-button-active{% endif %}"
+                            class="mode-choice{% if selected_mode == value %} mode-choice-active{% endif %}"
                             {% if is_processing %}disabled{% endif %}
                         >
                             {{ label }}
@@ -66,94 +81,73 @@
                 </div>
             </section>
 
-            <footer class="action-footer single-action-footer">
-                <form method="post" action="{{ url_for('back') }}">
-                    <button type="submit" class="secondary-button">Back</button>
+            <aside class="action-rail" aria-label="Mode screen actions">
+                <form method="post" action="{{ url_for('back') }}" class="rail-form mode-rail-form">
+                    <button type="submit" class="figma-button rail-button">BACK</button>
                 </form>
-            </footer>
+            </aside>
         </section>
         {% else %}
-        <section class="touchscreen-layout main-layout">
+        <section class="figma-stage main-stage">
             <div class="sr-only" aria-live="polite">
                 {{ status }}. {{ detail }}. Mode: {{ selected_mode_label }}.
             </div>
 
-            <header class="app-header">
-                <p class="app-kicker">AI Vision Assistant</p>
-                <h1 class="app-title">AI Vision Assistant</h1>
-            </header>
-
-            <section class="status-strip" aria-label="Status">
-                <p class="status-heading">STATUS</p>
-                <p class="status-value">
-                    {% if screen == "error" %}
-                        {{ error_title }}
-                    {% elif screen == "processing" and processing_headline == "Thinking..." %}
-                        Thinking...
-                    {% else %}
-                        {{ status }}
-                    {% endif %}
-                </p>
-            </section>
-
-            <section class="content-panel {% if screen == 'processing' %}processing-panel{% elif screen == 'error' %}error-panel{% elif screen == 'result' %}answer-panel{% else %}home-panel{% endif %}">
-                {% if screen == "processing" %}
-                <div class="processing-box">
-                    <div class="thinking-orb" aria-hidden="true">
-                        <span></span>
-                        <span></span>
-                        <span></span>
+            <section class="figma-card answer-card" aria-label="Assistant response">
+                <header class="status-area">
+                    <div>
+                        <p class="status-label">STATUS</p>
+                        <p class="status-value">{{ display_status }}</p>
                     </div>
-                    <p class="panel-label">Working</p>
-                    <p class="processing-headline">{{ processing_headline }}</p>
-                    <p class="processing-detail">{{ detail }}</p>
-                    <p class="processing-mode">Mode: {{ selected_mode_label }}</p>
-                </div>
-                {% elif screen == "result" %}
-                <div class="panel-header">
-                    <p class="panel-label">ANSWER BOX</p>
-                    <p class="panel-meta">{{ selected_mode_label }}</p>
-                </div>
-                <div class="answer-box">{{ answer_html }}</div>
-                {% elif screen == "error" %}
-                <div class="panel-header">
-                    <p class="panel-label">{{ error_title }}</p>
-                    <p class="panel-meta">{{ selected_mode_label }}</p>
-                </div>
-                <div class="error-box">
-                    <p class="error-message">{{ error }}</p>
-                    <p class="error-help">{{ detail }}</p>
-                    {% if show_debug and error_detail %}
-                    <p class="debug-text">{{ error_detail }}</p>
+                    <div class="mode-indicator">
+                        <span>Current mode</span>
+                        <strong>{{ selected_mode_label }}</strong>
+                    </div>
+                </header>
+
+                <div class="answer-area" tabindex="0">
+                    {% if screen == "processing" %}
+                    <div class="state-copy processing-copy">
+                        <p class="state-kicker">Working</p>
+                        <p class="state-title">{{ processing_headline }}</p>
+                        <p class="state-detail">{{ detail }}</p>
+                    </div>
+                    {% elif screen == "result" %}
+                    <div class="answer-copy">{{ answer_html }}</div>
+                    {% elif screen == "error" %}
+                    <div class="state-copy error-copy">
+                        <p class="state-kicker">{{ error_title }}</p>
+                        <p class="state-title">{{ error }}</p>
+                        <p class="state-detail">{{ detail }}</p>
+                        {% if show_debug and error_detail %}
+                        <p class="debug-text">{{ error_detail }}</p>
+                        {% endif %}
+                    </div>
+                    {% else %}
+                    <div class="state-copy ready-copy">
+                        <p class="state-kicker">Ready</p>
+                        <p class="state-title">{{ selected_mode_label }}</p>
+                        <p class="state-detail">{{ detail }}</p>
+                    </div>
                     {% endif %}
                 </div>
-                {% else %}
-                <div class="panel-header">
-                    <p class="panel-label">READY</p>
-                    <p class="panel-meta">{{ selected_mode_label }}</p>
-                </div>
-                <div class="home-box">
-                    <p class="home-mode-label">Current mode</p>
-                    <p class="home-mode-value">{{ selected_mode_label }}</p>
-                    <p class="home-detail">{{ detail }}</p>
-                </div>
-                {% endif %}
             </section>
 
-            <footer class="action-footer">
-                <form method="post" action="{{ url_for('capture') }}" class="capture-form">
-                    <button type="submit" class="primary-button capture-button" {% if is_processing %}disabled{% endif %}>Capture</button>
+            <aside class="action-rail" aria-label="Primary actions">
+                <form method="get" action="{{ url_for('mode_select') }}" class="rail-form mode-rail-form">
+                    <button type="submit" class="figma-button rail-button" {% if is_processing %}disabled{% endif %}>MODE</button>
                 </form>
 
-                <div class="secondary-actions">
-                    <form method="get" action="{{ url_for('mode_select') }}">
-                        <button type="submit" class="secondary-button" {% if is_processing %}disabled{% endif %}>Mode</button>
-                    </form>
-                    <form method="post" action="{{ url_for('retry') }}">
-                        <button type="submit" class="secondary-button" {% if is_processing %}disabled{% endif %}>Retry</button>
-                    </form>
-                </div>
-            </footer>
+                {% if screen == "error" %}
+                <form method="post" action="{{ url_for('retry') }}" class="rail-form capture-rail-form">
+                    <button type="submit" class="figma-button rail-button capture-button" {% if is_processing %}disabled{% endif %}>Retry</button>
+                </form>
+                {% else %}
+                <form method="post" action="{{ url_for('capture') }}" class="rail-form capture-rail-form">
+                    <button type="submit" class="figma-button rail-button capture-button" {% if is_processing %}disabled{% endif %}>Capture</button>
+                </form>
+                {% endif %}
+            </aside>
         </section>
         {% endif %}
     </main>

@@ -1,22 +1,13 @@
 :root {
-    --bg: #081018;
-    --bg-deep: #04080d;
-    --panel: #101c27;
-    --panel-strong: #162433;
-    --panel-soft: #0d1721;
-    --text: #f4f8fc;
-    --muted: #b6c4d3;
-    --accent: #60d2ff;
-    --accent-strong: #1699d2;
-    --accent-soft: rgba(96, 210, 255, 0.18);
-    --success: #8ff0b2;
-    --warning: #ffd46c;
-    --error-camera: #ff8a66;
-    --error-network: #ffbf5f;
-    --error-api: #ff6f91;
-    --error-generic: #ffb3c2;
-    --border: rgba(255, 255, 255, 0.12);
-    --shadow: 0 16px 36px rgba(0, 0, 0, 0.32);
+    --figma-shell: #2f0049;
+    --figma-card: #d9d9d9;
+    --figma-green: #009951;
+    --ink: #16001f;
+    --ink-soft: #4f3b58;
+    --white: #ffffff;
+    --error: #a6002d;
+    --warning: #8a5800;
+    --focus: #fff16a;
 }
 
 * {
@@ -36,16 +27,13 @@ body {
     overflow: hidden;
     overscroll-behavior: none;
     display: flex;
-    align-items: stretch;
+    align-items: center;
     justify-content: center;
-    color: var(--text);
-    background:
-        radial-gradient(circle at top, rgba(96, 210, 255, 0.16), transparent 38%),
-        radial-gradient(circle at bottom, rgba(22, 153, 210, 0.18), transparent 42%),
-        linear-gradient(180deg, #0a1620 0%, var(--bg) 52%, var(--bg-deep) 100%);
+    background: #000000;
+    color: var(--ink);
     font-family: "Trebuchet MS", "Gill Sans", "Segoe UI", sans-serif;
-    font-size: clamp(17px, 4.8vw, var(--base-font-size));
-    line-height: 1.45;
+    font-size: 17px;
+    line-height: 1.25;
 }
 
 form {
@@ -53,13 +41,8 @@ form {
 }
 
 button {
-    width: 100%;
-    border: none;
-    border-radius: 18px;
+    border: 0;
     font: inherit;
-    font-size: clamp(18px, 5vw, var(--button-font-size));
-    font-weight: 700;
-    letter-spacing: 0.01em;
     touch-action: manipulation;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
@@ -71,446 +54,333 @@ button:disabled {
 }
 
 .device-shell {
-    width: min(100vw, var(--screen-width));
-    height: min(100vh, var(--screen-height));
-    height: min(100dvh, var(--screen-height));
-    display: flex;
-    flex-direction: column;
+    width: min(100vw, var(--screen-width), calc(100vh * 1.5));
+    aspect-ratio: 3 / 2;
     overflow: hidden;
-    background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0)),
-        linear-gradient(180deg, #0d1822 0%, #09131c 100%);
 }
 
-.touchscreen-layout {
-    flex: 1;
+@supports (height: 100dvh) {
+    .device-shell {
+        width: min(100vw, var(--screen-width), calc(100dvh * 1.5));
+    }
+}
+
+.figma-stage {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background-color: var(--figma-shell);
+    background-image: url("figma/shell-bg.png");
+    background-repeat: no-repeat;
+    background-size: 100% 100%;
+}
+
+.figma-card {
+    position: absolute;
+    left: 7.29%;
+    top: 9.38%;
+    width: 67.29%;
+    height: 82.5%;
+    display: flex;
+    flex-direction: column;
     min-height: 0;
-    display: flex;
-    flex-direction: column;
+    padding: 18px 22px 16px;
+    overflow: hidden;
+    background-image: url("figma/content-card-bg.png");
+    background-repeat: no-repeat;
+    background-size: 100% 100%;
+}
+
+.status-area {
+    flex: 0 0 auto;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 118px;
+    align-items: start;
     gap: 12px;
-    padding:
-        calc(12px + env(safe-area-inset-top))
-        calc(12px + env(safe-area-inset-right))
-        calc(12px + env(safe-area-inset-bottom))
-        calc(12px + env(safe-area-inset-left));
+    min-height: 54px;
+    padding-bottom: 9px;
+    border-bottom: 2px solid rgba(47, 0, 73, 0.18);
 }
 
-.app-header {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-}
-
-.app-kicker {
+.status-label,
+.status-value,
+.mode-indicator span,
+.mode-indicator strong,
+.state-kicker,
+.state-title,
+.state-detail,
+.debug-text,
+.answer-copy p,
+.answer-copy ul {
     margin: 0;
+}
+
+.status-label {
+    margin-bottom: 3px;
+    color: var(--ink-soft);
     font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0.12em;
+    font-weight: 900;
+    letter-spacing: 0;
     text-transform: uppercase;
-    color: var(--muted);
-}
-
-.app-title {
-    margin: 0;
-    font-size: clamp(24px, 7.4vw, 28px);
-    line-height: 1.03;
-}
-
-.app-subtitle {
-    margin: 0;
-    font-size: 15px;
-    color: var(--muted);
-    line-height: 1.35;
-}
-
-.status-strip,
-.content-panel {
-    border: 1px solid var(--border);
-    background: var(--panel);
-    box-shadow: var(--shadow);
-}
-
-.status-strip {
-    padding: 10px 12px;
-    border-radius: 20px;
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-}
-
-.status-heading {
-    margin: 0;
-    font-size: 13px;
-    font-weight: 800;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--muted);
 }
 
 .status-value {
-    margin: 0;
-    font-size: clamp(22px, 6.5vw, var(--status-font-size));
-    line-height: 1.05;
-    font-weight: 800;
+    color: var(--ink);
+    font-size: 22px;
+    font-weight: 900;
+    line-height: 1.02;
 }
 
-.content-panel {
-    flex: 1;
-    min-height: 0;
-    border-radius: 24px;
-    padding: 12px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    overflow: hidden;
-}
-
-.panel-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 10px;
-}
-
-.panel-label,
-.panel-meta {
-    margin: 0;
-}
-
-.panel-label {
-    font-size: 13px;
-    font-weight: 800;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--muted);
-}
-
-.panel-meta {
-    max-width: 46%;
-    text-align: right;
-    font-size: 14px;
-    font-weight: 700;
-    color: var(--accent);
-    line-height: 1.25;
-}
-
-.home-box,
-.error-box,
-.processing-box,
-.answer-box,
-.mode-list {
-    min-height: 0;
-}
-
-.home-box,
-.error-box {
-    flex: 1;
-    overflow-y: auto;
-    padding: 8px 2px 2px;
-}
-
-.home-mode-label,
-.home-mode-value,
-.home-detail,
-.error-message,
-.error-help,
-.debug-text,
-.processing-headline,
-.processing-detail,
-.processing-mode {
-    margin: 0;
-}
-
-.home-mode-label {
-    font-size: 15px;
-    font-weight: 700;
-    color: var(--muted);
-}
-
-.home-mode-value {
-    margin-top: 4px;
-    font-size: clamp(24px, 7vw, 28px);
-    line-height: 1.1;
-    font-weight: 800;
-    color: var(--accent);
-}
-
-.home-detail {
-    margin-top: 12px;
-    font-size: clamp(18px, 5.3vw, 19px);
-    line-height: 1.45;
-}
-
-.processing-panel {
-    justify-content: center;
-}
-
-.processing-box {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
+.mode-indicator {
+    min-width: 0;
+    padding: 6px 7px 7px;
+    color: var(--white);
+    background: var(--figma-shell);
+    border-radius: 9px;
     text-align: center;
 }
 
-.thinking-orb {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 7px;
-    padding: 10px 14px;
-    border-radius: 999px;
-    background: var(--accent-soft);
+.mode-indicator span {
+    display: block;
+    margin-bottom: 2px;
+    font-size: 9px;
+    font-weight: 900;
+    line-height: 1;
+    text-transform: uppercase;
 }
 
-.thinking-orb span {
-    width: 10px;
-    height: 10px;
-    border-radius: 999px;
-    background: var(--accent);
-    animation: thinkingPulse 1.2s ease-in-out infinite;
-}
-
-.thinking-orb span:nth-child(2) {
-    animation-delay: 0.15s;
-}
-
-.thinking-orb span:nth-child(3) {
-    animation-delay: 0.3s;
-}
-
-.processing-headline {
-    font-size: clamp(24px, 7vw, 28px);
+.mode-indicator strong {
+    display: -webkit-box;
+    overflow: hidden;
+    color: var(--white);
+    font-size: 12px;
+    font-weight: 900;
     line-height: 1.08;
-    font-weight: 800;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
 }
 
-.processing-detail {
-    max-width: 14rem;
-    font-size: 18px;
-    line-height: 1.4;
-    color: var(--muted);
-}
-
-.processing-mode {
-    font-size: 15px;
-    font-weight: 700;
-    color: var(--accent);
-}
-
-.answer-panel {
-    background: linear-gradient(180deg, #13202c 0%, #0e1822 100%);
-}
-
-.answer-box {
+.answer-area {
     flex: 1;
+    min-height: 0;
+    margin-top: 11px;
+    padding-right: 5px;
     overflow-y: auto;
-    padding: 12px;
-    border-radius: 18px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    background: var(--panel-soft);
-    font-size: clamp(17px, 4.9vw, 19px);
-    line-height: 1.55;
-    word-break: break-word;
+    color: var(--ink);
+    font-size: 18px;
+    font-weight: 800;
     scrollbar-width: auto;
-    scrollbar-color: rgba(96, 210, 255, 0.85) rgba(255, 255, 255, 0.09);
+    scrollbar-color: var(--figma-shell) rgba(47, 0, 73, 0.16);
 }
 
-.answer-box p,
-.answer-box ul {
-    margin: 0 0 12px;
+.answer-copy {
+    min-height: 100%;
+    padding-bottom: 4px;
 }
 
-.answer-box ul {
-    padding-left: 1.2rem;
+.answer-copy p,
+.answer-copy ul {
+    margin-bottom: 10px;
 }
 
-.answer-box li + li {
-    margin-top: 8px;
-}
-
-.answer-box p:last-child,
-.answer-box ul:last-child {
+.answer-copy p:last-child,
+.answer-copy ul:last-child {
     margin-bottom: 0;
 }
 
+.answer-copy ul {
+    padding-left: 20px;
+}
+
+.answer-copy li + li {
+    margin-top: 6px;
+}
+
 .answer-empty {
-    color: var(--muted);
+    color: var(--ink-soft);
 }
 
-.error-panel {
-    background: linear-gradient(180deg, rgba(255, 122, 122, 0.08), rgba(255, 255, 255, 0.01));
+.state-copy {
+    min-height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
 }
 
-.error-box {
-    flex: 1;
-    overflow-y: auto;
-    padding: 8px 2px 2px;
+.state-kicker {
+    margin-bottom: 5px;
+    color: var(--ink-soft);
+    font-size: 13px;
+    font-weight: 900;
+    text-transform: uppercase;
 }
 
-.error-message {
-    font-size: clamp(22px, 6.5vw, 27px);
-    line-height: 1.12;
-    font-weight: 800;
+.state-title {
+    color: var(--ink);
+    font-size: 27px;
+    font-weight: 900;
+    line-height: 1.05;
 }
 
-.error-help {
-    margin-top: 12px;
+.state-detail {
+    margin-top: 11px;
+    color: var(--ink-soft);
     font-size: 18px;
-    line-height: 1.45;
-    color: var(--muted);
+    font-weight: 900;
+    line-height: 1.2;
+}
+
+.processing-copy .state-title {
+    color: var(--figma-shell);
+}
+
+.error-copy .state-kicker,
+.error-copy .state-title,
+.error-kind-generic .status-value,
+.error-kind-camera .status-value,
+.error-kind-network .status-value,
+.error-kind-api .status-value {
+    color: var(--error);
+}
+
+.error-kind-network .status-value {
+    color: var(--warning);
 }
 
 .debug-text {
-    margin-top: 12px;
-    font-size: 14px;
-    line-height: 1.4;
-    color: #ffd6dd;
-}
-
-.action-footer {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-}
-
-.secondary-actions {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
-}
-
-.primary-button,
-.secondary-button,
-.mode-button {
-    min-height: max(56px, var(--touch-target));
-    padding: 12px 14px;
-    transition: transform 120ms ease, filter 120ms ease, opacity 120ms ease;
-}
-
-.capture-button {
-    min-height: max(62px, calc(var(--touch-target) + 6px));
-}
-
-.primary-button {
-    color: #031018;
-    background: linear-gradient(180deg, #a5eeff 0%, var(--accent) 55%, var(--accent-strong) 100%);
-    box-shadow: 0 10px 18px rgba(22, 153, 210, 0.28);
-}
-
-.secondary-button {
-    color: var(--text);
-    background: #1d2b3a;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.mode-button {
-    color: var(--text);
-    background: #1a2835;
-    border: 1px solid rgba(255, 255, 255, 0.09);
-    font-size: 18px;
+    margin-top: 10px;
+    color: var(--error);
+    font-size: 12px;
+    font-weight: 800;
     line-height: 1.2;
-    text-align: left;
 }
 
-.mode-button-active {
-    color: #041019;
-    background: linear-gradient(180deg, #b0f3ff 0%, #79ddff 100%);
-    border-color: rgba(255, 255, 255, 0.2);
+.action-rail {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
 }
 
-.primary-button:hover,
-.secondary-button:hover,
-.mode-button:hover {
-    filter: brightness(1.04);
+.rail-form {
+    position: absolute;
+    left: 79.9%;
+    width: 15.83%;
+    height: 20.31%;
+    pointer-events: auto;
 }
 
-.primary-button:active,
-.secondary-button:active,
-.mode-button:active {
-    transform: scale(0.985);
+.mode-rail-form {
+    top: 20%;
 }
 
-.primary-button:focus-visible,
-.secondary-button:focus-visible,
-.mode-button:focus-visible {
-    outline: 3px solid rgba(143, 240, 178, 0.95);
+.capture-rail-form {
+    top: 62.81%;
+}
+
+.figma-button {
+    width: 100%;
+    height: 100%;
+    padding: 0 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--white);
+    background-color: transparent;
+    background-image: url("figma/action-button-bg.png");
+    background-repeat: no-repeat;
+    background-size: 100% 100%;
+    font-size: 15px;
+    font-style: italic;
+    font-weight: 900;
+    line-height: 1;
+    text-align: center;
+    text-shadow: 0 1px 0 rgba(0, 0, 0, 0.16);
+}
+
+.figma-button:active {
+    transform: translateY(1px) scale(0.985);
+}
+
+.figma-button:focus-visible,
+.mode-choice:focus-visible,
+.answer-area:focus-visible {
+    outline: 3px solid var(--focus);
     outline-offset: 2px;
 }
 
-.app-busy .action-footer button {
-    opacity: 0.55;
-    filter: saturate(0.7);
+.figma-button:disabled {
+    opacity: 0.58;
+    filter: saturate(0.55);
 }
 
-.mode-select-layout .content-panel {
-    padding: 10px;
+.capture-button {
+    font-size: 14px;
 }
 
-.mode-panel {
-    background: linear-gradient(180deg, #132131 0%, #0d1721 100%);
+.mode-card {
+    padding-bottom: 18px;
 }
 
-.mode-list {
+.mode-scroll {
     flex: 1;
+    min-height: 0;
+    margin-top: 11px;
+    padding-right: 5px;
     overflow-y: auto;
     display: grid;
-    gap: 10px;
-    align-content: start;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-auto-rows: minmax(43px, auto);
+    gap: 8px;
+    scrollbar-width: auto;
+    scrollbar-color: var(--figma-shell) rgba(47, 0, 73, 0.16);
 }
 
 .mode-option-form {
+    min-width: 0;
+}
+
+.mode-choice {
     width: 100%;
+    min-height: 43px;
+    padding: 7px 8px;
+    color: var(--white);
+    background: var(--figma-shell);
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 900;
+    line-height: 1.1;
+    text-align: left;
 }
 
-.single-action-footer {
-    margin-top: auto;
+.mode-choice-active {
+    color: var(--white);
+    background: var(--figma-green);
 }
 
-.error-kind-camera .status-strip,
-.error-kind-camera .content-panel {
-    border-color: rgba(255, 138, 102, 0.38);
+.mode-choice:active {
+    transform: translateY(1px);
 }
 
-.error-kind-camera .status-value,
-.error-kind-camera .panel-label,
-.error-kind-camera .error-message {
-    color: var(--error-camera);
+.mode-select-stage .mode-rail-form {
+    top: 41.8%;
 }
 
-.error-kind-network .status-strip,
-.error-kind-network .content-panel {
-    border-color: rgba(255, 191, 95, 0.38);
+.answer-area::-webkit-scrollbar,
+.mode-scroll::-webkit-scrollbar {
+    width: 8px;
 }
 
-.error-kind-network .status-value,
-.error-kind-network .panel-label,
-.error-kind-network .error-message {
-    color: var(--error-network);
+.answer-area::-webkit-scrollbar-track,
+.mode-scroll::-webkit-scrollbar-track {
+    background: rgba(47, 0, 73, 0.14);
+    border-radius: 999px;
 }
 
-.error-kind-api .status-strip,
-.error-kind-api .content-panel {
-    border-color: rgba(255, 111, 145, 0.38);
-}
-
-.error-kind-api .status-value,
-.error-kind-api .panel-label,
-.error-kind-api .error-message {
-    color: var(--error-api);
-}
-
-.error-kind-generic .status-strip,
-.error-kind-generic .content-panel {
-    border-color: rgba(255, 179, 194, 0.36);
-}
-
-.error-kind-generic .status-value,
-.error-kind-generic .panel-label,
-.error-kind-generic .error-message {
-    color: var(--error-generic);
+.answer-area::-webkit-scrollbar-thumb,
+.mode-scroll::-webkit-scrollbar-thumb {
+    background: var(--figma-shell);
+    border-radius: 999px;
 }
 
 .sr-only {
@@ -525,134 +395,71 @@ button:disabled {
     border: 0;
 }
 
-.answer-box::-webkit-scrollbar,
-.mode-list::-webkit-scrollbar,
-.error-box::-webkit-scrollbar,
-.home-box::-webkit-scrollbar {
-    width: 10px;
-}
-
-.answer-box::-webkit-scrollbar-track,
-.mode-list::-webkit-scrollbar-track,
-.error-box::-webkit-scrollbar-track,
-.home-box::-webkit-scrollbar-track {
-    background: rgba(255, 255, 255, 0.06);
-    border-radius: 999px;
-}
-
-.answer-box::-webkit-scrollbar-thumb,
-.mode-list::-webkit-scrollbar-thumb,
-.error-box::-webkit-scrollbar-thumb,
-.home-box::-webkit-scrollbar-thumb {
-    background: rgba(96, 210, 255, 0.88);
-    border-radius: 999px;
-}
-
-@keyframes thinkingPulse {
-    0%,
-    80%,
-    100% {
-        transform: scale(0.72);
-        opacity: 0.45;
+@media (max-width: 420px), (max-height: 280px) {
+    body {
+        font-size: 15px;
     }
 
-    40% {
-        transform: scale(1);
-        opacity: 1;
-    }
-}
-
-@media (max-height: 360px) {
-    .touchscreen-layout {
-        gap: 10px;
-        padding:
-            calc(10px + env(safe-area-inset-top))
-            calc(10px + env(safe-area-inset-right))
-            calc(10px + env(safe-area-inset-bottom))
-            calc(10px + env(safe-area-inset-left));
+    .figma-card {
+        padding: 14px 17px 13px;
     }
 
-    .app-title {
-        font-size: 22px;
+    .status-area {
+        grid-template-columns: minmax(0, 1fr) 98px;
+        min-height: 47px;
+        gap: 8px;
+        padding-bottom: 7px;
     }
 
-    .status-strip {
-        padding: 8px 10px;
+    .status-label {
+        font-size: 10px;
     }
 
-    .content-panel {
-        padding: 10px;
-        border-radius: 20px;
+    .status-value {
+        font-size: 19px;
     }
 
-    .primary-button,
-    .secondary-button,
-    .mode-button {
-        min-height: 50px;
-        font-size: 17px;
+    .mode-indicator {
+        padding: 5px 6px 6px;
+        border-radius: 8px;
+    }
+
+    .mode-indicator span {
+        font-size: 8px;
+    }
+
+    .mode-indicator strong {
+        font-size: 10px;
+    }
+
+    .answer-area {
+        margin-top: 8px;
+        font-size: 16px;
+    }
+
+    .state-title {
+        font-size: 23px;
+    }
+
+    .state-detail {
+        font-size: 16px;
+    }
+
+    .figma-button {
+        font-size: 12px;
     }
 
     .capture-button {
-        min-height: 56px;
-    }
-
-    .mode-list {
-        gap: 8px;
-    }
-
-    .home-mode-value,
-    .processing-headline,
-    .error-message {
-        font-size: 22px;
-    }
-
-    .home-detail,
-    .processing-detail,
-    .error-help,
-    .answer-box {
-        font-size: 16px;
-    }
-}
-
-@media (orientation: landscape) and (max-height: 420px) {
-    .touchscreen-layout {
-        gap: 8px;
-        padding:
-            calc(8px + env(safe-area-inset-top))
-            calc(10px + env(safe-area-inset-right))
-            calc(8px + env(safe-area-inset-bottom))
-            calc(10px + env(safe-area-inset-left));
-    }
-
-    .app-header {
-        gap: 2px;
-    }
-
-    .app-kicker,
-    .status-heading,
-    .panel-label {
         font-size: 11px;
     }
 
-    .app-title,
-    .status-value,
-    .home-mode-value,
-    .processing-headline,
-    .error-message {
-        font-size: 21px;
+    .mode-scroll {
+        grid-auto-rows: minmax(36px, auto);
+        gap: 6px;
     }
 
-    .content-panel {
-        padding: 10px;
-    }
-
-    .primary-button,
-    .secondary-button,
-    .mode-button {
-        min-height: 48px;
-    }
-
-    .mode-list {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+    .mode-choice {
+        min-height: 36px;
+        font-size: 11px;
     }
 }
