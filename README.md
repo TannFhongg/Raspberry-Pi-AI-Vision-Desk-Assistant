@@ -20,6 +20,7 @@ The project is organized in phases so each layer can be tested independently and
 - Analyze images with multiple AI modes using the OpenAI Python SDK
 - Run the full pipeline from the terminal
 - Control the same pipeline from a touchscreen-first Flask UI
+- Use a production portrait touchscreen UI optimized for `320x480` Raspberry Pi displays
 - Use a configurable physical GPIO button to trigger the same capture flow
 - Load device defaults from `config/device.yaml` with environment variable and CLI overrides
 - Run `python check_hardware.py` to verify camera, display, internet, OpenAI, and GPIO readiness
@@ -263,25 +264,6 @@ Processed output:
 static/processed.jpg
 ```
 
-## Phase 9: Long-Distance Screen/Document Vision Optimization
-
-Run the advanced screen/document preprocessing flow on an existing image:
-
-```bash
-python test_screen_vision.py --input test_images/screen_photo.jpg --detect-screen --enhance
-```
-
-If `--detect-screen` and `--enhance` are both omitted, `test_screen_vision.py` enables both by default.
-
-Debug outputs:
-
-```text
-debug/original.jpg
-debug/detected_screen.jpg
-debug/corrected.jpg
-debug/enhanced.jpg
-```
-
 ## Phase 4: Full Terminal Pipeline
 
 Run the full pipeline from the terminal:
@@ -331,7 +313,9 @@ python app.py
 
 The current UI is a kiosk-style, touchscreen-first flow tuned for small Raspberry Pi displays.
 
-For production Pi hardware, Phase 8 targets this default boot behavior:
+Phase 10 refines this into a production portrait layout for small `320x480` touchscreens.
+
+For production Pi hardware, the current setup targets this default boot behavior:
 
 ```text
 Power on -> systemd starts Flask -> Chromium opens http://localhost:5000 in kiosk mode
@@ -339,13 +323,13 @@ Power on -> systemd starts Flask -> Chromium opens http://localhost:5000 in kios
 
 Screen flow:
 
-- `home`: minimal launcher with `Mode` and `Capture`
+- `home`: ready screen showing the current mode, status, and large `Capture`, `Mode`, and `Retry` buttons
 - `mode_select`: dedicated mode picker for `Read Text`, `Summarize Document`, `Solve Problem`, `Analyze Image`, and `Professional Assistant`
-- `processing`: auto-refreshing progress screen for capture, preprocessing, AI analysis, and answer preparation
-- `result`: readable answer screen with `New Capture` and `Back`
-- `error`: friendly error screen with `Try Again` and `Back`
+- `processing`: auto-refreshing progress screen with simplified centered status and a `Thinking...` state during AI analysis
+- `result`: readable answer screen with a large scrollable answer box and persistent `Capture`, `Mode`, and `Retry` buttons
+- `error`: classified `Camera error`, `Network error`, `API error`, or generic error screen with the same touch-friendly action row
 
-Tapping `Capture` on the home screen starts the full background capture -> preprocess -> analyze workflow for the currently selected mode.
+Tapping `Capture` starts the full background capture -> preprocess -> analyze workflow for the currently selected mode.
 
 The selected mode and current screen state are stored in `data/ui_state.json`.
 
@@ -358,7 +342,7 @@ http://127.0.0.1:5000
 Open it fullscreen in Chromium kiosk mode:
 
 ```bash
-chromium-browser --kiosk --app=http://127.0.0.1:5000
+chromium-browser --kiosk http://127.0.0.1:5000
 ```
 
 Portrait touchscreen example:
@@ -433,6 +417,50 @@ The script verifies:
 - OpenAI API reachable with the configured key and model
 - GPIO available through `gpiozero`
 
+## Phase 9: Long-Distance Screen/Document Vision Optimization
+
+Run the advanced screen/document preprocessing flow on an existing image:
+
+```bash
+python test_screen_vision.py --input test_images/screen_photo.jpg --detect-screen --enhance
+```
+
+If `--detect-screen` and `--enhance` are both omitted, `test_screen_vision.py` enables both by default.
+
+Debug outputs:
+
+```text
+debug/original.jpg
+debug/detected_screen.jpg
+debug/corrected.jpg
+debug/enhanced.jpg
+```
+
+## Phase 10: Production Touchscreen UI
+
+Phase 10 upgrades the Flask touchscreen experience into a production-ready small-screen UI for a `320x480` portrait Raspberry Pi display.
+
+Highlights:
+
+- portrait-first kiosk layout with `AI Vision Assistant`, a prominent `STATUS` block, and a large content/answer area
+- large touch targets with a consistent two-row action area: `Capture`, `Mode`, and `Retry`
+- simplified processing screen that shows `Thinking...` during AI-heavy steps
+- readable scrollable answer box designed for long responses on a 2.5 inch display
+- error classification for `Camera error`, `Network error`, `API error`, and fallback generic errors
+- fullscreen-friendly CSS for Chromium kiosk mode without page-level scrolling
+
+Recommended portrait launch command:
+
+```bash
+UI_SCREEN_WIDTH=320 UI_SCREEN_HEIGHT=480 UI_DISPLAY_ORIENTATION=portrait python app.py
+```
+
+Chromium kiosk launch:
+
+```bash
+chromium-browser --kiosk http://localhost:5000
+```
+
 ## Troubleshooting
 
 ### Missing `OPENAI_API_KEY`
@@ -476,6 +504,7 @@ The script verifies:
 
 ### Touch UI Layout Does Not Fit The Screen
 
+- Phase 10 is tuned for a `320x480` portrait display by default
 - Adjust `display.size.width` and `display.size.height` in `config/device.yaml`
 - Change `display.orientation` or override `UI_DISPLAY_ORIENTATION`
 - Increase or decrease `UI_TOUCH_TARGET` and font sizes for the attached display

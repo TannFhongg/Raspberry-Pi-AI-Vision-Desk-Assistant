@@ -1,36 +1,22 @@
 :root {
-    --page-bg: #05070b;
-    --shell-fill: #2f0049;
-    --card-fill: #d9d9d9;
-    --button-fill: #009951;
-    --ink: #180e24;
-    --home-card-left: 7.375%;
-    --home-card-top: 9.375%;
-    --home-card-width: 67.125%;
-    --home-card-height: 82.375%;
-    --home-mode-left: 80%;
-    --home-mode-top: 20.25%;
-    --home-mode-width: 15.75%;
-    --home-mode-height: 19.7%;
-    --home-capture-left: 80.125%;
-    --home-capture-top: 63.2%;
-    --home-capture-width: 15.5%;
-    --home-capture-height: 19.5%;
-    --home-shell-radius: 20px;
-    --home-card-radius: 26px;
-    --home-button-radius: 18px;
-    --bg: #090d12;
-    --bg-glow: #102131;
-    --panel: rgba(18, 24, 32, 0.96);
-    --panel-strong: rgba(24, 33, 44, 0.98);
-    --text: #f5f7fb;
-    --muted: #b4c0cf;
-    --accent: #5ec8ff;
-    --accent-strong: #1593d4;
-    --success: #7ce4a6;
-    --danger: #ff8977;
-    --border: rgba(255, 255, 255, 0.1);
-    --shadow: 0 20px 45px rgba(0, 0, 0, 0.35);
+    --bg: #081018;
+    --bg-deep: #04080d;
+    --panel: #101c27;
+    --panel-strong: #162433;
+    --panel-soft: #0d1721;
+    --text: #f4f8fc;
+    --muted: #b6c4d3;
+    --accent: #60d2ff;
+    --accent-strong: #1699d2;
+    --accent-soft: rgba(96, 210, 255, 0.18);
+    --success: #8ff0b2;
+    --warning: #ffd46c;
+    --error-camera: #ff8a66;
+    --error-network: #ffbf5f;
+    --error-api: #ff6f91;
+    --error-generic: #ffb3c2;
+    --border: rgba(255, 255, 255, 0.12);
+    --shadow: 0 16px 36px rgba(0, 0, 0, 0.32);
 }
 
 * {
@@ -40,18 +26,26 @@
 html,
 body {
     width: 100%;
-    min-height: 100%;
+    height: 100%;
+    margin: 0;
 }
 
 body {
-    margin: 0;
     min-height: 100vh;
+    min-height: 100dvh;
+    overflow: hidden;
+    overscroll-behavior: none;
     display: flex;
-    align-items: center;
+    align-items: stretch;
     justify-content: center;
-    font-family: "Verdana", "Trebuchet MS", "Segoe UI", sans-serif;
-    font-size: clamp(0.95rem, 2.7vw, var(--base-font-size));
-    line-height: 1.42;
+    color: var(--text);
+    background:
+        radial-gradient(circle at top, rgba(96, 210, 255, 0.16), transparent 38%),
+        radial-gradient(circle at bottom, rgba(22, 153, 210, 0.18), transparent 42%),
+        linear-gradient(180deg, #0a1620 0%, var(--bg) 52%, var(--bg-deep) 100%);
+    font-family: "Trebuchet MS", "Gill Sans", "Segoe UI", sans-serif;
+    font-size: clamp(17px, 4.8vw, var(--base-font-size));
+    line-height: 1.45;
 }
 
 form {
@@ -59,13 +53,464 @@ form {
 }
 
 button {
+    width: 100%;
+    border: none;
+    border-radius: 18px;
     font: inherit;
-    cursor: pointer;
+    font-size: clamp(18px, 5vw, var(--button-font-size));
+    font-weight: 700;
+    letter-spacing: 0.01em;
     touch-action: manipulation;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+button:disabled {
+    cursor: default;
+    pointer-events: none;
 }
 
 .device-shell {
+    width: min(100vw, var(--screen-width));
+    height: min(100vh, var(--screen-height));
+    height: min(100dvh, var(--screen-height));
+    display: flex;
+    flex-direction: column;
     overflow: hidden;
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0)),
+        linear-gradient(180deg, #0d1822 0%, #09131c 100%);
+}
+
+.touchscreen-layout {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding:
+        calc(12px + env(safe-area-inset-top))
+        calc(12px + env(safe-area-inset-right))
+        calc(12px + env(safe-area-inset-bottom))
+        calc(12px + env(safe-area-inset-left));
+}
+
+.app-header {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.app-kicker {
+    margin: 0;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
+.app-title {
+    margin: 0;
+    font-size: clamp(24px, 7.4vw, 28px);
+    line-height: 1.03;
+}
+
+.app-subtitle {
+    margin: 0;
+    font-size: 15px;
+    color: var(--muted);
+    line-height: 1.35;
+}
+
+.status-strip,
+.content-panel {
+    border: 1px solid var(--border);
+    background: var(--panel);
+    box-shadow: var(--shadow);
+}
+
+.status-strip {
+    padding: 10px 12px;
+    border-radius: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.status-heading {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
+.status-value {
+    margin: 0;
+    font-size: clamp(22px, 6.5vw, var(--status-font-size));
+    line-height: 1.05;
+    font-weight: 800;
+}
+
+.content-panel {
+    flex: 1;
+    min-height: 0;
+    border-radius: 24px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    overflow: hidden;
+}
+
+.panel-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.panel-label,
+.panel-meta {
+    margin: 0;
+}
+
+.panel-label {
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
+.panel-meta {
+    max-width: 46%;
+    text-align: right;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--accent);
+    line-height: 1.25;
+}
+
+.home-box,
+.error-box,
+.processing-box,
+.answer-box,
+.mode-list {
+    min-height: 0;
+}
+
+.home-box,
+.error-box {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 2px 2px;
+}
+
+.home-mode-label,
+.home-mode-value,
+.home-detail,
+.error-message,
+.error-help,
+.debug-text,
+.processing-headline,
+.processing-detail,
+.processing-mode {
+    margin: 0;
+}
+
+.home-mode-label {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--muted);
+}
+
+.home-mode-value {
+    margin-top: 4px;
+    font-size: clamp(24px, 7vw, 28px);
+    line-height: 1.1;
+    font-weight: 800;
+    color: var(--accent);
+}
+
+.home-detail {
+    margin-top: 12px;
+    font-size: clamp(18px, 5.3vw, 19px);
+    line-height: 1.45;
+}
+
+.processing-panel {
+    justify-content: center;
+}
+
+.processing-box {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    text-align: center;
+}
+
+.thinking-orb {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    padding: 10px 14px;
+    border-radius: 999px;
+    background: var(--accent-soft);
+}
+
+.thinking-orb span {
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    background: var(--accent);
+    animation: thinkingPulse 1.2s ease-in-out infinite;
+}
+
+.thinking-orb span:nth-child(2) {
+    animation-delay: 0.15s;
+}
+
+.thinking-orb span:nth-child(3) {
+    animation-delay: 0.3s;
+}
+
+.processing-headline {
+    font-size: clamp(24px, 7vw, 28px);
+    line-height: 1.08;
+    font-weight: 800;
+}
+
+.processing-detail {
+    max-width: 14rem;
+    font-size: 18px;
+    line-height: 1.4;
+    color: var(--muted);
+}
+
+.processing-mode {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--accent);
+}
+
+.answer-panel {
+    background: linear-gradient(180deg, #13202c 0%, #0e1822 100%);
+}
+
+.answer-box {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px;
+    border-radius: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: var(--panel-soft);
+    font-size: clamp(17px, 4.9vw, 19px);
+    line-height: 1.55;
+    word-break: break-word;
+    scrollbar-width: auto;
+    scrollbar-color: rgba(96, 210, 255, 0.85) rgba(255, 255, 255, 0.09);
+}
+
+.answer-box p,
+.answer-box ul {
+    margin: 0 0 12px;
+}
+
+.answer-box ul {
+    padding-left: 1.2rem;
+}
+
+.answer-box li + li {
+    margin-top: 8px;
+}
+
+.answer-box p:last-child,
+.answer-box ul:last-child {
+    margin-bottom: 0;
+}
+
+.answer-empty {
+    color: var(--muted);
+}
+
+.error-panel {
+    background: linear-gradient(180deg, rgba(255, 122, 122, 0.08), rgba(255, 255, 255, 0.01));
+}
+
+.error-box {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 2px 2px;
+}
+
+.error-message {
+    font-size: clamp(22px, 6.5vw, 27px);
+    line-height: 1.12;
+    font-weight: 800;
+}
+
+.error-help {
+    margin-top: 12px;
+    font-size: 18px;
+    line-height: 1.45;
+    color: var(--muted);
+}
+
+.debug-text {
+    margin-top: 12px;
+    font-size: 14px;
+    line-height: 1.4;
+    color: #ffd6dd;
+}
+
+.action-footer {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.secondary-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.primary-button,
+.secondary-button,
+.mode-button {
+    min-height: max(56px, var(--touch-target));
+    padding: 12px 14px;
+    transition: transform 120ms ease, filter 120ms ease, opacity 120ms ease;
+}
+
+.capture-button {
+    min-height: max(62px, calc(var(--touch-target) + 6px));
+}
+
+.primary-button {
+    color: #031018;
+    background: linear-gradient(180deg, #a5eeff 0%, var(--accent) 55%, var(--accent-strong) 100%);
+    box-shadow: 0 10px 18px rgba(22, 153, 210, 0.28);
+}
+
+.secondary-button {
+    color: var(--text);
+    background: #1d2b3a;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.mode-button {
+    color: var(--text);
+    background: #1a2835;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    font-size: 18px;
+    line-height: 1.2;
+    text-align: left;
+}
+
+.mode-button-active {
+    color: #041019;
+    background: linear-gradient(180deg, #b0f3ff 0%, #79ddff 100%);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.primary-button:hover,
+.secondary-button:hover,
+.mode-button:hover {
+    filter: brightness(1.04);
+}
+
+.primary-button:active,
+.secondary-button:active,
+.mode-button:active {
+    transform: scale(0.985);
+}
+
+.primary-button:focus-visible,
+.secondary-button:focus-visible,
+.mode-button:focus-visible {
+    outline: 3px solid rgba(143, 240, 178, 0.95);
+    outline-offset: 2px;
+}
+
+.app-busy .action-footer button {
+    opacity: 0.55;
+    filter: saturate(0.7);
+}
+
+.mode-select-layout .content-panel {
+    padding: 10px;
+}
+
+.mode-panel {
+    background: linear-gradient(180deg, #132131 0%, #0d1721 100%);
+}
+
+.mode-list {
+    flex: 1;
+    overflow-y: auto;
+    display: grid;
+    gap: 10px;
+    align-content: start;
+}
+
+.mode-option-form {
+    width: 100%;
+}
+
+.single-action-footer {
+    margin-top: auto;
+}
+
+.error-kind-camera .status-strip,
+.error-kind-camera .content-panel {
+    border-color: rgba(255, 138, 102, 0.38);
+}
+
+.error-kind-camera .status-value,
+.error-kind-camera .panel-label,
+.error-kind-camera .error-message {
+    color: var(--error-camera);
+}
+
+.error-kind-network .status-strip,
+.error-kind-network .content-panel {
+    border-color: rgba(255, 191, 95, 0.38);
+}
+
+.error-kind-network .status-value,
+.error-kind-network .panel-label,
+.error-kind-network .error-message {
+    color: var(--error-network);
+}
+
+.error-kind-api .status-strip,
+.error-kind-api .content-panel {
+    border-color: rgba(255, 111, 145, 0.38);
+}
+
+.error-kind-api .status-value,
+.error-kind-api .panel-label,
+.error-kind-api .error-message {
+    color: var(--error-api);
+}
+
+.error-kind-generic .status-strip,
+.error-kind-generic .content-panel {
+    border-color: rgba(255, 179, 194, 0.36);
+}
+
+.error-kind-generic .status-value,
+.error-kind-generic .panel-label,
+.error-kind-generic .error-message {
+    color: var(--error-generic);
 }
 
 .sr-only {
@@ -80,867 +525,134 @@ button {
     border: 0;
 }
 
-body.app-screen-home {
-    padding: 0;
-    background: var(--page-bg);
+.answer-box::-webkit-scrollbar,
+.mode-list::-webkit-scrollbar,
+.error-box::-webkit-scrollbar,
+.home-box::-webkit-scrollbar {
+    width: 10px;
 }
 
-body.app-screen-home .device-shell {
-    position: relative;
-    width: min(100vw, var(--screen-width));
-    height: min(100vh, var(--screen-height));
-    border-radius: var(--home-shell-radius);
-    background:
-        url("figma/shell-bg.png") center / 100% 100% no-repeat,
-        var(--shell-fill);
-    box-shadow: 0 18px 36px rgba(0, 0, 0, 0.36);
-}
-
-body.app-screen-home .screen-frame {
-    position: relative;
-    width: 100%;
-    height: 100%;
-}
-
-body.app-screen-home .content-card {
-    background:
-        url("figma/content-card-bg.png") center / 100% 100% no-repeat,
-        var(--card-fill);
-    border-radius: var(--home-card-radius);
-}
-
-body.app-screen-home .home-card {
-    position: absolute;
-    left: var(--home-card-left);
-    top: var(--home-card-top);
-    width: var(--home-card-width);
-    height: var(--home-card-height);
-}
-
-body.app-screen-home .home-actions {
-    position: absolute;
-    inset: 0;
-}
-
-body.app-screen-home .home-action {
-    position: absolute;
-    margin: 0;
-}
-
-body.app-screen-home .home-mode-action {
-    left: var(--home-mode-left);
-    top: var(--home-mode-top);
-    width: var(--home-mode-width);
-    height: var(--home-mode-height);
-}
-
-body.app-screen-home .home-capture-action {
-    left: var(--home-capture-left);
-    top: var(--home-capture-top);
-    width: var(--home-capture-width);
-    height: var(--home-capture-height);
-}
-
-body.app-screen-home .figma-button {
-    width: 100%;
-    height: 100%;
-    min-height: 0;
-    padding: 0;
-    border: none;
-    border-radius: var(--home-button-radius);
-    background:
-        url("figma/action-button-bg.png") center / 100% 100% no-repeat,
-        var(--button-fill);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-body.app-screen-home .figma-button:focus-visible {
-    outline: 3px solid rgba(255, 255, 255, 0.95);
-    outline-offset: 2px;
-}
-
-body.app-screen-home .button-art {
-    display: block;
-    height: auto;
-    user-select: none;
-    pointer-events: none;
-}
-
-body.app-screen-home .button-art-mode {
-    width: 62%;
-}
-
-body.app-screen-home .button-art-capture {
-    width: 77.5%;
-}
-
-body.app-screen-home.orientation-portrait {
-    padding: 0.4rem;
-}
-
-body.app-screen-home.orientation-portrait .device-shell {
-    width: min(calc(100vw - 0.8rem), var(--screen-width));
-    height: min(calc(100vh - 0.8rem), var(--screen-height));
-}
-
-body.app-screen-home.orientation-portrait .home-screen {
-    display: flex;
-    flex-direction: column;
-    gap: 0.7rem;
-    padding: 0.85rem;
-}
-
-body.app-screen-home.orientation-portrait .home-card {
-    position: relative;
-    left: auto;
-    top: auto;
-    width: 100%;
-    height: auto;
-    flex: 1;
-}
-
-body.app-screen-home.orientation-portrait .home-actions {
-    position: relative;
-    inset: auto;
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.7rem;
-}
-
-body.app-screen-home.orientation-portrait .home-action {
-    position: relative;
-    left: auto;
-    top: auto;
-    width: 100%;
-    height: 3.9rem;
-}
-
-body:not(.app-screen-home) {
-    padding: 0.45rem;
-    color: var(--text);
-    background:
-        radial-gradient(circle at top, rgba(94, 200, 255, 0.18), transparent 30rem),
-        radial-gradient(circle at bottom left, rgba(21, 147, 212, 0.18), transparent 24rem),
-        linear-gradient(180deg, var(--bg-glow) 0%, var(--bg) 58%, #05070b 100%);
-}
-
-body:not(.app-screen-home) .device-shell {
-    width: min(100%, var(--screen-width));
-    height: min(calc(100vh - 0.9rem), var(--screen-height));
-    padding: 0.95rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.7rem;
-    border-radius: 26px;
-    border: 1px solid var(--border);
-    background:
-        linear-gradient(180deg, rgba(31, 43, 57, 0.22), rgba(6, 9, 14, 0)),
-        var(--panel);
-    box-shadow: var(--shadow);
-}
-
-body:not(.app-screen-home) .screen-section {
-    display: flex;
-    flex: 1;
-    flex-direction: column;
-    gap: 0.75rem;
-    min-height: 0;
-}
-
-body:not(.app-screen-home) .screen-header {
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
-}
-
-body:not(.app-screen-home) .compact-header {
-    gap: 0.22rem;
-}
-
-body:not(.app-screen-home) .screen-header h1 {
-    margin: 0;
-    font-size: clamp(1.5rem, 5.2vw, var(--title-font-size));
-    line-height: 1.04;
-    letter-spacing: 0.01em;
-}
-
-body:not(.app-screen-home) .eyebrow {
-    margin: 0;
-    font-size: 0.78rem;
-    letter-spacing: 0.11em;
-    text-transform: uppercase;
-    color: var(--muted);
-}
-
-body:not(.app-screen-home) .screen-copy {
-    margin: 0;
-    max-width: 26rem;
-    color: var(--muted);
-    font-size: 0.96rem;
-    line-height: 1.35;
-}
-
-body:not(.app-screen-home) .screen-body {
-    display: flex;
-    flex: 1;
-    gap: 0.8rem;
-    min-height: 0;
-}
-
-body:not(.app-screen-home) .status-panel,
-body:not(.app-screen-home) .answer-panel {
-    padding: 0.9rem;
-    border-radius: 20px;
-    border: 1px solid var(--border);
-    background: var(--panel-strong);
-}
-
-body:not(.app-screen-home) .side-panel {
-    min-width: 0;
-}
-
-body:not(.app-screen-home) .status-panel {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    gap: 0.4rem;
-}
-
-body:not(.app-screen-home) .status-error {
-    border-color: rgba(255, 137, 119, 0.38);
-    background: rgba(63, 21, 18, 0.86);
-}
-
-body:not(.app-screen-home) .status-label {
-    margin: 0;
-    font-size: clamp(1.35rem, 4.7vw, var(--status-font-size));
-    font-weight: 700;
-    line-height: 1.02;
-}
-
-body:not(.app-screen-home) .answer-label {
-    margin: 0;
-    font-size: clamp(1.15rem, 3.2vw, 1.35rem);
-    font-weight: 700;
-    line-height: 1.1;
-}
-
-body:not(.app-screen-home) .status-detail,
-body:not(.app-screen-home) .debug-text {
-    margin: 0;
-    color: var(--text);
-    font-size: clamp(1rem, 2.7vw, 1.12rem);
-    line-height: 1.42;
-}
-
-body:not(.app-screen-home) .debug-text {
-    color: var(--muted);
-    font-size: 0.92rem;
-}
-
-body:not(.app-screen-home) .answer-panel {
-    display: flex;
-    flex: 1 1 auto;
-    flex-direction: column;
-    min-height: 0;
-    gap: 0.6rem;
-}
-
-body:not(.app-screen-home) .answer-card {
-    min-width: 0;
-}
-
-body:not(.app-screen-home) .answer-box {
-    flex: 1 1 auto;
-    min-height: 0;
-    padding: 0.9rem;
-    border-radius: 18px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    background: rgba(7, 12, 18, 0.9);
-    overflow-y: auto;
-    color: var(--text);
-    font-size: clamp(1rem, 2.55vw, 1.18rem);
-    line-height: 1.5;
-    word-break: break-word;
-    scrollbar-width: thin;
-    scrollbar-color: rgba(94, 200, 255, 0.7) rgba(255, 255, 255, 0.06);
-}
-
-body:not(.app-screen-home) .answer-box::-webkit-scrollbar,
-body:not(.app-screen-home) .mode-list::-webkit-scrollbar,
-body:not(.app-screen-home) .progress-list::-webkit-scrollbar {
-    width: 0.42rem;
-}
-
-body:not(.app-screen-home) .answer-box::-webkit-scrollbar-track,
-body:not(.app-screen-home) .mode-list::-webkit-scrollbar-track,
-body:not(.app-screen-home) .progress-list::-webkit-scrollbar-track {
-    background: rgba(255, 255, 255, 0.04);
+.answer-box::-webkit-scrollbar-track,
+.mode-list::-webkit-scrollbar-track,
+.error-box::-webkit-scrollbar-track,
+.home-box::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.06);
     border-radius: 999px;
 }
 
-body:not(.app-screen-home) .answer-box::-webkit-scrollbar-thumb,
-body:not(.app-screen-home) .mode-list::-webkit-scrollbar-thumb,
-body:not(.app-screen-home) .progress-list::-webkit-scrollbar-thumb {
-    background: rgba(94, 200, 255, 0.52);
+.answer-box::-webkit-scrollbar-thumb,
+.mode-list::-webkit-scrollbar-thumb,
+.error-box::-webkit-scrollbar-thumb,
+.home-box::-webkit-scrollbar-thumb {
+    background: rgba(96, 210, 255, 0.88);
     border-radius: 999px;
 }
 
-body:not(.app-screen-home) .answer-box p,
-body:not(.app-screen-home) .answer-box ul {
-    margin: 0 0 0.85rem;
-}
-
-body:not(.app-screen-home) .answer-box ul {
-    padding-left: 1.3rem;
-}
-
-body:not(.app-screen-home) .answer-box li + li {
-    margin-top: 0.45rem;
-}
-
-body:not(.app-screen-home) .answer-box p:last-child,
-body:not(.app-screen-home) .answer-box ul:last-child {
-    margin-bottom: 0;
-}
-
-body:not(.app-screen-home) .answer-empty {
-    color: var(--muted);
-}
-
-body:not(.app-screen-home) .button-stack,
-body:not(.app-screen-home) .mode-list {
-    display: grid;
-    gap: 0.7rem;
-}
-
-body:not(.app-screen-home) form {
-    width: 100%;
-}
-
-body:not(.app-screen-home) button {
-    width: 100%;
-    min-height: var(--touch-target);
-    padding: 0.78rem 0.9rem;
-    border: none;
-    border-radius: 18px;
-    font-size: clamp(1.05rem, 3.2vw, var(--button-font-size));
-    font-weight: 700;
-    letter-spacing: 0.01em;
-}
-
-body:not(.app-screen-home) .primary-button,
-body:not(.app-screen-home) .secondary-button,
-body:not(.app-screen-home) .mode-button {
-    transition: filter 120ms ease, transform 120ms ease;
-}
-
-body:not(.app-screen-home) .primary-button {
-    color: #041019;
-    background: linear-gradient(180deg, #82dbff 0%, var(--accent) 52%, var(--accent-strong) 100%);
-}
-
-body:not(.app-screen-home) .secondary-button {
-    color: var(--text);
-    background: #253140;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-body:not(.app-screen-home) .mode-button {
-    min-height: clamp(44px, calc(var(--touch-target) - 18px), 56px);
-    padding: 0.62rem 0.45rem;
-    color: var(--text);
-    background: #212a36;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    font-size: clamp(0.78rem, 1.95vw, 0.93rem);
-    line-height: 1.15;
-}
-
-body:not(.app-screen-home) .mode-button-active {
-    color: #041019;
-    background: linear-gradient(180deg, #8ae0ff 0%, #55c5ff 100%);
-}
-
-body:not(.app-screen-home) .primary-button:hover,
-body:not(.app-screen-home) .secondary-button:hover,
-body:not(.app-screen-home) .mode-button:hover {
-    filter: brightness(1.03);
-}
-
-body:not(.app-screen-home) .primary-button:active,
-body:not(.app-screen-home) .secondary-button:active,
-body:not(.app-screen-home) .mode-button:active {
-    transform: scale(0.99);
-}
-
-body:not(.app-screen-home) .primary-button:focus-visible,
-body:not(.app-screen-home) .secondary-button:focus-visible,
-body:not(.app-screen-home) .mode-button:focus-visible {
-    outline: 3px solid rgba(124, 228, 166, 0.95);
-    outline-offset: 2px;
-}
-
-body:not(.app-screen-home) .capture-button {
-    min-height: calc(var(--touch-target) + 4px);
-}
-
-body:not(.app-screen-home) .action-rail {
-    width: min(10rem, 36%);
-    flex: 0 0 min(10rem, 36%);
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    justify-content: flex-end;
-}
-
-body:not(.app-screen-home) .action-rail .button-stack {
-    width: 100%;
-}
-
-body:not(.app-screen-home) .progress-list {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-    display: grid;
-    gap: 0.55rem;
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow: auto;
-}
-
-body:not(.app-screen-home) .progress-step {
-    display: flex;
-    align-items: center;
-    gap: 0.65rem;
-    min-height: 3.05rem;
-    padding: 0.75rem 0.8rem;
-    border-radius: 18px;
-    border: 1px solid var(--border);
-    background: rgba(255, 255, 255, 0.03);
-    color: var(--muted);
-    font-size: clamp(0.95rem, 2.4vw, 1.02rem);
-    line-height: 1.28;
-}
-
-body:not(.app-screen-home) .progress-active {
-    color: var(--text);
-    background: rgba(94, 200, 255, 0.12);
-    border-color: rgba(94, 200, 255, 0.32);
-}
-
-body:not(.app-screen-home) .progress-done {
-    color: var(--text);
-    background: rgba(124, 228, 166, 0.12);
-    border-color: rgba(124, 228, 166, 0.28);
-}
-
-body:not(.app-screen-home) .progress-dot {
-    width: 0.95rem;
-    height: 0.95rem;
-    flex: 0 0 0.95rem;
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.18);
-}
-
-body:not(.app-screen-home) .progress-active .progress-dot {
-    background: var(--accent);
-}
-
-body:not(.app-screen-home) .progress-done .progress-dot {
-    background: var(--success);
-}
-
-body:not(.app-screen-home) .processing-body .side-panel {
-    flex: 0 0 min(10.5rem, 38%);
-}
-
-body:not(.app-screen-home) .mode-body {
-    display: flex;
-    flex: 1;
-    flex-direction: column;
-    gap: 0.6rem;
-    min-height: 0;
-}
-
-body:not(.app-screen-home) .mode-list {
-    flex: 1;
-    min-height: 0;
-    overflow: auto;
-    align-content: start;
-    gap: 0.55rem;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-body:not(.app-screen-home) .mode-back-form {
-    margin-top: auto;
-}
-
-body:not(.app-screen-home) .mode-back-form .secondary-button {
-    min-height: clamp(50px, calc(var(--touch-target) - 8px), 62px);
-    font-size: clamp(0.98rem, 2.8vw, 1.08rem);
-}
-
-body:not(.app-screen-home) .mode-footer {
-    margin: 0;
-    padding-top: 0.08rem;
-    color: var(--muted);
-    text-align: center;
-    font-size: 0.96rem;
-    line-height: 1.35;
-}
-
-body:not(.app-screen-home) .footer-form {
-    margin-top: auto;
-}
-
-body:not(.app-screen-home).orientation-landscape .screen-body {
-    flex-direction: row;
-}
-
-body:not(.app-screen-home).orientation-landscape .mode-list {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-body:not(.app-screen-home).orientation-portrait .screen-body {
-    flex-direction: column;
-}
-
-body:not(.app-screen-home).orientation-portrait .action-rail {
-    width: auto;
-    flex-basis: auto;
-}
-
-body:not(.app-screen-home).orientation-portrait .mode-list {
-    grid-template-columns: 1fr;
-}
-
-body:not(.app-screen-home) .home-screen .action-rail {
-    width: min(8.8rem, 33%);
-    flex-basis: min(8.8rem, 33%);
-}
-
-body:not(.app-screen-home) .home-screen .button-stack {
-    gap: 0.6rem;
-}
-
-body:not(.app-screen-home) .home-screen .primary-button,
-body:not(.app-screen-home) .home-screen .secondary-button {
-    min-height: clamp(54px, calc(var(--touch-target) - 8px), 66px);
-    font-size: clamp(1rem, 2.9vw, 1.1rem);
-}
-
-body:not(.app-screen-home) .home-screen .capture-button {
-    min-height: clamp(58px, calc(var(--touch-target) - 4px), 70px);
-}
-
-body.app-screen-mode_select {
-    padding: 0;
-    color: #fff;
-    background: #000;
-}
-
-body.app-screen-mode_select .device-shell {
-    position: relative;
-    width: min(100vw, var(--screen-width));
-    height: min(100vh, var(--screen-height));
-    padding: 0;
-    display: block;
-    border: none;
-    border-radius: var(--home-shell-radius);
-    background:
-        url("figma/shell-bg.png") center / 100% 100% no-repeat,
-        var(--shell-fill);
-    box-shadow: none;
-}
-
-body.app-screen-mode_select .screen-section {
-    display: block;
-    width: 100%;
-    height: 100%;
-}
-
-body.app-screen-mode_select .mode-layout {
-    position: relative;
-    height: 100%;
-}
-
-body.app-screen-mode_select .mode-hero {
-    position: absolute;
-    top: 8.125%;
-    left: 0.833%;
-    width: 98.333%;
-    height: 21.25%;
-    margin: 0;
-    padding: 3.45% 4.6% 2.8%;
-    border-radius: 32px;
-    background: #26a9e4;
-}
-
-body.app-screen-mode_select .mode-hero h1 {
-    margin: 0 0 5px;
-    color: #fff;
-    font-size: clamp(20px, 4.6vw, 22px);
-    font-style: italic;
-    font-weight: 800;
-    line-height: 1;
-    letter-spacing: 0.01em;
-}
-
-body.app-screen-mode_select .mode-copy {
-    margin: 0;
-    color: #fff;
-    font-size: clamp(12px, 2.7vw, 13px);
-    font-style: italic;
-    font-weight: 700;
-    line-height: 1.15;
-    letter-spacing: 0.005em;
-    white-space: nowrap;
-}
-
-body.app-screen-mode_select .mode-list {
-    position: absolute;
-    inset: 0;
-    margin: 0;
-    display: block;
-    overflow: visible;
-}
-
-body.app-screen-mode_select .mode-option-form {
-    position: absolute;
-    width: 23.55%;
-    height: 17.5%;
-}
-
-body.app-screen-mode_select .mode-option-form:nth-child(1) {
-    top: 33.4375%;
-    left: 5.833%;
-}
-
-body.app-screen-mode_select .mode-option-form:nth-child(2) {
-    top: 33.4375%;
-    left: 38.333%;
-}
-
-body.app-screen-mode_select .mode-option-form:nth-child(3) {
-    top: 33.4375%;
-    left: 70.833%;
-}
-
-body.app-screen-mode_select .mode-option-form:nth-child(4) {
-    top: 57.5%;
-    left: 18.958%;
-}
-
-body.app-screen-mode_select .mode-option-form:nth-child(5) {
-    top: 57.5%;
-    left: 51.458%;
-}
-
-body.app-screen-mode_select .mode-button,
-body.app-screen-mode_select .mode-button-active {
-    min-height: 0;
-    height: 100%;
-    padding: 0 clamp(8px, 2.1vw, 10px);
-    border: none;
-    border-radius: clamp(20px, 5vw, 24px);
-    color: #050505;
-    background: linear-gradient(90deg, #cf19f3 0%, #b111f0 100%);
-    font-size: clamp(12px, 2.7vw, 13px);
-    font-style: italic;
-    font-weight: 800;
-    line-height: 1.12;
-    text-align: center;
-    box-shadow: none;
-}
-
-body.app-screen-mode_select .mode-button-active {
-    outline: none;
-}
-
-body.app-screen-mode_select .mode-button:hover,
-body.app-screen-mode_select .mode-button-active:hover,
-body.app-screen-mode_select .secondary-button:hover {
-    filter: none;
-}
-
-body.app-screen-mode_select .mode-button:active,
-body.app-screen-mode_select .mode-button-active:active,
-body.app-screen-mode_select .secondary-button:active {
-    transform: none;
-}
-
-body.app-screen-mode_select .mode-button:focus-visible,
-body.app-screen-mode_select .mode-button-active:focus-visible,
-body.app-screen-mode_select .secondary-button:focus-visible {
-    outline: 3px solid rgba(255, 255, 255, 0.92);
-    outline-offset: 2px;
-}
-
-body.app-screen-mode_select .footer-form {
-    margin: 0;
-}
-
-body.app-screen-mode_select .mode-back-form {
-    position: absolute;
-    top: 81.875%;
-    left: 8.958%;
-    width: 82.083%;
-    height: 13.75%;
-    margin: 0;
-}
-
-body.app-screen-mode_select .secondary-button {
-    min-height: 0;
-    height: clamp(36px, 13.75vh, 44px);
-    padding: 0 24px;
-    border: none;
-    border-radius: clamp(18px, 4.6vw, 22px);
-    color: #050505;
-    background: #d9d9d9;
-    font-size: clamp(14px, 3.1vw, 15px);
-    font-style: italic;
-    font-weight: 800;
-    line-height: 1;
-    box-shadow: none;
-}
-
-body.app-screen-mode_select.orientation-portrait {
-    padding: 0;
-}
-
-body.app-screen-mode_select.orientation-portrait .device-shell {
-    width: min(100vw, var(--screen-width));
-    height: min(100vh, var(--screen-height));
+@keyframes thinkingPulse {
+    0%,
+    80%,
+    100% {
+        transform: scale(0.72);
+        opacity: 0.45;
+    }
+
+    40% {
+        transform: scale(1);
+        opacity: 1;
+    }
 }
 
 @media (max-height: 360px) {
-    body:not(.app-screen-home) {
-        padding: 0.25rem;
+    .touchscreen-layout {
+        gap: 10px;
+        padding:
+            calc(10px + env(safe-area-inset-top))
+            calc(10px + env(safe-area-inset-right))
+            calc(10px + env(safe-area-inset-bottom))
+            calc(10px + env(safe-area-inset-left));
     }
 
-    body:not(.app-screen-home) .device-shell {
-        height: calc(100vh - 0.5rem);
-        padding: 0.75rem;
-        gap: 0.6rem;
-        border-radius: 22px;
+    .app-title {
+        font-size: 22px;
     }
 
-    body:not(.app-screen-home) .screen-section {
-        gap: 0.6rem;
+    .status-strip {
+        padding: 8px 10px;
     }
 
-    body:not(.app-screen-home) .screen-header h1 {
-        font-size: clamp(1.35rem, 4.5vw, calc(var(--title-font-size) - 4px));
+    .content-panel {
+        padding: 10px;
+        border-radius: 20px;
     }
 
-    body:not(.app-screen-home) .eyebrow {
-        font-size: 0.72rem;
+    .primary-button,
+    .secondary-button,
+    .mode-button {
+        min-height: 50px;
+        font-size: 17px;
     }
 
-    body:not(.app-screen-home) .screen-copy {
-        font-size: 0.88rem;
-    }
-
-    body:not(.app-screen-home) .status-panel,
-    body:not(.app-screen-home) .answer-panel {
-        padding: 0.75rem;
-        border-radius: 18px;
-    }
-
-    body:not(.app-screen-home) .status-label {
-        font-size: clamp(1.18rem, 4vw, 1.45rem);
-    }
-
-    body:not(.app-screen-home) .status-detail,
-    body:not(.app-screen-home) .debug-text {
-        font-size: clamp(0.9rem, 2.5vw, 1rem);
-    }
-
-    body:not(.app-screen-home) button {
-        min-height: clamp(54px, calc(var(--touch-target) - 8px), 68px);
-        padding: 0.72rem 0.85rem;
-    }
-
-    body:not(.app-screen-home) .capture-button {
-        min-height: clamp(56px, calc(var(--touch-target) - 4px), 72px);
-    }
-
-    body:not(.app-screen-home) .mode-button {
-        min-height: 44px;
-        padding: 0.56rem 0.4rem;
-        font-size: clamp(0.74rem, 2vw, 0.88rem);
-    }
-
-    body:not(.app-screen-home) .action-rail {
-        width: min(9.1rem, 40%);
-        flex-basis: min(9.1rem, 40%);
-    }
-
-    body:not(.app-screen-home) .progress-list {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 0.45rem;
-    }
-
-    body:not(.app-screen-home) .progress-step {
-        min-height: 2.55rem;
-        padding: 0.6rem 0.7rem;
-        font-size: clamp(0.84rem, 2.2vw, 0.96rem);
-    }
-
-    body:not(.app-screen-home) .progress-dot {
-        width: 0.8rem;
-        height: 0.8rem;
-        flex-basis: 0.8rem;
-    }
-
-    body:not(.app-screen-home) .answer-box {
-        padding: 0.8rem;
-        font-size: clamp(0.94rem, 2.45vw, 1.04rem);
-    }
-
-    body:not(.app-screen-home) .mode-list {
-        gap: 0.45rem;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
-
-    body:not(.app-screen-home) .mode-footer {
-        font-size: 0.88rem;
-    }
-
-    body:not(.app-screen-home) .home-screen .action-rail {
-        width: min(8rem, 36%);
-        flex-basis: min(8rem, 36%);
-    }
-
-    body:not(.app-screen-home) .home-screen .primary-button,
-    body:not(.app-screen-home) .home-screen .secondary-button {
-        min-height: 52px;
-        font-size: clamp(0.94rem, 2.6vw, 1.02rem);
-    }
-
-    body:not(.app-screen-home) .home-screen .capture-button {
+    .capture-button {
         min-height: 56px;
     }
 
+    .mode-list {
+        gap: 8px;
+    }
+
+    .home-mode-value,
+    .processing-headline,
+    .error-message {
+        font-size: 22px;
+    }
+
+    .home-detail,
+    .processing-detail,
+    .error-help,
+    .answer-box {
+        font-size: 16px;
+    }
 }
 
-@media (max-width: 360px) {
-    body:not(.app-screen-home).orientation-landscape .screen-body {
-        gap: 0.65rem;
+@media (orientation: landscape) and (max-height: 420px) {
+    .touchscreen-layout {
+        gap: 8px;
+        padding:
+            calc(8px + env(safe-area-inset-top))
+            calc(10px + env(safe-area-inset-right))
+            calc(8px + env(safe-area-inset-bottom))
+            calc(10px + env(safe-area-inset-left));
     }
 
-    body:not(.app-screen-home).orientation-landscape .action-rail {
-        width: min(8.4rem, 41%);
-        flex-basis: min(8.4rem, 41%);
+    .app-header {
+        gap: 2px;
     }
 
-    body:not(.app-screen-home) .screen-header h1 {
-        font-size: clamp(1.32rem, 6vw, calc(var(--title-font-size) - 4px));
+    .app-kicker,
+    .status-heading,
+    .panel-label {
+        font-size: 11px;
     }
 
-    body:not(.app-screen-home) .answer-label {
-        font-size: 1.05rem;
+    .app-title,
+    .status-value,
+    .home-mode-value,
+    .processing-headline,
+    .error-message {
+        font-size: 21px;
+    }
+
+    .content-panel {
+        padding: 10px;
+    }
+
+    .primary-button,
+    .secondary-button,
+    .mode-button {
+        min-height: 48px;
+    }
+
+    .mode-list {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }

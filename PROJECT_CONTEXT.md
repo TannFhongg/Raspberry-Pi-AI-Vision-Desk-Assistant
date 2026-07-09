@@ -36,8 +36,8 @@ Shared core:
 - `ai/openai_client.py`: OpenAI Responses API wrapper for image analysis with friendly app errors
 - `ai/prompts.py`: supported mode definitions, alias handling, and prompt builder
 - `gpio/button.py`: gpiozero-based button trigger with a busy flag to avoid overlapping pipeline runs
-- `templates/index.html`: screen-based template for the current touch UI
-- `static/style.css`: Figma-inspired kiosk shell styles for home and mode select, plus responsive dark styles for processing, result, and error screens
+- `templates/index.html`: screen-based template for the current Phase 10 touch UI
+- `static/style.css`: portrait-first kiosk styles optimized for `320x480`, with large touch targets, scrollable answer content, and classified error screens
 
 Runtime artifacts:
 
@@ -69,16 +69,17 @@ With `SCREEN_OPTIMIZATION=auto`, the advanced screen/document optimization path 
 
 Current touchscreen flow:
 
-- `home`: minimal launcher with `Mode` and `Capture`
+- `home`: ready screen with current mode, status, and large `Capture`, `Mode`, and `Retry` buttons
 - `mode_select`: dedicated mode picker that saves the chosen mode and returns to home
-- `processing`: background capture job status with auto-refresh and a four-step progress list
-- `result`: answer screen with `New Capture` and `Back`
-- `error`: friendly failure screen with `Try Again` and `Back`
+- `processing`: background capture job status with auto-refresh, simplified centered messaging, and a `Thinking...` state during AI-heavy steps
+- `result`: large scrollable answer screen with persistent `Capture`, `Mode`, and `Retry` buttons
+- `error`: classified camera/network/API/generic error screen with the same touch-friendly action row
 
 Interaction notes:
 
 - `/capture`, `/capture-analyze`, and `/analyze` currently all start the same background `run_capture_analyze` workflow
 - `/back` and `/clear` both reset the UI to `home` while preserving the selected mode
+- `/retry` re-runs the same shared capture workflow for the currently selected mode
 - when the GPIO listener is started inside Flask, a physical button press reuses the same capture job as the touch UI
 - the home screen auto-refreshes while the embedded GPIO listener is active so hardware-triggered state changes appear without manual reload
 
@@ -229,7 +230,7 @@ Docs:
 Observed git status before this file was last updated:
 
 ```text
-dirty (Phase 9 implementation changes present)
+dirty (Phase 10 touchscreen UI and documentation updates present)
 ```
 
 ## Known Limitations And Follow-ups
@@ -239,7 +240,7 @@ dirty (Phase 9 implementation changes present)
 - The touch UI does not currently show live camera preview or captured/processed image thumbnails
 - Web-triggered actions currently funnel into the same full capture and analyze workflow
 - Only the latest result and UI state are stored; there is no history view yet
-- The home and mode-select layouts are tuned around fixed Figma-derived artwork assets
+- Phase 10 is tuned first for a `320x480` portrait touchscreen and may need further adjustment for other display sizes
 - A fuller background job queue would improve resilience for slow network or model responses
 
 ## Development Guardrails

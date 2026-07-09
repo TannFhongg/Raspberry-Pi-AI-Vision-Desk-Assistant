@@ -9,17 +9,18 @@
 - Run `python check_hardware.py`
 - Confirm `data/latest_result.txt` and `data/ui_state.json` are writable
 - Start `python app.py` and open `http://127.0.0.1:5000`
+- If demoing the small display, use portrait settings such as `UI_SCREEN_WIDTH=320 UI_SCREEN_HEIGHT=480 UI_DISPLAY_ORIENTATION=portrait`
 - Preselect a useful demo mode such as `Read Text` or `Solve Problem`
 
 ## Demo Flow
 
 - Show the Raspberry Pi hardware, camera, button, and attached display or browser
-- Show the minimal home screen with only `Mode` and `Capture`
+- Show the production small-screen home layout with `STATUS`, current mode, and the `Capture`, `Mode`, `Retry` button row
 - Open the mode picker and choose the task that matches the demo image
 - Return to home and tap `Capture`
-- Narrate the processing screen as it moves through capture, preprocessing, AI analysis, and answer preparation
-- Show the final answer on the result screen
-- Use `Back` or `New Capture` to show the repeatable flow
+- Narrate the processing screen as it moves through capture, preprocessing, AI analysis, and the `Thinking...` state
+- Show the final answer on the result screen and scroll the answer box if the response is long
+- Use `Retry` or `Capture` to show the repeatable flow
 - Press the GPIO button from the home screen to demonstrate the same shared pipeline without touch input
 - Show the updated `data/latest_result.txt`
 
@@ -27,5 +28,5 @@
 
 - Explain the shared pipeline: capture -> preprocess -> OpenAI Vision -> readable result
 - Explain that CLI, touchscreen UI, and GPIO all reuse the same pipeline runner
-- Mention that the current UI is intentionally minimal and optimized for kiosk-style small-screen use
+- Mention that Phase 10 is intentionally optimized for kiosk-style `320x480` portrait touchscreen use
 - Mention follow-up ideas such as result history, richer preview screens, or offline logging
