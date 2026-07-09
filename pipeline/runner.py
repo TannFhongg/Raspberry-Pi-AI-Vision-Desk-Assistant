@@ -8,12 +8,15 @@ from pathlib import Path
 from typing import Callable
 
 from ai.prompts import normalize_mode
+from config import load_device_settings
 from camera import CameraCaptureError, capture_image
-from vision import ImagePreprocessError, preprocess_image
+from vision import ImagePreprocessError, preprocess_image, preprocess_output_matches
 
 DEFAULT_CAPTURED_PATH = Path("static/captured.jpg")
 DEFAULT_PROCESSED_PATH = Path("static/processed.jpg")
 DEFAULT_RESULT_PATH = Path("data/latest_result.txt")
+TEXT_HEAVY_MODES = frozenset({"read_text", "summarize_document", "solve_problem"})
+VALID_SCREEN_OPTIMIZATIONS = ("auto", "on", "off")
 StatusCallback = Callable[[str], None]
 
 
@@ -30,7 +33,9 @@ class PipelineResult:
     answer: str | None
     mode: str
     camera_backend_used: str | None
+    camera_resolution: tuple[int, int] | None
     status: str
+    warnings: tuple[str, ...] = ()
 
 
 def file_exists(path: str | Path) -> bool:
@@ -46,24 +51,61 @@ def file_mtime(path: str | Path) -> float | None:
     return file_path.stat().st_mtime
 
 
-def is_processed_fresh(captured_path: str | Path, processed_path: str | Path) -> bool:
-    """Return True when the processed image is current for the latest capture."""
-    captured = Path(captured_path)
-    processed = Path(processed_path)
+def is_processed_fresh(
+    captured_path: str | Path,
+    processed_path: str | Path,
+    grayscale: bool = False,
+    max_dimension: int = 1600,
+    detect_screen: bool = False,
+    enhance_text: bool = False,
+) -> bool:
+    """Return True when the processed image matches the current source and options."""
+    return preprocess_output_matches(
+        input_path=captured_path,
+        output_path=processed_path,
+        grayscale=grayscale,
+        max_dimension=max_dimension,
+        detect_screen=detect_screen,
+        enhance_text=enhance_text,
+    )
 
-    if not processed.is_file():
-        return False
-    if not captured.is_file():
+
+def should_use_screen_optimization(mode: str | None, screen_optimization: str) -> bool:
+    """Resolve whether screen/document optimization should run for this mode."""
+    normalized_setting = screen_optimization.strip().lower()
+    if normalized_setting not in VALID_SCREEN_OPTIMIZATIONS:
+        expected = ", ".join(VALID_SCREEN_OPTIMIZATIONS)
+        raise ValueError(
+            f"Invalid screen optimization setting '{screen_optimization}'. Expected one of: {expected}."
+        )
+
+    if normalized_setting == "on":
         return True
-    return processed.stat().st_mtime >= captured.stat().st_mtime
+    if normalized_setting == "off" or mode is None:
+        return False
+
+    return normalize_mode(mode) in TEXT_HEAVY_MODES
+
+
+def resolve_preprocess_options(
+    mode: str | None,
+    screen_optimization: str,
+) -> tuple[bool, bool]:
+    """Resolve preprocess flags for screen detection and enhancement."""
+    use_screen_optimization = should_use_screen_optimization(mode, screen_optimization)
+    return use_screen_optimization, use_screen_optimization
 
 
 def run_capture(
     output_path: str = str(DEFAULT_CAPTURED_PATH),
-    backend: str = "auto",
-    camera_index: int = 0,
-    width: int = 1280,
-    height: int = 720,
+    backend: str | None = None,
+    camera_index: int | None = None,
+    width: int | None = None,
+    height: int | None = None,
+    autofocus_mode: str | None = None,
+    exposure: str | int | None = None,
+    brightness: float | None = None,
+    capture_delay_seconds: float | None = None,
     status_callback: StatusCallback | None = None,
 ) -> PipelineResult:
     """Capture an image only and return a shared pipeline result."""
@@ -75,6 +117,10 @@ def run_capture(
             camera_index=camera_index,
             width=width,
             height=height,
+            autofocus_mode=autofocus_mode,
+            exposure=exposure,
+            brightness=brightness,
+            capture_delay_seconds=capture_delay_seconds,
         )
     except CameraCaptureError as exc:
         raise PipelineError(str(exc)) from exc
@@ -85,27 +131,50 @@ def run_capture(
         answer=None,
         mode="capture",
         camera_backend_used=capture_result.backend_used,
+        camera_resolution=capture_result.resolution,
         status="success",
+        warnings=capture_result.warnings,
     )
 
 
 def run_preprocess(
     input_path: str = str(DEFAULT_CAPTURED_PATH),
     output_path: str = str(DEFAULT_PROCESSED_PATH),
-    grayscale: bool = False,
-    max_dimension: int = 1600,
+    mode: str | None = None,
+    grayscale: bool | None = None,
+    max_dimension: int | None = None,
+    screen_optimization: str | None = None,
     status_callback: StatusCallback | None = None,
 ) -> PipelineResult:
     """Preprocess an image only and return a shared pipeline result."""
+    settings = load_device_settings()
+    resolved_grayscale = settings.camera.grayscale if grayscale is None else grayscale
+    resolved_max_dimension = (
+        settings.camera.max_dimension
+        if max_dimension is None
+        else max_dimension
+    )
+    resolved_screen_optimization = (
+        settings.vision.screen_optimization
+        if screen_optimization is None
+        else screen_optimization
+    )
+
     try:
+        detect_screen, enhance_text = resolve_preprocess_options(
+            mode=mode,
+            screen_optimization=resolved_screen_optimization,
+        )
         _emit_status(status_callback, "Preprocessing image...")
         preprocess_result = preprocess_image(
             input_path=input_path,
             output_path=output_path,
-            grayscale=grayscale,
-            max_dimension=max_dimension,
+            grayscale=resolved_grayscale,
+            max_dimension=resolved_max_dimension,
+            detect_screen=detect_screen,
+            enhance_text=enhance_text,
         )
-    except ImagePreprocessError as exc:
+    except (ImagePreprocessError, ValueError) as exc:
         raise PipelineError(str(exc)) from exc
 
     return PipelineResult(
@@ -114,7 +183,9 @@ def run_preprocess(
         answer=None,
         mode="preprocess",
         camera_backend_used=None,
+        camera_resolution=None,
         status="success",
+        warnings=preprocess_result.warnings,
     )
 
 
@@ -122,37 +193,72 @@ def run_analyze(
     mode: str,
     captured_path: str = str(DEFAULT_CAPTURED_PATH),
     processed_path: str = str(DEFAULT_PROCESSED_PATH),
-    grayscale: bool = False,
-    max_dimension: int = 1600,
+    grayscale: bool | None = None,
+    max_dimension: int | None = None,
+    screen_optimization: str | None = None,
     status_callback: StatusCallback | None = None,
 ) -> PipelineResult:
     """Analyze the latest available image, preprocessing when needed."""
+    settings = load_device_settings()
+    resolved_grayscale = settings.camera.grayscale if grayscale is None else grayscale
+    resolved_max_dimension = (
+        settings.camera.max_dimension
+        if max_dimension is None
+        else max_dimension
+    )
+    resolved_screen_optimization = (
+        settings.vision.screen_optimization
+        if screen_optimization is None
+        else screen_optimization
+    )
     canonical_mode = normalize_mode(mode)
     captured_file = Path(captured_path)
     processed_file = Path(processed_path)
+    preprocess_warnings: tuple[str, ...] = ()
+
+    try:
+        detect_screen, enhance_text = resolve_preprocess_options(
+            mode=canonical_mode,
+            screen_optimization=resolved_screen_optimization,
+        )
+    except ValueError as exc:
+        raise PipelineError(str(exc)) from exc
 
     if not captured_file.is_file() and not processed_file.is_file():
         raise PipelineError("No image available. Please capture an image first.")
 
     final_processed_path = processed_file
-    if captured_file.is_file() and not is_processed_fresh(captured_file, processed_file):
+    if captured_file.is_file() and not is_processed_fresh(
+        captured_file,
+        processed_file,
+        grayscale=resolved_grayscale,
+        max_dimension=resolved_max_dimension,
+        detect_screen=detect_screen,
+        enhance_text=enhance_text,
+    ):
         preprocess_result = run_preprocess(
             input_path=str(captured_file),
             output_path=str(processed_file),
-            grayscale=grayscale,
-            max_dimension=max_dimension,
+            mode=canonical_mode,
+            grayscale=resolved_grayscale,
+            max_dimension=resolved_max_dimension,
+            screen_optimization=resolved_screen_optimization,
             status_callback=status_callback,
         )
         final_processed_path = preprocess_result.processed_path or processed_file
+        preprocess_warnings = preprocess_result.warnings
     elif not processed_file.is_file() and captured_file.is_file():
         preprocess_result = run_preprocess(
             input_path=str(captured_file),
             output_path=str(processed_file),
-            grayscale=grayscale,
-            max_dimension=max_dimension,
+            mode=canonical_mode,
+            grayscale=resolved_grayscale,
+            max_dimension=resolved_max_dimension,
+            screen_optimization=resolved_screen_optimization,
             status_callback=status_callback,
         )
         final_processed_path = preprocess_result.processed_path or processed_file
+        preprocess_warnings = preprocess_result.warnings
 
     try:
         from ai.openai_client import OpenAIVisionClient, VisionClientError
@@ -177,20 +283,27 @@ def run_analyze(
         answer=answer,
         mode=canonical_mode,
         camera_backend_used=None,
+        camera_resolution=None,
         status="success",
+        warnings=preprocess_warnings,
     )
 
 
 def run_capture_analyze(
     mode: str,
-    backend: str = "auto",
-    camera_index: int = 0,
-    width: int = 1280,
-    height: int = 720,
+    backend: str | None = None,
+    camera_index: int | None = None,
+    width: int | None = None,
+    height: int | None = None,
     captured_path: str = str(DEFAULT_CAPTURED_PATH),
     processed_path: str = str(DEFAULT_PROCESSED_PATH),
-    grayscale: bool = False,
-    max_dimension: int = 1600,
+    grayscale: bool | None = None,
+    max_dimension: int | None = None,
+    screen_optimization: str | None = None,
+    autofocus_mode: str | None = None,
+    exposure: str | int | None = None,
+    brightness: float | None = None,
+    capture_delay_seconds: float | None = None,
     status_callback: StatusCallback | None = None,
 ) -> PipelineResult:
     """Run the full capture -> preprocess -> analyze pipeline."""
@@ -200,13 +313,19 @@ def run_capture_analyze(
         camera_index=camera_index,
         width=width,
         height=height,
+        autofocus_mode=autofocus_mode,
+        exposure=exposure,
+        brightness=brightness,
+        capture_delay_seconds=capture_delay_seconds,
         status_callback=status_callback,
     )
     preprocess_result = run_preprocess(
         input_path=str(capture_result.captured_path or captured_path),
         output_path=processed_path,
+        mode=mode,
         grayscale=grayscale,
         max_dimension=max_dimension,
+        screen_optimization=screen_optimization,
         status_callback=status_callback,
     )
     analyze_result = run_analyze(
@@ -215,6 +334,7 @@ def run_capture_analyze(
         processed_path=str(preprocess_result.processed_path or processed_path),
         grayscale=grayscale,
         max_dimension=max_dimension,
+        screen_optimization=screen_optimization,
         status_callback=status_callback,
     )
 
@@ -224,7 +344,13 @@ def run_capture_analyze(
         answer=analyze_result.answer,
         mode=analyze_result.mode,
         camera_backend_used=capture_result.camera_backend_used,
+        camera_resolution=capture_result.camera_resolution,
         status="success",
+        warnings=(
+            *capture_result.warnings,
+            *preprocess_result.warnings,
+            *analyze_result.warnings,
+        ),
     )
 
 
@@ -242,10 +368,16 @@ def save_latest_result(
         f"Mode: {result.mode}",
         f"Status: {result.status}",
         f"Camera backend: {result.camera_backend_used or 'n/a'}",
+        f"Camera resolution: {_format_resolution(result.camera_resolution)}",
         f"Captured image: {result.captured_path or 'n/a'}",
         f"Processed image: {result.processed_path or 'n/a'}",
         "",
     ]
+
+    if result.warnings:
+        lines.append("Warnings:")
+        lines.extend(f"- {warning}" for warning in result.warnings)
+        lines.append("")
 
     if result.status == "success":
         lines.append(f"Answer: {result.answer or ''}")
@@ -260,3 +392,10 @@ def _emit_status(status_callback: StatusCallback | None, message: str) -> None:
     """Send a status update to any caller that wants human-readable progress output."""
     if status_callback is not None:
         status_callback(message)
+
+
+def _format_resolution(resolution: tuple[int, int] | None) -> str:
+    """Format a camera resolution tuple for result files."""
+    if resolution is None:
+        return "n/a"
+    return f"{resolution[0]}x{resolution[1]}"

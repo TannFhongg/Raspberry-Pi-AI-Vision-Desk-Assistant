@@ -7,13 +7,14 @@ import sys
 from pathlib import Path
 
 from ai.prompts import get_available_modes
+from config import SettingsError, load_device_settings
 from pipeline import PipelineError, run_analyze, run_capture_analyze, run_preprocess
 
 CAPTURED_IMAGE_PATH = Path("static/captured.jpg")
 PROCESSED_IMAGE_PATH = Path("static/processed.jpg")
 
 
-def build_parser() -> argparse.ArgumentParser:
+def build_parser(settings) -> argparse.ArgumentParser:
     """Create the command-line interface for the full terminal pipeline."""
     parser = argparse.ArgumentParser(
         description="Run the full camera -> preprocess -> OpenAI Vision terminal pipeline."
@@ -26,26 +27,76 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--backend",
-        default="auto",
+        default=settings.camera.backend,
         choices=("auto", "picamera2", "opencv"),
         help="Camera backend to use for image capture.",
     )
     parser.add_argument(
         "--camera-index",
-        default=0,
+        default=settings.camera.index,
         type=int,
         help="OpenCV camera index for USB webcam capture.",
     )
     parser.add_argument(
+        "--width",
+        default=settings.camera.resolution.width,
+        type=int,
+        help="Requested capture width.",
+    )
+    parser.add_argument(
+        "--height",
+        default=settings.camera.resolution.height,
+        type=int,
+        help="Requested capture height.",
+    )
+    grayscale_group = parser.add_mutually_exclusive_group()
+    grayscale_group.add_argument(
         "--grayscale",
+        dest="grayscale",
         action="store_true",
         help="Convert the image to grayscale during preprocessing.",
     )
+    grayscale_group.add_argument(
+        "--color",
+        dest="grayscale",
+        action="store_false",
+        help="Keep color preprocessing even if device defaults enable grayscale.",
+    )
+    parser.set_defaults(grayscale=settings.camera.grayscale)
+    parser.add_argument(
+        "--autofocus-mode",
+        default=settings.camera.autofocus_mode,
+        choices=("continuous", "auto", "off"),
+        help="Autofocus behavior for supported camera backends.",
+    )
+    parser.add_argument(
+        "--exposure",
+        default=str(settings.camera.exposure),
+        help="Exposure setting: 'auto' or integer microseconds.",
+    )
+    parser.add_argument(
+        "--brightness",
+        default=settings.camera.brightness,
+        type=float,
+        help="Brightness value for supported camera backends.",
+    )
+    parser.add_argument(
+        "--capture-delay",
+        default=settings.camera.capture_delay_seconds,
+        type=float,
+        help="Seconds to wait after camera start before capture.",
+    )
     parser.add_argument(
         "--max-dimension",
-        default=1600,
+        default=settings.camera.max_dimension,
         type=int,
         help="Resize only if the image longest side is larger than this value.",
+    )
+    parser.add_argument(
+        "--screen-optimization",
+        default=settings.vision.screen_optimization,
+        choices=("auto", "on", "off"),
+        help="Control long-distance screen/document optimization behavior.",
     )
     parser.add_argument(
         "--skip-capture",
@@ -57,9 +108,6 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     """Run the end-to-end terminal pipeline and print the final AI answer."""
-    parser = build_parser()
-    args = parser.parse_args()
-
     try:
         from dotenv import load_dotenv
     except ImportError:
@@ -70,7 +118,14 @@ def main() -> int:
         return 1
 
     load_dotenv()
+    try:
+        settings = load_device_settings()
+    except SettingsError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
 
+    parser = build_parser(settings)
+    args = parser.parse_args()
     print("Starting AI Vision pipeline...")
     print(f"Mode selected: {args.mode}")
 
@@ -85,8 +140,10 @@ def main() -> int:
             preprocess_result = run_preprocess(
                 input_path=str(CAPTURED_IMAGE_PATH),
                 output_path=str(PROCESSED_IMAGE_PATH),
+                mode=args.mode,
                 grayscale=args.grayscale,
                 max_dimension=args.max_dimension,
+                screen_optimization=args.screen_optimization,
                 status_callback=print,
             )
             result = run_analyze(
@@ -95,15 +152,24 @@ def main() -> int:
                 processed_path=str(preprocess_result.processed_path or PROCESSED_IMAGE_PATH),
                 grayscale=args.grayscale,
                 max_dimension=args.max_dimension,
+                screen_optimization=args.screen_optimization,
                 status_callback=print,
             )
+            result.warnings = (*preprocess_result.warnings, *result.warnings)
         else:
             result = run_capture_analyze(
                 mode=args.mode,
                 backend=args.backend,
                 camera_index=args.camera_index,
+                width=args.width,
+                height=args.height,
                 grayscale=args.grayscale,
                 max_dimension=args.max_dimension,
+                screen_optimization=args.screen_optimization,
+                autofocus_mode=args.autofocus_mode,
+                exposure=args.exposure,
+                brightness=args.brightness,
+                capture_delay_seconds=args.capture_delay,
                 status_callback=print,
             )
     except PipelineError as exc:
@@ -116,7 +182,13 @@ def main() -> int:
     else:
         print(f"Camera backend used: {result.camera_backend_used}")
         print(f"Captured image saved to: {result.captured_path}")
+        if result.camera_resolution is not None:
+            print(
+                f"Captured resolution: {result.camera_resolution[0]}x{result.camera_resolution[1]}"
+            )
     print(f"Processed image saved to: {result.processed_path}")
+    for warning in result.warnings:
+        print(f"Warning: {warning}")
     print("\nAI Answer:\n")
     print(result.answer or "")
     return 0

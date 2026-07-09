@@ -15,16 +15,31 @@ from flask import Flask, redirect, render_template, request, url_for
 from markupsafe import Markup, escape
 
 from ai.prompts import normalize_mode
-from gpio import GPIOButtonError, GPIOButtonTrigger
+from config import SettingsError, load_device_settings
+from hardware import (
+    DeviceState,
+    GPIOButtonError,
+    GPIOButtonTrigger,
+    LEDIndicator,
+    build_ready_state_payload,
+    build_ui_state_payload,
+    clear_latest_result_file,
+    coerce_device_state,
+    screen_for_device_state,
+)
 from pipeline import PipelineError, PipelineResult, run_capture_analyze, save_latest_result
 
 load_dotenv()
+
+try:
+    SETTINGS = load_device_settings()
+except SettingsError as exc:
+    raise RuntimeError(f"Invalid device settings: {exc}") from exc
 
 app = Flask(__name__)
 
 UI_STATE_PATH = Path("data/ui_state.json")
 LATEST_RESULT_PATH = Path("data/latest_result.txt")
-DEFAULT_MODE = "read_text"
 VALID_SCREENS = {"home", "processing", "result", "error"}
 UI_MODE_OPTIONS = [
     ("read_text", "Read Text"),
@@ -84,27 +99,51 @@ def _read_orientation_env(name: str, default: str) -> str:
         return default
     return value
 
-
-CAMERA_BACKEND = os.getenv("VISION_CAMERA_BACKEND", "auto").strip().lower() or "auto"
-CAMERA_INDEX = _read_int_env("VISION_CAMERA_INDEX", 0, minimum=0)
-CAPTURE_WIDTH = _read_int_env("VISION_CAPTURE_WIDTH", 1280, minimum=320)
-CAPTURE_HEIGHT = _read_int_env("VISION_CAPTURE_HEIGHT", 720, minimum=240)
-GRAYSCALE = _read_bool_env("VISION_GRAYSCALE", False)
-MAX_DIMENSION = _read_int_env("VISION_MAX_DIMENSION", 1600, minimum=640)
-ENABLE_GPIO_BUTTON = _read_bool_env("ENABLE_GPIO_BUTTON", True)
-GPIO_BUTTON_PIN = _read_int_env("GPIO_BUTTON_PIN", 17, minimum=0)
+CAMERA_BACKEND = SETTINGS.camera.backend
+CAMERA_INDEX = SETTINGS.camera.index
+CAPTURE_WIDTH = SETTINGS.camera.resolution.width
+CAPTURE_HEIGHT = SETTINGS.camera.resolution.height
+CAMERA_AUTOFOCUS_MODE = SETTINGS.camera.autofocus_mode
+CAMERA_EXPOSURE = SETTINGS.camera.exposure
+CAMERA_BRIGHTNESS = SETTINGS.camera.brightness
+CAPTURE_DELAY_SECONDS = SETTINGS.camera.capture_delay_seconds
+GRAYSCALE = SETTINGS.camera.grayscale
+MAX_DIMENSION = SETTINGS.camera.max_dimension
+ENABLE_GPIO_BUTTON = SETTINGS.button.enabled
+GPIO_BUTTON_PIN = SETTINGS.button.pin
+GPIO_BUTTON_DEBOUNCE_SECONDS = SETTINGS.button.debounce_seconds
+GPIO_BUTTON_HOLD_SECONDS = SETTINGS.button.hold_seconds
+ENABLE_GPIO_LED = SETTINGS.led.enabled
+GPIO_LED_PIN = SETTINGS.led.pin
+GPIO_LED_ACTIVE_HIGH = SETTINGS.led.active_high
 UI_DEBUG = _read_bool_env("UI_DEBUG", False)
 
-UI_SCREEN_WIDTH = _read_int_env("UI_SCREEN_WIDTH", 480, minimum=240, maximum=1920)
-UI_SCREEN_HEIGHT = _read_int_env("UI_SCREEN_HEIGHT", 320, minimum=240, maximum=1920)
+UI_SCREEN_WIDTH = max(240, min(1920, SETTINGS.display.size.width))
+UI_SCREEN_HEIGHT = max(240, min(1920, SETTINGS.display.size.height))
 UI_BASE_FONT_SIZE = _read_int_env("UI_BASE_FONT_SIZE", 20, minimum=16, maximum=42)
 UI_TITLE_FONT_SIZE = _read_int_env("UI_TITLE_FONT_SIZE", 34, minimum=24, maximum=72)
 UI_STATUS_FONT_SIZE = _read_int_env("UI_STATUS_FONT_SIZE", 28, minimum=20, maximum=64)
 UI_BUTTON_FONT_SIZE = _read_int_env("UI_BUTTON_FONT_SIZE", 24, minimum=18, maximum=42)
 UI_TOUCH_TARGET = _read_int_env("UI_TOUCH_TARGET", 68, minimum=52, maximum=96)
-UI_DISPLAY_ORIENTATION = _read_orientation_env("UI_DISPLAY_ORIENTATION", "landscape")
+UI_DISPLAY_ORIENTATION = _read_orientation_env(
+    "UI_DISPLAY_ORIENTATION",
+    SETTINGS.display.orientation,
+)
 UI_PROCESSING_REFRESH_MS = _read_int_env("UI_PROCESSING_REFRESH_MS", 1200, minimum=500, maximum=5000)
 UI_IDLE_REFRESH_MS = _read_int_env("UI_IDLE_REFRESH_MS", 2500, minimum=1000, maximum=10000)
+DEFAULT_MODE = normalize_mode(SETTINGS.ai.default_mode)
+if DEFAULT_MODE == "summarize_document":
+    DEFAULT_MODE = "summarize"
+if DEFAULT_MODE not in dict(UI_MODE_OPTIONS):
+    DEFAULT_MODE = "read_text"
+READY_DETAIL = "Tap Capture or press the button" if ENABLE_GPIO_BUTTON else "Tap Capture to begin"
+HARDWARE_IDLE_SCREENS = {"home", "result", "error"}
+
+LED_INDICATOR = LEDIndicator.create(
+    pin=GPIO_LED_PIN,
+    enabled=ENABLE_GPIO_LED,
+    active_high=GPIO_LED_ACTIVE_HIGH,
+)
 
 
 @app.get("/")
@@ -150,10 +189,16 @@ def retry():
 
 
 @app.post("/back")
-@app.post("/clear")
 def back():
     """Return to the ready screen while preserving the selected mode."""
-    _reset_ui_state()
+    _reset_ui_state(clear_saved_result=False)
+    return redirect(url_for("index"))
+
+
+@app.post("/clear")
+def clear():
+    """Clear the saved result/error and return to the ready screen."""
+    _clear_and_reset_ui_state()
     return redirect(url_for("index"))
 
 
@@ -203,17 +248,11 @@ def _start_capture_job() -> bool:
         RUNNING = True
 
     selected_mode = _load_ui_state()["selected_mode"]
-    _write_state(
-        {
-            "screen": "processing",
-            "selected_mode": selected_mode,
-            "status": "Capturing",
-            "detail": PROGRESS_STEPS[0],
-            "answer": "",
-            "error": "",
-            "error_detail": "",
-            "current_step": 0,
-        }
+    _write_device_state(
+        DeviceState.CAPTURING,
+        selected_mode=selected_mode,
+        detail=PROGRESS_STEPS[0],
+        current_step=0,
     )
 
     worker = threading.Thread(
@@ -239,32 +278,25 @@ def _run_capture_job(selected_mode: str) -> None:
             height=CAPTURE_HEIGHT,
             grayscale=GRAYSCALE,
             max_dimension=MAX_DIMENSION,
+            autofocus_mode=CAMERA_AUTOFOCUS_MODE,
+            exposure=CAMERA_EXPOSURE,
+            brightness=CAMERA_BRIGHTNESS,
+            capture_delay_seconds=CAPTURE_DELAY_SECONDS,
             status_callback=lambda message: _update_processing_state(selected_mode, message),
         )
-        _write_state(
-            {
-                "screen": "processing",
-                "selected_mode": selected_mode,
-                "status": "Processing",
-                "detail": PROGRESS_STEPS[3],
-                "answer": "",
-                "error": "",
-                "error_detail": "",
-                "current_step": 3,
-            }
+        _write_device_state(
+            DeviceState.PROCESSING,
+            selected_mode=selected_mode,
+            detail=PROGRESS_STEPS[3],
+            current_step=3,
         )
         save_latest_result(result, output_path=str(LATEST_RESULT_PATH))
-        _write_state(
-            {
-                "screen": "result",
-                "selected_mode": selected_mode,
-                "status": "Done",
-                "detail": "Answer ready",
-                "answer": result.answer or "",
-                "error": "",
-                "error_detail": "",
-                "current_step": len(PROGRESS_STEPS),
-            }
+        _write_device_state(
+            DeviceState.DONE,
+            selected_mode=selected_mode,
+            detail="Answer ready",
+            answer=result.answer or "",
+            current_step=len(PROGRESS_STEPS),
         )
     except (PipelineError, ValueError) as exc:
         _record_error_state(selected_mode, str(exc))
@@ -278,19 +310,12 @@ def _run_capture_job(selected_mode: str) -> None:
 def _update_processing_state(selected_mode: str, pipeline_message: str) -> None:
     """Translate shared pipeline updates into small-screen UI text."""
     step_index = _step_index_for_message(pipeline_message)
-    status = "Capturing" if step_index == 0 else "Processing"
     detail = PROGRESS_STEPS[step_index]
-    _write_state(
-        {
-            "screen": "processing",
-            "selected_mode": selected_mode,
-            "status": status,
-            "detail": detail,
-            "answer": "",
-            "error": "",
-            "error_detail": "",
-            "current_step": step_index,
-        }
+    _write_device_state(
+        DeviceState.CAPTURING if step_index == 0 else DeviceState.PROCESSING,
+        selected_mode=selected_mode,
+        detail=detail,
+        current_step=step_index,
     )
 
 
@@ -303,20 +328,17 @@ def _record_error_state(selected_mode: str, error_message: str) -> None:
         answer=error_message,
         mode=normalize_mode(selected_mode),
         camera_backend_used=CAMERA_BACKEND,
+        camera_resolution=None,
         status="error",
     )
     save_latest_result(failure_result, output_path=str(LATEST_RESULT_PATH))
-    _write_state(
-        {
-            "screen": "error",
-            "selected_mode": selected_mode,
-            "status": "Error",
-            "detail": "Try again when ready",
-            "answer": "",
-            "error": friendly_error,
-            "error_detail": error_message,
-            "current_step": -1,
-        }
+    _write_device_state(
+        DeviceState.ERROR,
+        selected_mode=selected_mode,
+        detail="Try again when ready",
+        error=friendly_error,
+        error_detail=error_message,
+        current_step=-1,
     )
 
 
@@ -335,7 +357,7 @@ def _get_auto_refresh_ms(screen: str) -> int | None:
     """Refresh active screens so the device UI updates without manual reloads."""
     if screen == "processing":
         return UI_PROCESSING_REFRESH_MS
-    if screen == "home" and GPIO_TRIGGER is not None:
+    if screen in HARDWARE_IDLE_SCREENS and GPIO_TRIGGER is not None:
         return UI_IDLE_REFRESH_MS
     return None
 
@@ -425,17 +447,12 @@ def _humanize_error(error_message: str) -> str:
 
 def _default_ui_state() -> dict[str, Any]:
     """Return the default ready-state shown on first boot."""
-    return {
-        "screen": "home",
-        "selected_mode": DEFAULT_MODE,
-        "status": "Ready",
-        "detail": "Tap Capture or press the button",
-        "answer": "",
-        "error": "",
-        "error_detail": "",
-        "current_step": -1,
-        "updated_at": _timestamp(),
-    }
+    default_state = build_ready_state_payload(
+        selected_mode=DEFAULT_MODE,
+        ready_detail=READY_DETAIL,
+    )
+    default_state["updated_at"] = _timestamp()
+    return default_state
 
 
 def _timestamp() -> str:
@@ -457,8 +474,12 @@ def _load_ui_state() -> dict[str, Any]:
 
     selected_mode = _to_ui_mode(str(raw_state.get("selected_mode", DEFAULT_MODE)))
     screen = str(raw_state.get("screen", "home"))
+    device_state = coerce_device_state(
+        raw_state.get("device_state"),
+        default=_device_state_for_screen(screen),
+    )
     if screen not in VALID_SCREENS:
-        screen = "home"
+        screen = screen_for_device_state(device_state)
 
     try:
         current_step = int(raw_state.get("current_step", -1))
@@ -467,6 +488,7 @@ def _load_ui_state() -> dict[str, Any]:
 
     return {
         "screen": screen,
+        "device_state": device_state.value,
         "selected_mode": selected_mode,
         "status": str(raw_state.get("status", default_state["status"])),
         "detail": str(raw_state.get("detail", default_state["detail"])),
@@ -483,9 +505,12 @@ def _write_state(updates: dict[str, Any]) -> None:
     next_state = _load_ui_state()
     next_state.update(updates)
     next_state["selected_mode"] = _to_ui_mode(str(next_state.get("selected_mode", DEFAULT_MODE)))
-    next_state["screen"] = (
-        next_state["screen"] if str(next_state.get("screen")) in VALID_SCREENS else "home"
+    device_state = coerce_device_state(
+        next_state.get("device_state"),
+        default=_device_state_for_screen(str(next_state.get("screen", "home"))),
     )
+    next_state["device_state"] = device_state.value
+    next_state["screen"] = screen_for_device_state(device_state)
     next_state["updated_at"] = _timestamp()
 
     UI_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -494,6 +519,7 @@ def _write_state(updates: dict[str, Any]) -> None:
             json.dumps(next_state, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+    _apply_led_state(device_state)
 
 
 def _set_selected_mode(mode: str) -> None:
@@ -501,12 +527,67 @@ def _set_selected_mode(mode: str) -> None:
     _write_state({"selected_mode": _to_ui_mode(mode)})
 
 
-def _reset_ui_state() -> None:
+def _reset_ui_state(clear_saved_result: bool = False) -> None:
     """Return the device to the home screen without changing the chosen mode."""
     selected_mode = _load_ui_state()["selected_mode"]
-    ready_state = _default_ui_state()
-    ready_state["selected_mode"] = selected_mode
-    _write_state(ready_state)
+    if clear_saved_result:
+        clear_latest_result_file(LATEST_RESULT_PATH, mode=selected_mode)
+    _write_state(
+        build_ready_state_payload(
+            selected_mode=selected_mode,
+            ready_detail=READY_DETAIL,
+        )
+    )
+
+
+def _clear_and_reset_ui_state() -> None:
+    """Clear the saved result file and return to READY."""
+    _reset_ui_state(clear_saved_result=True)
+
+
+def _write_device_state(
+    device_state: DeviceState | str,
+    *,
+    selected_mode: str,
+    detail: str | None = None,
+    answer: str = "",
+    error: str = "",
+    error_detail: str = "",
+    current_step: int | None = None,
+) -> None:
+    """Persist the shared device lifecycle state to the UI state file."""
+    _write_state(
+        build_ui_state_payload(
+            device_state,
+            selected_mode=_to_ui_mode(selected_mode),
+            ready_detail=READY_DETAIL,
+            detail=detail,
+            answer=answer,
+            error=error,
+            error_detail=error_detail,
+            current_step=current_step,
+        )
+    )
+
+
+def _get_device_state() -> DeviceState:
+    """Return the current persisted device lifecycle state."""
+    return coerce_device_state(_load_ui_state().get("device_state"))
+
+
+def _device_state_for_screen(screen: str) -> DeviceState:
+    """Infer a lifecycle state from an older persisted screen value."""
+    return {
+        "home": DeviceState.READY,
+        "processing": DeviceState.PROCESSING,
+        "result": DeviceState.DONE,
+        "error": DeviceState.ERROR,
+    }.get(screen, DeviceState.READY)
+
+
+def _apply_led_state(device_state: DeviceState | str) -> None:
+    """Mirror the persisted device state to the optional GPIO LED."""
+    LED_INDICATOR.set_state(device_state)
 
 
 def _to_ui_mode(mode: str) -> str:
@@ -528,7 +609,7 @@ def _is_running() -> bool:
 def _bootstrap_ui_state() -> None:
     """Repair stale processing state after a restart."""
     state = _load_ui_state()
-    if state["screen"] == "processing":
+    if _get_device_state() in {DeviceState.CAPTURING, DeviceState.PROCESSING}:
         _reset_ui_state()
 
 
@@ -547,7 +628,11 @@ def _ensure_gpio_button_listener_started() -> None:
         try:
             GPIO_TRIGGER = GPIOButtonTrigger(
                 pin=GPIO_BUTTON_PIN,
+                debounce_seconds=GPIO_BUTTON_DEBOUNCE_SECONDS,
+                hold_seconds=GPIO_BUTTON_HOLD_SECONDS,
                 trigger_action=_start_capture_job,
+                clear_action=lambda: _clear_and_reset_ui_state() or True,
+                get_device_state=_get_device_state,
             )
             GPIO_TRIGGER.start()
             app.logger.info("GPIO button listener started on pin %s", GPIO_BUTTON_PIN)
@@ -556,7 +641,15 @@ def _ensure_gpio_button_listener_started() -> None:
             app.logger.warning("GPIO button listener disabled: %s", exc)
 
 
+def _initialize_led_indicator() -> None:
+    """Log LED startup issues and apply the current persisted state."""
+    if ENABLE_GPIO_LED and LED_INDICATOR.disabled_reason:
+        app.logger.warning("GPIO LED disabled: %s", LED_INDICATOR.disabled_reason)
+    _apply_led_state(_get_device_state())
+
+
 _bootstrap_ui_state()
+_initialize_led_indicator()
 _ensure_gpio_button_listener_started()
 
 

@@ -5,6 +5,8 @@ venv/
 .venv/
 static/captured.jpg
 static/processed.jpg
+static/*.meta.json
+debug/
 data/latest_result.txt
 data/web_feedback.json
 .env

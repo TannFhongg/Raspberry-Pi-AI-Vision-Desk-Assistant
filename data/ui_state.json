@@ -1,5 +1,6 @@
 {
   "screen": "home",
+  "device_state": "READY",
   "selected_mode": "professional_assistant",
   "status": "Ready",
   "detail": "Tap Capture or press the button",
@@ -7,5 +8,10 @@
   "error": "",
   "error_detail": "",
   "current_step": -1,
+<<<<<<< HEAD
   "updated_at": "2026-07-09T12:08:20"
 }
+=======
+  "updated_at": "2026-07-09T12:03:38"
+}
+>>>>>>> d4276d91711a079502e4eea05a0ed1f0650d5fde

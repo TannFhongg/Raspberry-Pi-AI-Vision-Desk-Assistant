@@ -1,0 +1,39 @@
+camera:
+  backend: auto
+  index: 0
+  resolution:
+    width: 4608
+    height: 2592
+  autofocus_mode: continuous
+  exposure: auto
+  brightness: 0.0
+  capture_delay_seconds: 1.0
+  grayscale: false
+  max_dimension: 1600
+
+display:
+  size:
+    width: 480
+    height: 320
+  orientation: landscape
+
+button:
+  enabled: true
+  pin: 17
+  debounce_seconds: 0.15
+  hold_seconds: 1.2
+
+led:
+  enabled: false
+  pin: 27
+  active_high: true
+
+ai:
+  default_mode: read_text
+
+vision:
+  screen_optimization: auto
+
+startup:
+  behavior: kiosk
+  url: http://localhost:5000
