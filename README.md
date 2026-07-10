@@ -13,8 +13,8 @@ The project is organized in phases so each layer can be tested independently and
 ## Portfolio Snapshot
 
 - Built an embedded AI assistant on Raspberry Pi 5 that combines camera capture, OpenCV preprocessing, OpenAI vision analysis, touchscreen UI, and GPIO hardware controls in one shared workflow
-- Designed the interface for a compact `480x320` landscape touchscreen with large mode buttons, live preview, background processing states, and a scrollable answer view
-- Structured the codebase like a deployable product instead of a one-off demo, with shared pipeline orchestration, persisted UI state, rotating logs, health monitoring, and hardware-safe busy-state handling
+- Designed the interface for a compact `480x320` landscape touchscreen with live MJPEG preview, device health pills, background processing states, recent-result recall, and a scrollable answer view
+- Structured the codebase like a deployable product instead of a one-off demo, with shared pipeline orchestration, persisted UI state, rotating logs, health monitoring, hardware-safe busy-state handling, and an offline retry queue for transient AI failures
 
 ## Validated Results
 
@@ -24,14 +24,21 @@ Validated on July 10, 2026:
 - The `Read Text` flow successfully captured and analyzed a Raspberry Pi 27W USB-C power supply box and returned structured content including product name, product link, mixed-language label text, input range, output rails, and max power
 - The physical capture path triggered from `GPIO17` now works end-to-end after fixing the live-preview-to-capture camera handoff race that previously surfaced as `Camera disconnected`
 - The compact answer screen was refined for readability by reducing the response font size by 35 percent so longer OCR and AI outputs fit better on the device display
-- Automated regression coverage is currently green: `python -m pytest` -> `86 passed`
+- The live preview now streams over MJPEG for smoother on-device framing instead of browser-side image polling
+- Successful analyses are now available again through `Recent Results`, backed by RAM cache plus persisted history on disk
+- Transient network or OpenAI failures are now saved into an offline retry queue and retried automatically when service connectivity returns
+- Automated regression coverage is currently green: `python -m pytest` -> `98 passed`
 
 ## Portfolio Value
 
 - Demonstrates end-to-end hardware and software integration on Raspberry Pi
 - Shows small-screen UX thinking for a real embedded device instead of a desktop-only AI demo
 - Reuses one shared workflow across terminal, touchscreen, and physical button control paths
-- Includes production-minded reliability work such as retries, logs, health checks, and safer camera lifecycle handling
+- Includes production-minded reliability work such as retries, logs, health checks, smoother live preview, and queued recovery from transient cloud failures
+
+## Documentation Discipline
+
+- README and the Markdown files in `docs/` and the project root are updated whenever a meaningful product improvement lands so the repository stays portfolio-ready and accurate
 
 ## Features
 
@@ -44,6 +51,10 @@ Validated on July 10, 2026:
 - Run the full pipeline from the terminal
 - Control the same pipeline from a touchscreen-first Flask UI
 - Use a production landscape touchscreen UI optimized for `480x320` Raspberry Pi displays
+- Stream a smoother live preview over MJPEG while framing the subject before capture
+- Show a compact health bar with overall system, CPU temperature, RAM usage, network, and camera status
+- Keep recent successful results available for nearly instant re-open without recapturing
+- Queue retryable OpenAI or network failures offline and retry them automatically in the background
 - Use 5 dedicated GPIO mode buttons plus 1 capture button to trigger the same capture flow
 - Use a production-style hardware state machine with short-press capture, long-press clear, physical mode selection, and optional LED feedback
 - Load device defaults from `config/device.yaml` with environment variable and CLI overrides
@@ -198,6 +209,10 @@ UI_BUTTON_FONT_SIZE=24
 UI_TOUCH_TARGET=68
 UI_PROCESSING_REFRESH_MS=1200
 UI_IDLE_REFRESH_MS=2500
+LIVE_PREVIEW_FRAME_INTERVAL_MS=80
+OFFLINE_RETRY_ENABLED=1
+OFFLINE_RETRY_POLL_INTERVAL_SECONDS=30
+OFFLINE_RETRY_MAX_ENTRIES=24
 ```
 
 ## Device Configuration
@@ -274,6 +289,9 @@ Runtime reliability artifacts:
 - `logs/app.log`: rotating general runtime log
 - `logs/error.log`: rotating error-only log
 - `data/health_status.json`: latest system health snapshot
+- `data/result_history.json`: persisted recent successful assistant results
+- `data/offline_retry_queue.json`: persisted retry queue metadata for transient AI failures
+- `data/offline_retry/`: copied processed images waiting for automatic retry
 
 Default GPIO wiring uses BCM numbering:
 
@@ -421,15 +439,18 @@ Power on -> systemd starts Flask -> Chromium opens http://localhost:5000 in kios
 
 Screen flow:
 
-- `home`: ready screen showing the current mode, status, and large `Capture`, `Mode`, and `Retry` buttons
-- `mode_select`: dedicated mode picker for `Read Text`, `Summarize Document`, `Analyze Image`, `Professional Assistant`, and `Solve Problem`
+- `home` without a selected mode: mode list for `Read Text`, `Summarize Document`, `Analyze Image`, `Professional Assistant`, and `Solve Problem`, plus a direct `Capture` action and the live system health bar
+- `home` with a selected mode: live MJPEG camera preview, selected mode header, `Click Button to Capture`, health pills, and `Change Mode`
 - `processing`: auto-refreshing progress screen with simplified centered status and a `Thinking...` state during AI analysis
-- `result`: readable answer screen with a large scrollable answer box and persistent `Capture`, `Mode`, and `Retry` buttons
-- `error`: classified `Camera error`, `Network error`, `API error`, or generic error screen with the same touch-friendly action row
+- `result`: readable answer screen with a large scrollable answer box, `Capture Again`, and optional `Recent Results`
+- `history`: saved recent results list for reopening previous successful scans
+- `history_detail`: full saved answer view for one historical scan
+- `error`: classified `Camera error`, `Network error`, `API error`, or generic error screen with retry actions
 
 Tapping `Capture` starts the full background capture -> preprocess -> analyze workflow for the currently selected mode.
 
 The selected mode and current screen state are stored in `data/ui_state.json`.
+Transient OpenAI or network failures can now be converted into a queued result state instead of being lost immediately.
 
 Open the UI locally on the Pi:
 
@@ -549,10 +570,10 @@ Phase 10 upgrades the Flask touchscreen experience into a production-ready small
 
 Highlights:
 
-- kiosk layout with `AI Vision Assistant`, a prominent `STATUS` block, and a large content/answer area
-- large touch targets with a consistent two-row action area: `Capture`, `Mode`, and `Retry`
+- live-preview-first home state with large mode labels, smoother MJPEG camera framing, and a compact health strip
 - simplified processing screen that shows `Thinking...` during AI-heavy steps
 - readable scrollable answer box designed for long responses on a 2.5 inch display
+- result history and instant answer recall for recent successful captures
 - error classification for `Camera error`, `Network error`, `API error`, and fallback generic errors
 - fullscreen-friendly CSS for Chromium kiosk mode without page-level scrolling
 
@@ -658,6 +679,19 @@ python check_hardware.py
 journalctl -u ai-vision-assistant.service -f
 ```
 
+## Phase 15: Live Preview, Recent Results, And Offline Retry
+
+Phase 15 pushes the assistant closer to a resilient product workflow instead of a demo-only happy path.
+
+Phase 15 improvements:
+
+- live camera preview now streams through `/camera/live-stream.mjpg` instead of client-side JPEG polling
+- recent successful answers are cached in memory and persisted to `data/result_history.json`
+- the touchscreen can reopen recent saved answers nearly instantly through `Recent Results`
+- retryable OpenAI failures such as network loss, timeout, rate limiting, or `5xx` responses are stored in `data/offline_retry_queue.json`
+- a background retry worker replays queued analyses automatically from copied processed images in `data/offline_retry/`
+- queued failures appear to the user as `Queued for retry` instead of only showing a hard error
+
 ## Troubleshooting
 
 ### Missing `OPENAI_API_KEY`
@@ -670,6 +704,7 @@ journalctl -u ai-vision-assistant.service -f
 - Verify the API key
 - Check Raspberry Pi internet access
 - Retry after a moment if rate limit or quota is the issue
+- When `OFFLINE_RETRY_ENABLED=1`, transient connection/time-out/server failures are automatically queued for background retry instead of being discarded immediately
 
 ### Picamera2 Not Available
 

@@ -1,6 +1,6 @@
 # Project Context
 
-Updated on: 2026-07-09
+Updated on: 2026-07-10
 Project root: `C:\Users\Admin\Desktop\Raspberry Pi AI Vision Desk Assistant`
 
 ## Purpose
@@ -18,7 +18,7 @@ The project is organized in phases so each layer can be tested independently and
 Main entrypoints:
 
 - `main.py`: terminal CLI for full capture, preprocess, and analyze, or for analyzing an existing captured image with `--skip-capture`
-- `app.py`: touchscreen-first Flask UI with `home`, `mode_select`, `processing`, `result`, and `error` screens
+- `app.py`: touchscreen-first Flask UI with `home`, `processing`, `result`, `error`, `history`, and `history_detail` screens
 - `test_gpio_button.py`: standalone terminal listener for a physical GPIO button that triggers the full pipeline
 - `test_ai_vision.py`: one-off OpenAI Vision test using an existing local image
 - `test_camera_capture.py`: one-off camera capture test
@@ -34,6 +34,7 @@ Shared core:
 - `vision/perspective.py`: quadrilateral ordering, scaling, and four-point perspective correction
 - `vision/enhance_text.py`: denoise, brightness correction, CLAHE contrast, and text sharpening
 - `ai/openai_client.py`: OpenAI Responses API wrapper for image analysis with friendly app errors
+- `system/offline_retry.py`: durable retry queue that stores retryable OpenAI failures and replays them later from saved processed images
 - `ai/modes.py`: canonical assistant mode registry, alias handling, and UI metadata
 - `ai/context.py`: hidden backend context builder for mode-specific OpenAI instructions
 - `ai/prompts.py`: compatibility shim for older mode/prompt imports
@@ -41,8 +42,8 @@ Shared core:
 - `hardware/button.py`: canonical gpiozero-based short-press capture and long-press clear controller with debounce and duplicate-trigger protection
 - `hardware/led.py`: optional single-color GPIO LED indicator that mirrors the shared device lifecycle
 - `gpio/button.py`: compatibility wrapper that re-exports the new hardware button controller
-- `templates/index.html`: screen-based template for the current Phase 10 touch UI
-- `static/style.css`: portrait-first kiosk styles optimized for `320x480`, with large touch targets, scrollable answer content, and classified error screens
+- `templates/index.html`: screen-based template for the current landscape touch UI, including live preview, recent results, and queued-retry messaging
+- `static/style.css`: kiosk styles optimized for `480x320` landscape, with health pills, live preview emphasis, scrollable answer content, and classified error screens
 
 Runtime artifacts:
 
@@ -52,6 +53,10 @@ Runtime artifacts:
 - `debug/`: latest advanced screen/document debug images
 - `data/latest_result.txt`: latest readable pipeline result from Flask or standalone GPIO runs
 - `data/ui_state.json`: saved UI mode, current screen, `device_state`, status text, and answer/error state
+- `data/result_history.json`: saved recent successful assistant results
+- `data/health_status.json`: latest background health snapshot for CPU, RAM, network, and camera status
+- `data/offline_retry_queue.json`: persisted metadata for retryable queued AI failures
+- `data/offline_retry/`: copied processed images waiting for automatic background retry
 
 ## Supported AI Modes
 
@@ -77,11 +82,13 @@ With `SCREEN_OPTIMIZATION=auto`, the advanced screen/document optimization path 
 
 Current touchscreen flow:
 
-- `home`: ready screen with current mode, status, and large `Capture`, `Mode`, and `Retry` buttons
-- `mode_select`: dedicated mode picker that saves the chosen mode and returns to home
+- `home` without a selected mode: mode list, direct `Capture` button, and health bar
+- `home` with a selected mode: live MJPEG preview, current mode header, health pills, and capture CTA
 - `processing`: background capture job status with auto-refresh, simplified centered messaging, and a `Thinking...` state during AI-heavy steps
-- `result`: large scrollable answer screen with persistent `Capture`, `Mode`, and `Retry` buttons
+- `result`: large scrollable answer screen with `Capture Again` and optional `Recent Results`
 - `error`: classified camera/network/API/generic error screen with the same touch-friendly action row
+- `history`: recent saved answers list
+- `history_detail`: full saved answer view for a single previous scan
 
 Interaction notes:
 
@@ -89,8 +96,10 @@ Interaction notes:
 - `/back` returns to `home` while preserving the selected mode
 - `/clear` resets the UI to `READY` and clears `data/latest_result.txt`
 - `/retry` re-runs the same shared capture workflow for the currently selected mode
+- `/camera/live-stream.mjpg` serves the current live preview as an MJPEG stream
 - when the GPIO listener is started inside Flask, short press triggers capture/analyze and long press clears the visible result or error
 - the `home`, `result`, and `error` screens auto-refresh while the embedded GPIO listener is active so hardware-triggered state changes appear without manual reload
+- retryable OpenAI failures are queued on disk instead of being discarded immediately when the processed image is available
 
 ## Setup Notes
 
@@ -136,9 +145,9 @@ VISION_CAPTURE_HEIGHT=720
 VISION_GRAYSCALE=0
 VISION_MAX_DIMENSION=1600
 SCREEN_OPTIMIZATION=auto
-UI_SCREEN_WIDTH=320
-UI_SCREEN_HEIGHT=480
-UI_DISPLAY_ORIENTATION=portrait
+UI_SCREEN_WIDTH=480
+UI_SCREEN_HEIGHT=320
+UI_DISPLAY_ORIENTATION=landscape
 UI_BASE_FONT_SIZE=20
 UI_TITLE_FONT_SIZE=34
 UI_STATUS_FONT_SIZE=28
@@ -146,6 +155,10 @@ UI_BUTTON_FONT_SIZE=24
 UI_TOUCH_TARGET=68
 UI_PROCESSING_REFRESH_MS=1200
 UI_IDLE_REFRESH_MS=2500
+LIVE_PREVIEW_FRAME_INTERVAL_MS=80
+OFFLINE_RETRY_ENABLED=1
+OFFLINE_RETRY_POLL_INTERVAL_SECONDS=30
+OFFLINE_RETRY_MAX_ENTRIES=24
 ```
 
 Security note: keep `.env` out of git and keep `.env.example` limited to placeholders only.
@@ -202,10 +215,10 @@ Local URL:
 http://127.0.0.1:5000
 ```
 
-Portrait example:
+Landscape example:
 
 ```bash
-UI_SCREEN_WIDTH=320 UI_SCREEN_HEIGHT=480 UI_DISPLAY_ORIENTATION=portrait python app.py
+UI_SCREEN_WIDTH=480 UI_SCREEN_HEIGHT=320 UI_DISPLAY_ORIENTATION=landscape python app.py
 ```
 
 Run GPIO button listener:
@@ -245,18 +258,16 @@ Docs:
 Observed git status before this file was last updated:
 
 ```text
-dirty (Phase 11 production hardware button and LED changes present)
+dirty (live preview, recent results, and offline retry improvements present)
 ```
 
 ## Known Limitations And Follow-ups
 
 - Full camera and GPIO behavior still needs real Raspberry Pi hardware verification
 - OpenAI analysis requires internet access and a valid API key
-- The touch UI does not currently show live camera preview or captured/processed image thumbnails
-- Web-triggered actions currently funnel into the same full capture and analyze workflow
-- Only the latest result and UI state are stored; there is no history view yet
-- Phase 10 is tuned first for a `320x480` portrait touchscreen and may need further adjustment for other display sizes
-- A fuller background job queue would improve resilience for slow network or model responses
+- The queued retry worker currently writes recovered answers into latest-result and recent-history storage, but it does not yet surface a dedicated queue-management screen
+- Web-triggered actions still funnel into the same full capture and analyze workflow rather than separate capture-only and analyze-only UI paths
+- The current UI is tuned first for a `480x320` landscape touchscreen and may need further adjustment for other display sizes
 - Exact button feel and LED timing still need final validation on the target Raspberry Pi hardware
 
 ## Development Guardrails
