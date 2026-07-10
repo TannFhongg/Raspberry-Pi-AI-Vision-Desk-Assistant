@@ -20,9 +20,9 @@ The project is organized in phases so each layer can be tested independently and
 - Analyze images with multiple AI modes using the OpenAI Python SDK
 - Run the full pipeline from the terminal
 - Control the same pipeline from a touchscreen-first Flask UI
-- Use a production portrait touchscreen UI optimized for `320x480` Raspberry Pi displays
-- Use a configurable physical GPIO button to trigger the same capture flow
-- Use a production-style hardware state machine with short-press capture, long-press clear, and optional LED feedback
+- Use a production landscape touchscreen UI optimized for `480x320` Raspberry Pi displays
+- Use 5 dedicated GPIO mode buttons plus 1 capture button to trigger the same capture flow
+- Use a production-style hardware state machine with short-press capture, long-press clear, physical mode selection, and optional LED feedback
 - Load device defaults from `config/device.yaml` with environment variable and CLI overrides
 - Run `python check_hardware.py` to verify camera, display, internet, OpenAI, and GPIO readiness
 - Boot straight into the touchscreen UI with Chromium kiosk mode on Raspberry Pi OS Bookworm
@@ -35,7 +35,7 @@ The project is organized in phases so each layer can be tested independently and
 - Autofocus camera such as Raspberry Pi Camera Module 3 or Arducam 64MP
 - Optional USB webcam
 - 2.5 inch HDMI touchscreen or other small HDMI display
-- Push button connected to the configured GPIO pin and `GND`
+- Six momentary push buttons wired with BCM numbering: 1 capture button plus 5 mode buttons
 - Case, heatsink, or active cooling for sustained capture workloads
 - Internet connection for OpenAI API access
 
@@ -127,7 +127,14 @@ Most hardware defaults now live in [config/device.yaml](config/device.yaml). Env
 ```env
 DEVICE_CONFIG_PATH=config/device.yaml
 ENABLE_GPIO_BUTTON=1
-GPIO_BUTTON_PIN=17
+CAPTURE_BUTTON_PIN=17
+MODE_BUTTON_1_PIN=5
+MODE_BUTTON_2_PIN=6
+MODE_BUTTON_3_PIN=13
+MODE_BUTTON_4_PIN=19
+MODE_BUTTON_5_PIN=26
+# Legacy alias still accepted:
+# GPIO_BUTTON_PIN=17
 GPIO_BUTTON_DEBOUNCE_SECONDS=0.15
 GPIO_BUTTON_HOLD_SECONDS=1.2
 ENABLE_GPIO_LED=0
@@ -144,9 +151,9 @@ VISION_CAPTURE_DELAY_SECONDS=1.0
 VISION_GRAYSCALE=0
 VISION_MAX_DIMENSION=1600
 SCREEN_OPTIMIZATION=auto
-UI_SCREEN_WIDTH=320
-UI_SCREEN_HEIGHT=480
-UI_DISPLAY_ORIENTATION=portrait
+UI_SCREEN_WIDTH=480
+UI_SCREEN_HEIGHT=320
+UI_DISPLAY_ORIENTATION=landscape
 AI_DEFAULT_MODE=document_reader
 STARTUP_BEHAVIOR=kiosk
 STARTUP_URL=http://localhost:5000
@@ -201,6 +208,11 @@ display:
 button:
   enabled: true
   pin: 17
+  mode_button_1_pin: 5
+  mode_button_2_pin: 6
+  mode_button_3_pin: 13
+  mode_button_4_pin: 19
+  mode_button_5_pin: 26
   debounce_seconds: 0.15
   hold_seconds: 1.2
 
@@ -237,9 +249,18 @@ Runtime reliability artifacts:
 - `logs/error.log`: rotating error-only log
 - `data/health_status.json`: latest system health snapshot
 
+Default GPIO wiring uses BCM numbering:
+
+- `Button Main / Capture`: GPIO17
+- `Button 1 / Read Text`: GPIO5
+- `Button 2 / Summarize Document`: GPIO6
+- `Button 3 / Analyze Image`: GPIO13
+- `Button 4 / Professional Assistant`: GPIO19
+- `Button 5 / Solve Problem`: GPIO26
+
 ## Assistant Modes
 
-The Phase 13 assistant experience uses 5 user-facing modes:
+The shared assistant layer supports 5 canonical internal modes:
 
 - `document_reader`
 - `math_solver`
@@ -247,7 +268,7 @@ The Phase 13 assistant experience uses 5 user-facing modes:
 - `engineering_mode`
 - `general_vision`
 
-Legacy mode values such as `read_text`, `summarize_document`, `solve_problem`, `analyze_image`, and `professional_assistant` are still accepted as aliases for backward compatibility.
+The current touchscreen and GPIO button presets still expose the simplified labels `read_text`, `summarize_document`, `analyze_image`, `professional_assistant`, and `solve_problem`, which map onto those internal modes.
 
 ## Phase 1: OpenAI Vision Test
 
@@ -364,7 +385,7 @@ python app.py
 
 The current UI is a kiosk-style, touchscreen-first flow tuned for small Raspberry Pi displays.
 
-Phase 10 refines this into a production portrait layout for small `320x480` touchscreens.
+The current default device profile uses a `480x320` landscape touchscreen.
 
 For production Pi hardware, the current setup targets this default boot behavior:
 
@@ -375,7 +396,7 @@ Power on -> systemd starts Flask -> Chromium opens http://localhost:5000 in kios
 Screen flow:
 
 - `home`: ready screen showing the current mode, status, and large `Capture`, `Mode`, and `Retry` buttons
-- `mode_select`: dedicated mode picker for `Document Reader`, `Math Solver`, `Meeting Assistant`, `Engineering Mode`, and `General Vision`
+- `mode_select`: dedicated mode picker for `Read Text`, `Summarize Document`, `Analyze Image`, `Professional Assistant`, and `Solve Problem`
 - `processing`: auto-refreshing progress screen with simplified centered status and a `Thinking...` state during AI analysis
 - `result`: readable answer screen with a large scrollable answer box and persistent `Capture`, `Mode`, and `Retry` buttons
 - `error`: classified `Camera error`, `Network error`, `API error`, or generic error screen with the same touch-friendly action row
@@ -396,10 +417,10 @@ Open it fullscreen in Chromium kiosk mode:
 chromium-browser --kiosk http://127.0.0.1:5000
 ```
 
-Portrait touchscreen example:
+Landscape touchscreen example:
 
 ```bash
-UI_SCREEN_WIDTH=320 UI_SCREEN_HEIGHT=480 UI_DISPLAY_ORIENTATION=portrait python app.py
+UI_SCREEN_WIDTH=480 UI_SCREEN_HEIGHT=320 UI_DISPLAY_ORIENTATION=landscape python app.py
 ```
 
 You can also use Flask directly:
@@ -424,9 +445,18 @@ hostname -I
 
 The Flask app can start the GPIO button listener automatically when `ENABLE_GPIO_BUTTON=1`.
 
-Inside the Flask app, the button reuses the same background capture job as the touchscreen UI.
+Inside the Flask app, the physical control panel reuses the same background capture job as the touchscreen UI.
 
 Inside the Flask app, the default AI mode comes from `config/device.yaml` unless overridden by environment variables.
+
+Default physical button behavior:
+
+- `Button Main`: short press starts capture, long press clears the current result
+- `Button 1`: selects `Read Text`
+- `Button 2`: selects `Summarize Document`
+- `Button 3`: selects `Analyze Image`
+- `Button 4`: selects `Professional Assistant`
+- `Button 5`: selects `Solve Problem`
 
 You can still run the standalone GPIO button listener:
 
@@ -489,21 +519,21 @@ debug/enhanced.jpg
 
 ## Phase 10: Production Touchscreen UI
 
-Phase 10 upgrades the Flask touchscreen experience into a production-ready small-screen UI for a `320x480` portrait Raspberry Pi display.
+Phase 10 upgrades the Flask touchscreen experience into a production-ready small-screen UI. The current default device profile uses a `480x320` landscape Raspberry Pi display.
 
 Highlights:
 
-- portrait-first kiosk layout with `AI Vision Assistant`, a prominent `STATUS` block, and a large content/answer area
+- kiosk layout with `AI Vision Assistant`, a prominent `STATUS` block, and a large content/answer area
 - large touch targets with a consistent two-row action area: `Capture`, `Mode`, and `Retry`
 - simplified processing screen that shows `Thinking...` during AI-heavy steps
 - readable scrollable answer box designed for long responses on a 2.5 inch display
 - error classification for `Camera error`, `Network error`, `API error`, and fallback generic errors
 - fullscreen-friendly CSS for Chromium kiosk mode without page-level scrolling
 
-Recommended portrait launch command:
+Recommended landscape launch command:
 
 ```bash
-UI_SCREEN_WIDTH=320 UI_SCREEN_HEIGHT=480 UI_DISPLAY_ORIENTATION=portrait python app.py
+UI_SCREEN_WIDTH=480 UI_SCREEN_HEIGHT=320 UI_DISPLAY_ORIENTATION=landscape python app.py
 ```
 
 Chromium kiosk launch:
@@ -542,7 +572,7 @@ The current lifecycle state is now persisted in `data/ui_state.json` as `device_
 
 Phase 13 upgrades the assistant layer from a single generic prompt into a shared mode system used by the CLI, Flask UI, and GPIO trigger.
 
-Current user-facing modes:
+Current canonical assistant modes:
 
 - `document_reader`
 - `math_solver`
@@ -556,7 +586,7 @@ Phase 13 behavior:
 - hidden per-mode OpenAI instructions are built in `ai/context.py`
 - the currently selected UI mode is persisted in `data/ui_state.json`
 - the default device mode comes from `config/device.yaml` or `AI_DEFAULT_MODE`
-- legacy mode names such as `read_text`, `summarize_document`, `solve_problem`, and `analyze_image` are still accepted as aliases
+- the touchscreen and GPIO presets still use the simplified labels `read_text`, `summarize_document`, `analyze_image`, `professional_assistant`, and `solve_problem`
 
 Examples:
 
@@ -645,7 +675,7 @@ journalctl -u ai-vision-assistant.service -f
 
 ### Touch UI Layout Does Not Fit The Screen
 
-- Phase 10 is tuned for a `320x480` portrait display by default
+- The current default profile is tuned for a `480x320` landscape display
 - Adjust `display.size.width` and `display.size.height` in `config/device.yaml`
 - Change `display.orientation` or override `UI_DISPLAY_ORIENTATION`
 - Increase or decrease `UI_TOUCH_TARGET` and font sizes for the attached display
@@ -660,7 +690,7 @@ journalctl -u ai-vision-assistant.service -f
 
 - Ensure you are running on a Raspberry Pi
 - Confirm `gpiozero` is installed
-- Confirm the button is wired to the configured GPIO pin and `GND`
+- Confirm the capture button and each optional mode button are wired to the configured GPIO pin and `GND`
 
 ### Kiosk Display Does Not Open On Boot
 

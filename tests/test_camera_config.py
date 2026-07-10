@@ -88,6 +88,11 @@ def _build_settings() -> DeviceSettings:
         button=ButtonSettings(
             enabled=True,
             pin=17,
+            mode_button_1_pin=5,
+            mode_button_2_pin=6,
+            mode_button_3_pin=13,
+            mode_button_4_pin=19,
+            mode_button_5_pin=26,
             debounce_seconds=0.15,
             hold_seconds=1.2,
         ),

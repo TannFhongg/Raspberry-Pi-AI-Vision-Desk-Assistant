@@ -36,6 +36,11 @@ class LoadDeviceSettingsTests(unittest.TestCase):
             button:
               enabled: true
               pin: 17
+              mode_button_1_pin: 5
+              mode_button_2_pin: 6
+              mode_button_3_pin: 13
+              mode_button_4_pin: 19
+              mode_button_5_pin: 26
             ai:
               default_mode: document_reader
             vision:
@@ -62,6 +67,12 @@ class LoadDeviceSettingsTests(unittest.TestCase):
         self.assertEqual(settings.camera.resolution.width, 4608)
         self.assertEqual(settings.display.size.height, 320)
         self.assertTrue(settings.button.enabled)
+        self.assertEqual(settings.button.pin, 17)
+        self.assertEqual(settings.button.mode_button_1_pin, 5)
+        self.assertEqual(settings.button.mode_button_2_pin, 6)
+        self.assertEqual(settings.button.mode_button_3_pin, 13)
+        self.assertEqual(settings.button.mode_button_4_pin, 19)
+        self.assertEqual(settings.button.mode_button_5_pin, 26)
         self.assertAlmostEqual(settings.button.debounce_seconds, 0.15)
         self.assertAlmostEqual(settings.button.hold_seconds, 1.2)
         self.assertFalse(settings.led.enabled)
@@ -103,6 +114,11 @@ class LoadDeviceSettingsTests(unittest.TestCase):
             button:
               enabled: true
               pin: 17
+              mode_button_1_pin: 5
+              mode_button_2_pin: 6
+              mode_button_3_pin: 13
+              mode_button_4_pin: 19
+              mode_button_5_pin: 26
             ai:
               default_mode: document_reader
             vision:
@@ -134,7 +150,12 @@ class LoadDeviceSettingsTests(unittest.TestCase):
                 "VISION_BRIGHTNESS": "0.2",
                 "VISION_CAPTURE_DELAY_SECONDS": "2.5",
                 "ENABLE_GPIO_BUTTON": "0",
-                "GPIO_BUTTON_PIN": "22",
+                "CAPTURE_BUTTON_PIN": "22",
+                "MODE_BUTTON_1_PIN": "23",
+                "MODE_BUTTON_2_PIN": "24",
+                "MODE_BUTTON_3_PIN": "25",
+                "MODE_BUTTON_4_PIN": "8",
+                "MODE_BUTTON_5_PIN": "7",
                 "GPIO_BUTTON_DEBOUNCE_SECONDS": "0.4",
                 "GPIO_BUTTON_HOLD_SECONDS": "1.8",
                 "ENABLE_GPIO_LED": "1",
@@ -164,6 +185,11 @@ class LoadDeviceSettingsTests(unittest.TestCase):
         self.assertAlmostEqual(settings.camera.capture_delay_seconds, 2.5)
         self.assertFalse(settings.button.enabled)
         self.assertEqual(settings.button.pin, 22)
+        self.assertEqual(settings.button.mode_button_1_pin, 23)
+        self.assertEqual(settings.button.mode_button_2_pin, 24)
+        self.assertEqual(settings.button.mode_button_3_pin, 25)
+        self.assertEqual(settings.button.mode_button_4_pin, 8)
+        self.assertEqual(settings.button.mode_button_5_pin, 7)
         self.assertAlmostEqual(settings.button.debounce_seconds, 0.4)
         self.assertAlmostEqual(settings.button.hold_seconds, 1.8)
         self.assertTrue(settings.led.enabled)

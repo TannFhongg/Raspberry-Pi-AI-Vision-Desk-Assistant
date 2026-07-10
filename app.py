@@ -150,18 +150,6 @@ def _read_orientation_env(name: str, default: str) -> str:
         return default
     return value
 
-
-def _read_optional_pin_env(name: str) -> int | None:
-    """Return an optional GPIO pin override from the environment."""
-    raw_value = os.getenv(name)
-    if raw_value is None or raw_value.strip() == "":
-        return None
-    try:
-        pin = int(raw_value)
-    except (TypeError, ValueError):
-        return None
-    return pin if pin >= 0 else None
-
 CAMERA_BACKEND = SETTINGS.camera.backend
 CAMERA_INDEX = SETTINGS.camera.index
 CAPTURE_WIDTH = SETTINGS.camera.resolution.width
@@ -173,15 +161,14 @@ CAPTURE_DELAY_SECONDS = SETTINGS.camera.capture_delay_seconds
 GRAYSCALE = SETTINGS.camera.grayscale
 MAX_DIMENSION = SETTINGS.camera.max_dimension
 ENABLE_GPIO_BUTTON = SETTINGS.button.enabled
-GPIO_BUTTON_PIN = SETTINGS.button.pin
+CAPTURE_BUTTON_PIN = SETTINGS.button.pin
 GPIO_BUTTON_DEBOUNCE_SECONDS = SETTINGS.button.debounce_seconds
 GPIO_BUTTON_HOLD_SECONDS = SETTINGS.button.hold_seconds
-MODE_BUTTON_1_PIN = _read_optional_pin_env("MODE_BUTTON_1_PIN")
-MODE_BUTTON_2_PIN = _read_optional_pin_env("MODE_BUTTON_2_PIN")
-MODE_BUTTON_3_PIN = _read_optional_pin_env("MODE_BUTTON_3_PIN")
-MODE_BUTTON_4_PIN = _read_optional_pin_env("MODE_BUTTON_4_PIN")
-MODE_BUTTON_5_PIN = _read_optional_pin_env("MODE_BUTTON_5_PIN")
-CAPTURE_BUTTON_PIN = _read_int_env("CAPTURE_BUTTON_PIN", GPIO_BUTTON_PIN, minimum=0)
+MODE_BUTTON_1_PIN = SETTINGS.button.mode_button_1_pin
+MODE_BUTTON_2_PIN = SETTINGS.button.mode_button_2_pin
+MODE_BUTTON_3_PIN = SETTINGS.button.mode_button_3_pin
+MODE_BUTTON_4_PIN = SETTINGS.button.mode_button_4_pin
+MODE_BUTTON_5_PIN = SETTINGS.button.mode_button_5_pin
 ENABLE_GPIO_LED = SETTINGS.led.enabled
 GPIO_LED_PIN = SETTINGS.led.pin
 GPIO_LED_ACTIVE_HIGH = SETTINGS.led.active_high

@@ -21,7 +21,14 @@ Recommended for setup and testing:
 - Raspberry Pi case with heatsink or cooling fan
 
 Required for GPIO button trigger (Phase 6):
-- Push button
+- Six momentary push buttons
+- Default BCM mapping:
+- Button Main / Capture -> GPIO17
+- Button 1 / Read Text -> GPIO5
+- Button 2 / Summarize Document -> GPIO6
+- Button 3 / Analyze Image -> GPIO13
+- Button 4 / Professional Assistant -> GPIO19
+- Button 5 / Solve Problem -> GPIO26
 - Jumper wires
 - Breadboard (optional but recommended for easier wiring)
 

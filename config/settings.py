@@ -74,6 +74,11 @@ class ButtonSettings:
 
     enabled: bool
     pin: int
+    mode_button_1_pin: int | None
+    mode_button_2_pin: int | None
+    mode_button_3_pin: int | None
+    mode_button_4_pin: int | None
+    mode_button_5_pin: int | None
     debounce_seconds: float
     hold_seconds: float
 
@@ -223,6 +228,31 @@ def load_device_settings(
         button=ButtonSettings(
             enabled=_parse_bool(button.get("enabled"), "button.enabled"),
             pin=_parse_int(button.get("pin"), "button.pin", minimum=0),
+            mode_button_1_pin=_parse_optional_int(
+                button.get("mode_button_1_pin"),
+                "button.mode_button_1_pin",
+                minimum=0,
+            ),
+            mode_button_2_pin=_parse_optional_int(
+                button.get("mode_button_2_pin"),
+                "button.mode_button_2_pin",
+                minimum=0,
+            ),
+            mode_button_3_pin=_parse_optional_int(
+                button.get("mode_button_3_pin"),
+                "button.mode_button_3_pin",
+                minimum=0,
+            ),
+            mode_button_4_pin=_parse_optional_int(
+                button.get("mode_button_4_pin"),
+                "button.mode_button_4_pin",
+                minimum=0,
+            ),
+            mode_button_5_pin=_parse_optional_int(
+                button.get("mode_button_5_pin"),
+                "button.mode_button_5_pin",
+                minimum=0,
+            ),
             debounce_seconds=_parse_float(
                 button.get("debounce_seconds", DEFAULT_BUTTON_DEBOUNCE_SECONDS),
                 "button.debounce_seconds",
@@ -404,7 +434,12 @@ def _apply_environment_overrides(
     _set_if_present(display, "orientation", env, "UI_DISPLAY_ORIENTATION")
 
     _set_if_present(merged["button"], "enabled", env, "ENABLE_GPIO_BUTTON")
-    _set_if_present(merged["button"], "pin", env, "GPIO_BUTTON_PIN")
+    _set_if_present(merged["button"], "pin", env, "CAPTURE_BUTTON_PIN", "GPIO_BUTTON_PIN")
+    _set_if_present(merged["button"], "mode_button_1_pin", env, "MODE_BUTTON_1_PIN")
+    _set_if_present(merged["button"], "mode_button_2_pin", env, "MODE_BUTTON_2_PIN")
+    _set_if_present(merged["button"], "mode_button_3_pin", env, "MODE_BUTTON_3_PIN")
+    _set_if_present(merged["button"], "mode_button_4_pin", env, "MODE_BUTTON_4_PIN")
+    _set_if_present(merged["button"], "mode_button_5_pin", env, "MODE_BUTTON_5_PIN")
     _set_if_present(
         merged["button"],
         "debounce_seconds",
@@ -533,6 +568,17 @@ def _parse_int(
             f"Value for '{field_name}' must be at least {minimum}, got {parsed}."
         )
     return parsed
+
+
+def _parse_optional_int(
+    value: Any,
+    field_name: str,
+    minimum: int | None = None,
+) -> int | None:
+    """Parse an optional integer with optional lower bound."""
+    if value is None:
+        return None
+    return _parse_int(value, field_name, minimum=minimum)
 
 
 def _parse_float(
