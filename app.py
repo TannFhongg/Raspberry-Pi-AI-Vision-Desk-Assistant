@@ -184,18 +184,7 @@ UI_DISPLAY_ORIENTATION = _read_orientation_env(
     "UI_DISPLAY_ORIENTATION",
     "landscape",
 )
-LIVE_PREVIEW_FRAME_INTERVAL_MS = _read_int_env(
-    "LIVE_PREVIEW_FRAME_INTERVAL_MS",
-    80,
-    minimum=40,
-    maximum=500,
-)
-LIVE_PREVIEW_REFRESH_MS = _read_int_env(
-    "LIVE_PREVIEW_REFRESH_MS",
-    100,
-    minimum=40,
-    maximum=500,
-)
+LIVE_PREVIEW_REFRESH_MS = 250
 UI_HEALTH_REFRESH_MS = _read_int_env("UI_HEALTH_REFRESH_MS", 5000, minimum=2000, maximum=60000)
 RESULT_HISTORY_LIMIT = _read_int_env("RESULT_HISTORY_LIMIT", 12, minimum=3, maximum=50)
 RAW_SCREEN_WIDTH = max(240, min(1920, SETTINGS.display.size.width))
@@ -234,7 +223,6 @@ LIVE_PREVIEW = LivePreviewService(
     autofocus_mode=CAMERA_AUTOFOCUS_MODE,
     exposure=CAMERA_EXPOSURE,
     brightness=CAMERA_BRIGHTNESS,
-    frame_interval_seconds=LIVE_PREVIEW_FRAME_INTERVAL_MS / 1000.0,
 )
 
 
