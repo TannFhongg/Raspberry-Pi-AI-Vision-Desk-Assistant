@@ -29,8 +29,15 @@ from hardware import (
     is_busy_device_state,
     screen_for_device_state,
 )
-from pipeline import PipelineError, PipelineResult, run_capture_analyze, save_latest_result
-from system import HealthMonitor, configure_logging
+from pipeline import PipelineError, PipelineResult, run_analyze, run_capture_analyze, save_latest_result
+from system import (
+    HealthMonitor,
+    OfflineRetryEntry,
+    OfflineRetryQueue,
+    OfflineRetryQueueError,
+    OfflineRetryQueueFullError,
+    configure_logging,
+)
 
 load_dotenv()
 
@@ -54,6 +61,8 @@ LATEST_RESULT_PATH = Path("data/latest_result.txt")
 RESULT_HISTORY_PATH = Path("data/result_history.json")
 CAPTURED_IMAGE_PATH = Path("static/captured.jpg")
 PROCESSED_IMAGE_PATH = Path("static/processed.jpg")
+OFFLINE_RETRY_QUEUE_PATH = Path("data/offline_retry_queue.json")
+OFFLINE_RETRY_STORAGE_PATH = Path("data/offline_retry")
 VALID_SCREENS = {"home", "processing", "result", "error", "history", "history_detail"}
 MJPEG_BOUNDARY = "frame"
 UI_MODE_OPTIONS = (
@@ -114,6 +123,7 @@ GPIO_START_ATTEMPTED = False
 GPIO_TRIGGER: GPIOButtonTrigger | None = None
 HEALTH_MONITOR: HealthMonitor | None = None
 RESULT_HISTORY_CACHE: list[dict[str, Any]] | None = None
+OFFLINE_RETRY_QUEUE: OfflineRetryQueue | None = None
 
 
 def _read_int_env(
@@ -185,6 +195,11 @@ UI_DISPLAY_ORIENTATION = _read_orientation_env(
     "UI_DISPLAY_ORIENTATION",
     "landscape",
 )
+OFFLINE_RETRY_ENABLED = _read_bool_env("OFFLINE_RETRY_ENABLED", True)
+OFFLINE_RETRY_POLL_INTERVAL_SECONDS = float(
+    _read_int_env("OFFLINE_RETRY_POLL_INTERVAL_SECONDS", 30, minimum=5, maximum=3600)
+)
+OFFLINE_RETRY_MAX_ENTRIES = _read_int_env("OFFLINE_RETRY_MAX_ENTRIES", 24, minimum=1, maximum=200)
 LIVE_PREVIEW_FRAME_INTERVAL_MS = _read_int_env(
     "LIVE_PREVIEW_FRAME_INTERVAL_MS",
     80,
@@ -215,6 +230,13 @@ MODE_BUTTON_PINS = {
     "professional_assistant": MODE_BUTTON_4_PIN,
     "solve_problem": MODE_BUTTON_5_PIN,
 }
+if OFFLINE_RETRY_ENABLED:
+    OFFLINE_RETRY_QUEUE = OfflineRetryQueue(
+        queue_path=OFFLINE_RETRY_QUEUE_PATH,
+        storage_dir=OFFLINE_RETRY_STORAGE_PATH,
+        poll_interval_seconds=OFFLINE_RETRY_POLL_INTERVAL_SECONDS,
+        max_entries=OFFLINE_RETRY_MAX_ENTRIES,
+    )
 
 LED_INDICATOR = LEDIndicator.create(
     pin=GPIO_LED_PIN,
@@ -782,7 +804,7 @@ def _build_template_context(
     if screen == "processing":
         display_status = state["detail"] or "Processing..."
     elif screen == "result":
-        display_status = "Done"
+        display_status = state["status"] or "Answer Ready"
     elif screen == "history":
         display_status = f"{len(recent_results)} saved result{'s' if len(recent_results) != 1 else ''}"
     elif screen == "history_detail":
@@ -921,6 +943,7 @@ def _run_capture_job(selected_mode: str, selected_mode_internal: str) -> None:
             detail="Done",
             answer=result.answer or "",
             current_step=len(PROGRESS_STEPS),
+            status="Answer Ready",
         )
         LOGGER.info(
             "Background capture job completed ui_mode=%s internal_mode=%s",
@@ -933,7 +956,8 @@ def _run_capture_job(selected_mode: str, selected_mode_internal: str) -> None:
             selected_mode,
             selected_mode_internal,
         )
-        _record_error_state(selected_mode, selected_mode_internal, str(exc))
+        if not _queue_retryable_pipeline_error(selected_mode, selected_mode_internal, exc):
+            _record_error_state(selected_mode, selected_mode_internal, str(exc))
     except Exception as exc:
         LOGGER.exception(
             "Background capture job crashed ui_mode=%s internal_mode=%s",
@@ -1000,6 +1024,136 @@ def _record_error_state(
         error=friendly_error,
         error_detail=error_message,
         current_step=-1,
+    )
+
+
+def _queue_retryable_pipeline_error(
+    selected_mode: str,
+    selected_mode_internal: str,
+    error: Exception,
+) -> bool:
+    """Queue retryable AI failures instead of losing the capture outright."""
+    queue = OFFLINE_RETRY_QUEUE
+    if queue is None or not bool(getattr(error, "retryable", False)):
+        return False
+
+    processed_path = getattr(error, "processed_path", None)
+    if processed_path is None or not Path(processed_path).is_file():
+        return False
+
+    try:
+        entry = queue.enqueue(
+            selected_mode=selected_mode,
+            selected_mode_internal=selected_mode_internal,
+            captured_path=getattr(error, "captured_path", None),
+            processed_path=processed_path,
+            camera_backend_used=getattr(error, "camera_backend_used", None) or CAMERA_BACKEND,
+            camera_resolution=getattr(error, "camera_resolution", None),
+            error_message=str(error),
+        )
+    except (OfflineRetryQueueFullError, OfflineRetryQueueError):
+        LOGGER.exception(
+            "Offline retry queue could not store failed request ui_mode=%s internal_mode=%s",
+            selected_mode,
+            selected_mode_internal,
+        )
+        return False
+
+    queue_position = queue.pending_count()
+    friendly_error = _humanize_error(str(error))
+    queued_message = (
+        "Saved for automatic retry.\n"
+        f"Reason: {friendly_error}.\n"
+        f"Queue position: {queue_position}.\n"
+        "The assistant will retry this capture again when network/OpenAI is available."
+    )
+    queued_result = PipelineResult(
+        captured_path=Path(entry.captured_path) if entry.captured_path else None,
+        processed_path=Path(entry.processed_path),
+        answer=queued_message,
+        mode=selected_mode_internal or DEFAULT_CAPTURE_INTERNAL_MODE,
+        camera_backend_used=entry.camera_backend_used or CAMERA_BACKEND,
+        camera_resolution=entry.camera_resolution,
+        status="queued",
+    )
+    save_latest_result(queued_result, output_path=str(LATEST_RESULT_PATH))
+    _write_device_state(
+        DeviceState.DONE,
+        selected_mode=selected_mode,
+        selected_mode_internal=selected_mode_internal,
+        detail="Will retry automatically",
+        answer=queued_message,
+        current_step=-1,
+        status="Queued for retry",
+    )
+    LOGGER.warning(
+        "Background capture job queued for retry entry=%s ui_mode=%s internal_mode=%s",
+        entry.id,
+        selected_mode,
+        selected_mode_internal,
+    )
+    return True
+
+
+def _analyze_offline_retry_entry(entry: OfflineRetryEntry) -> PipelineResult:
+    """Re-run AI analysis for a previously captured image from the offline queue."""
+    captured_path = entry.captured_path or entry.processed_path
+    result = run_analyze(
+        mode=entry.selected_mode_internal,
+        captured_path=captured_path,
+        processed_path=entry.processed_path,
+        grayscale=GRAYSCALE,
+        max_dimension=MAX_DIMENSION,
+        screen_optimization=SETTINGS.vision.screen_optimization,
+    )
+    processed_file = Path(entry.processed_path)
+    captured_file = Path(entry.captured_path) if entry.captured_path else None
+    return PipelineResult(
+        captured_path=captured_file if captured_file is not None and captured_file.is_file() else None,
+        processed_path=processed_file if processed_file.is_file() else result.processed_path,
+        answer=result.answer,
+        mode=entry.selected_mode_internal,
+        camera_backend_used=entry.camera_backend_used or result.camera_backend_used,
+        camera_resolution=entry.camera_resolution or result.camera_resolution,
+        status="success",
+        warnings=result.warnings,
+    )
+
+
+def _record_offline_retry_success(entry: OfflineRetryEntry, result: PipelineResult) -> None:
+    """Persist a deferred result once the background retry finally succeeds."""
+    save_latest_result(result, output_path=str(LATEST_RESULT_PATH))
+    _append_result_history(result, entry.selected_mode, entry.selected_mode_internal)
+    LOGGER.info(
+        "Offline retry succeeded entry=%s ui_mode=%s internal_mode=%s",
+        entry.id,
+        entry.selected_mode,
+        entry.selected_mode_internal,
+    )
+
+
+def _record_offline_retry_failure(
+    entry: OfflineRetryEntry,
+    error: Exception,
+    retryable: bool,
+) -> None:
+    """Log queued retry failures without interrupting the active screen."""
+    if retryable:
+        LOGGER.warning(
+            "Offline retry deferred again entry=%s ui_mode=%s internal_mode=%s error=%s",
+            entry.id,
+            entry.selected_mode,
+            entry.selected_mode_internal,
+            error,
+        )
+        return
+
+    LOGGER.error(
+        "Offline retry dropped entry=%s ui_mode=%s internal_mode=%s error=%s",
+        entry.id,
+        entry.selected_mode,
+        entry.selected_mode_internal,
+        error,
     )
 
 
@@ -1272,6 +1426,7 @@ def _write_device_state(
     error: str = "",
     error_detail: str = "",
     current_step: int | None = None,
+    status: str | None = None,
 ) -> None:
     """Persist the shared device lifecycle state to the UI state file."""
     ui_mode, internal_mode = _resolve_mode_pair(
@@ -1287,6 +1442,7 @@ def _write_device_state(
         error=error,
         error_detail=error_detail,
         current_step=current_step,
+        status=status,
     )
     payload["selected_mode_internal"] = internal_mode
     _write_state(payload)
@@ -1407,10 +1563,30 @@ def _ensure_health_monitor_started() -> None:
         LOGGER.info("Health monitor started")
 
 
+def _ensure_offline_retry_started() -> None:
+    """Start the background offline retry worker when the feature is enabled."""
+    queue = OFFLINE_RETRY_QUEUE
+    if queue is None:
+        return
+
+    started = queue.start(
+        analyze_func=_analyze_offline_retry_entry,
+        success_callback=_record_offline_retry_success,
+        failure_callback=_record_offline_retry_failure,
+    )
+    if started:
+        LOGGER.info(
+            "Offline retry queue started pending=%s poll_interval_seconds=%s",
+            queue.pending_count(),
+            OFFLINE_RETRY_POLL_INTERVAL_SECONDS,
+        )
+
+
 _bootstrap_ui_state()
 _initialize_led_indicator()
 _ensure_gpio_button_listener_started()
 _ensure_health_monitor_started()
+_ensure_offline_retry_started()
 LOGGER.info("Flask app startup complete")
 
 

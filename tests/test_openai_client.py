@@ -96,11 +96,39 @@ class OpenAIVisionClientReliabilityTests(unittest.TestCase):
                 retry_backoff_seconds=2.0,
                 sleep_func=lambda seconds: sleeps.append(seconds),
             )
-            with self.assertRaises(VisionClientError):
+            with self.assertRaises(VisionClientError) as error:
                 client.analyze_image(str(image_path), "document_reader")
 
         self.assertEqual(len(instances[0].responses.calls), 1)
         self.assertEqual(sleeps, [])
+        self.assertFalse(error.exception.retryable)
+
+    def test_final_connection_failure_is_marked_retryable(self) -> None:
+        image_path = _create_valid_image(".png")
+        instances: list[object] = []
+        fake_module, fake_client_class = _build_fake_sdk(
+            side_effects=[
+                _FakeAPIConnectionError("offline 1"),
+                _FakeAPIConnectionError("offline 2"),
+                _FakeAPIConnectionError("offline 3"),
+            ],
+            instances=instances,
+        )
+
+        with patch("ai.openai_client.load_device_settings", return_value=_build_settings()), patch(
+            "ai.openai_client._import_openai_sdk",
+            return_value=(fake_module, fake_client_class),
+        ):
+            client = OpenAIVisionClient(
+                api_key="test-key",
+                retry_attempts=3,
+                retry_backoff_seconds=2.0,
+                sleep_func=lambda _seconds: None,
+            )
+            with self.assertRaises(VisionClientError) as error:
+                client.analyze_image(str(image_path), "document_reader")
+
+        self.assertTrue(error.exception.retryable)
 
     def test_invalid_image_fails_before_request(self) -> None:
         temp_dir = Path(tempfile.mkdtemp(prefix="vision-invalid-image-"))

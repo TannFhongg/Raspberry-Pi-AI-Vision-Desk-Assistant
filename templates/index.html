@@ -137,7 +137,7 @@
                         {% elif screen == "error" %}
                         {{ error or display_status }}
                         {% elif screen == "result" %}
-                        Answer Ready
+                        {{ display_status }}
                         {% elif screen == "history" %}
                         {{ display_status }}
                         {% elif screen == "history_detail" and history_entry %}

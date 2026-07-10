@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 os.environ.setdefault("ENABLE_GPIO_BUTTON", "0")
 os.environ.setdefault("ENABLE_GPIO_LED", "0")
+os.environ.setdefault("OFFLINE_RETRY_ENABLED", "0")
 os.environ.setdefault("RELIABILITY_HEALTH_MONITOR_ENABLED", "0")
 
 import app as app_module
@@ -30,6 +31,7 @@ class Phase11AppIntegrationTests(unittest.TestCase):
         self.processed_path = self.temp_dir / "processed.jpg"
         self.led_indicator = _FakeLEDIndicator()
         self.live_preview = _FakeLivePreview()
+        self.offline_retry_queue = _FakeOfflineRetryQueue()
         self.path_patcher = patch.object(app_module, "UI_STATE_PATH", self.ui_state_path)
         self.health_path_patcher = patch.object(app_module, "HEALTH_STATUS_PATH", self.health_status_path)
         self.result_patcher = patch.object(app_module, "LATEST_RESULT_PATH", self.latest_result_path)
@@ -38,6 +40,11 @@ class Phase11AppIntegrationTests(unittest.TestCase):
         self.processed_patcher = patch.object(app_module, "PROCESSED_IMAGE_PATH", self.processed_path)
         self.led_patcher = patch.object(app_module, "LED_INDICATOR", self.led_indicator)
         self.live_preview_patcher = patch.object(app_module, "LIVE_PREVIEW", self.live_preview)
+        self.offline_retry_patcher = patch.object(
+            app_module,
+            "OFFLINE_RETRY_QUEUE",
+            self.offline_retry_queue,
+        )
         self.path_patcher.start()
         self.health_path_patcher.start()
         self.result_patcher.start()
@@ -46,6 +53,7 @@ class Phase11AppIntegrationTests(unittest.TestCase):
         self.processed_patcher.start()
         self.led_patcher.start()
         self.live_preview_patcher.start()
+        self.offline_retry_patcher.start()
         app_module.app.config["TESTING"] = True
         app_module.RUNNING = False
         app_module.GPIO_TRIGGER = None
@@ -62,6 +70,7 @@ class Phase11AppIntegrationTests(unittest.TestCase):
         self.processed_patcher.stop()
         self.led_patcher.stop()
         self.live_preview_patcher.stop()
+        self.offline_retry_patcher.stop()
 
     def test_home_result_and_error_screens_refresh_when_gpio_listener_is_active(self) -> None:
         client = app_module.app.test_client()
@@ -292,6 +301,34 @@ class Phase11AppIntegrationTests(unittest.TestCase):
         self.assertEqual(state["selected_mode_internal"], "document_reader")
         self.assertEqual(state["error"], "Invalid image")
         self.assertIn("Invalid image file", state["error_detail"])
+
+    def test_retryable_openai_failure_is_saved_to_offline_queue(self) -> None:
+        self.preview_path.write_bytes(b"captured")
+        self.processed_path.write_bytes(b"processed")
+        retryable_error = app_module.PipelineError(
+            "Could not connect to OpenAI after 3 attempts. Check your internet connection and try again.",
+            retryable=True,
+            captured_path=self.preview_path,
+            processed_path=self.processed_path,
+            mode="document_reader",
+            camera_backend_used="picamera2",
+            camera_resolution=(1920, 1080),
+        )
+
+        with patch("app.run_capture_analyze", side_effect=retryable_error):
+            app_module._run_capture_job("read_text", "document_reader")
+
+        self.assertEqual(self.live_preview.resume_calls, 1)
+        self.assertEqual(len(self.offline_retry_queue.entries), 1)
+        state = app_module._load_ui_state()
+        self.assertEqual(state["device_state"], "DONE")
+        self.assertEqual(state["screen"], "result")
+        self.assertEqual(state["status"], "Queued for retry")
+        self.assertIn("Saved for automatic retry.", state["answer"])
+        latest_result = self.latest_result_path.read_text(encoding="utf-8")
+        self.assertIn("Status: queued", latest_result)
+        self.assertIn("Message: Saved for automatic retry.", latest_result)
+        self.assertEqual(app_module._load_result_history(), [])
 
     def test_live_preview_image_is_rendered_from_the_live_route(self) -> None:
         client = app_module.app.test_client()
@@ -569,6 +606,28 @@ class _FakeLivePreview:
 
     def resume(self) -> None:
         self.resume_calls += 1
+
+
+class _FakeOfflineRetryQueue:
+    """Small queue double that records queued retry entries without background work."""
+
+    def __init__(self) -> None:
+        self.entries: list[object] = []
+
+    def enqueue(self, **kwargs):
+        entry = type("QueuedEntry", (), {})()
+        entry.id = f"queued-{len(self.entries) + 1}"
+        entry.selected_mode = kwargs["selected_mode"]
+        entry.selected_mode_internal = kwargs["selected_mode_internal"]
+        entry.captured_path = str(kwargs.get("captured_path") or "")
+        entry.processed_path = str(kwargs["processed_path"])
+        entry.camera_backend_used = kwargs.get("camera_backend_used") or ""
+        entry.camera_resolution = kwargs.get("camera_resolution")
+        self.entries.append(entry)
+        return entry
+
+    def pending_count(self) -> int:
+        return len(self.entries)
 
 
 class _FakeThread:

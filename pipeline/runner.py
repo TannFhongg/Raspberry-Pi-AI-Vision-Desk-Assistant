@@ -25,6 +25,47 @@ LOGGER = logging.getLogger(__name__)
 class PipelineError(Exception):
     """Friendly error raised when a pipeline step fails."""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        retryable: bool = False,
+        captured_path: str | Path | None = None,
+        processed_path: str | Path | None = None,
+        mode: str | None = None,
+        camera_backend_used: str | None = None,
+        camera_resolution: tuple[int, int] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.retryable = retryable
+        self.captured_path = Path(captured_path) if captured_path else None
+        self.processed_path = Path(processed_path) if processed_path else None
+        self.mode = mode
+        self.camera_backend_used = camera_backend_used
+        self.camera_resolution = camera_resolution
+
+    def attach_context(
+        self,
+        *,
+        captured_path: str | Path | None = None,
+        processed_path: str | Path | None = None,
+        mode: str | None = None,
+        camera_backend_used: str | None = None,
+        camera_resolution: tuple[int, int] | None = None,
+    ) -> "PipelineError":
+        """Backfill any missing pipeline context on an existing error instance."""
+        if self.captured_path is None and captured_path:
+            self.captured_path = Path(captured_path)
+        if self.processed_path is None and processed_path:
+            self.processed_path = Path(processed_path)
+        if self.mode is None and mode:
+            self.mode = mode
+        if self.camera_backend_used is None and camera_backend_used:
+            self.camera_backend_used = camera_backend_used
+        if self.camera_resolution is None and camera_resolution is not None:
+            self.camera_resolution = camera_resolution
+        return self
+
 
 @dataclass(slots=True)
 class PipelineResult:
@@ -321,7 +362,13 @@ def run_analyze(
         )
     except VisionClientError as exc:
         LOGGER.error("AI analysis failed: %s", exc, exc_info=True)
-        raise PipelineError(str(exc)) from exc
+        raise PipelineError(
+            str(exc),
+            retryable=bool(getattr(exc, "retryable", False)),
+            captured_path=captured_file if captured_file.is_file() else None,
+            processed_path=final_processed_path if final_processed_path.is_file() else None,
+            mode=canonical_mode,
+        ) from exc
 
     LOGGER.info(
         "AI analysis succeeded mode=%s answer_chars=%s",
@@ -381,15 +428,24 @@ def run_capture_analyze(
         screen_optimization=screen_optimization,
         status_callback=status_callback,
     )
-    analyze_result = run_analyze(
-        mode=mode,
-        captured_path=str(capture_result.captured_path or captured_path),
-        processed_path=str(preprocess_result.processed_path or processed_path),
-        grayscale=grayscale,
-        max_dimension=max_dimension,
-        screen_optimization=screen_optimization,
-        status_callback=status_callback,
-    )
+    try:
+        analyze_result = run_analyze(
+            mode=mode,
+            captured_path=str(capture_result.captured_path or captured_path),
+            processed_path=str(preprocess_result.processed_path or processed_path),
+            grayscale=grayscale,
+            max_dimension=max_dimension,
+            screen_optimization=screen_optimization,
+            status_callback=status_callback,
+        )
+    except PipelineError as exc:
+        raise exc.attach_context(
+            captured_path=capture_result.captured_path or captured_path,
+            processed_path=preprocess_result.processed_path or processed_path,
+            mode=normalize_mode(mode),
+            camera_backend_used=capture_result.camera_backend_used,
+            camera_resolution=capture_result.camera_resolution,
+        )
 
     LOGGER.info(
         "Full capture-analyze pipeline succeeded mode=%s backend=%s",
@@ -445,6 +501,8 @@ def save_latest_result(
 
     if result.status == "success":
         lines.append(f"Answer: {result.answer or ''}")
+    elif result.status == "queued":
+        lines.append(f"Message: {result.answer or 'Saved for retry'}")
     else:
         lines.append(f"Error: {result.answer or 'Unknown error'}")
 

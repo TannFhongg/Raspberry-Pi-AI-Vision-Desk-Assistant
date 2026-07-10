@@ -32,6 +32,10 @@ LOGGER = logging.getLogger(__name__)
 class VisionClientError(Exception):
     """Friendly application-level error for image analysis failures."""
 
+    def __init__(self, message: str, *, retryable: bool = False) -> None:
+        super().__init__(message)
+        self.retryable = retryable
+
 
 class OpenAIVisionClient:
     """Small wrapper around the OpenAI Responses API for image analysis."""
@@ -186,7 +190,8 @@ class OpenAIVisionClient:
                 )
                 raise VisionClientError(
                     "OpenAI rate limit or quota reached after "
-                    f"{self.retry_attempts} attempts. Wait a moment, then try again, or check your billing and usage limits."
+                    f"{self.retry_attempts} attempts. Wait a moment, then try again, or check your billing and usage limits.",
+                    retryable=True,
                 ) from exc
             except self._openai.APIConnectionError as exc:
                 if self._should_retry(attempt):
@@ -201,7 +206,8 @@ class OpenAIVisionClient:
                 )
                 raise VisionClientError(
                     f"Could not connect to OpenAI after {self.retry_attempts} attempts. "
-                    "Check your internet connection and try again."
+                    "Check your internet connection and try again.",
+                    retryable=True,
                 ) from exc
             except self._openai.APITimeoutError as exc:
                 if self._should_retry(attempt):
@@ -215,7 +221,8 @@ class OpenAIVisionClient:
                     exc_info=True,
                 )
                 raise VisionClientError(
-                    f"The OpenAI request timed out after {self.retry_attempts} attempts. Please try again."
+                    f"The OpenAI request timed out after {self.retry_attempts} attempts. Please try again.",
+                    retryable=True,
                 ) from exc
             except self._openai.BadRequestError as exc:
                 LOGGER.error(
@@ -248,7 +255,8 @@ class OpenAIVisionClient:
                     )
                     raise VisionClientError(
                         f"OpenAI API error (status {exc.status_code}) after {self.retry_attempts} attempts. "
-                        "Please try again in a moment."
+                        "Please try again in a moment.",
+                        retryable=True,
                     ) from exc
 
                 LOGGER.error(
