@@ -600,6 +600,64 @@ button:disabled {
     grid-template-columns: minmax(0, 1fr);
 }
 
+.app-state-live .device-panel {
+    gap: 4px;
+}
+
+.app-state-live .panel-header {
+    gap: 4px;
+}
+
+.app-state-live .header-title {
+    font-size: calc(var(--title-font-size) * 0.46);
+}
+
+.app-state-live .header-subtitle {
+    margin-top: 1px;
+    font-size: calc(var(--base-font-size) * 0.48);
+}
+
+.app-state-live .header-capture-link {
+    min-height: 20px;
+    font-size: calc(var(--base-font-size) * 0.62);
+}
+
+.app-state-live .system-health-bar {
+    gap: 3px;
+}
+
+.app-state-live .health-pill {
+    min-height: 16px;
+    padding: 1px 6px;
+    font-size: calc(var(--base-font-size) * 0.38);
+}
+
+.app-state-live .answer-box-live {
+    gap: 4px;
+    padding: 8px;
+}
+
+.app-state-live .answer-box-title-row,
+.app-state-live .answer-footer-row {
+    gap: 6px;
+}
+
+.app-state-live .section-title {
+    font-size: calc(var(--base-font-size) * 0.56);
+}
+
+.app-state-live .capture-hint-inline,
+.app-state-live .capture-hint,
+.app-state-live .secondary-action-link {
+    font-size: calc(var(--base-font-size) * 0.5);
+    line-height: 1.08;
+}
+
+.app-state-live .answer-preview-wrap {
+    padding: 2px;
+    border-radius: 24px;
+}
+
 @media (max-width: 560px), (max-height: 380px) {
     body {
         padding: 6px;
@@ -701,5 +759,28 @@ button:disabled {
 
     .progress-step {
         font-size: calc(var(--base-font-size) * 0.72);
+    }
+
+    .app-state-live .header-title {
+        font-size: calc(var(--title-font-size) * 0.42);
+    }
+
+    .app-state-live .header-subtitle {
+        font-size: calc(var(--base-font-size) * 0.44);
+    }
+
+    .app-state-live .header-capture-link {
+        font-size: calc(var(--base-font-size) * 0.56);
+    }
+
+    .app-state-live .health-pill {
+        font-size: calc(var(--base-font-size) * 0.34);
+    }
+
+    .app-state-live .section-title,
+    .app-state-live .capture-hint-inline,
+    .app-state-live .capture-hint,
+    .app-state-live .secondary-action-link {
+        font-size: calc(var(--base-font-size) * 0.46);
     }
 }
