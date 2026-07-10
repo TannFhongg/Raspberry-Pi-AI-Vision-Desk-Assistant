@@ -380,7 +380,7 @@ button:disabled {
 }
 
 .answer-copy {
-    font-size: calc(var(--base-font-size) * 0.385);
+    font-size: calc(var(--base-font-size) * 0.285);
     font-weight: 700;
 }
 
@@ -677,7 +677,7 @@ button:disabled {
     }
 
     .answer-copy {
-        font-size: calc(var(--base-font-size) * 0.346);
+        font-size: calc(var(--base-font-size) * 0.246);
     }
 
     .history-card {
