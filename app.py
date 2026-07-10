@@ -55,6 +55,7 @@ RESULT_HISTORY_PATH = Path("data/result_history.json")
 CAPTURED_IMAGE_PATH = Path("static/captured.jpg")
 PROCESSED_IMAGE_PATH = Path("static/processed.jpg")
 VALID_SCREENS = {"home", "processing", "result", "error", "history", "history_detail"}
+MJPEG_BOUNDARY = "frame"
 UI_MODE_OPTIONS = (
     {
         "id": "read_text",
@@ -184,7 +185,12 @@ UI_DISPLAY_ORIENTATION = _read_orientation_env(
     "UI_DISPLAY_ORIENTATION",
     "landscape",
 )
-LIVE_PREVIEW_REFRESH_MS = 250
+LIVE_PREVIEW_FRAME_INTERVAL_MS = _read_int_env(
+    "LIVE_PREVIEW_FRAME_INTERVAL_MS",
+    80,
+    minimum=50,
+    maximum=500,
+)
 UI_HEALTH_REFRESH_MS = _read_int_env("UI_HEALTH_REFRESH_MS", 5000, minimum=2000, maximum=60000)
 RESULT_HISTORY_LIMIT = _read_int_env("RESULT_HISTORY_LIMIT", 12, minimum=3, maximum=50)
 RAW_SCREEN_WIDTH = max(240, min(1920, SETTINGS.display.size.width))
@@ -223,6 +229,7 @@ LIVE_PREVIEW = LivePreviewService(
     autofocus_mode=CAMERA_AUTOFOCUS_MODE,
     exposure=CAMERA_EXPOSURE,
     brightness=CAMERA_BRIGHTNESS,
+    frame_interval_seconds=LIVE_PREVIEW_FRAME_INTERVAL_MS / 1000.0,
 )
 
 
@@ -234,7 +241,7 @@ def index():
 
 @app.get("/camera/live-frame.jpg")
 def live_preview_frame():
-    """Return the latest live camera frame for the touchscreen preview."""
+    """Return a single live preview frame for diagnostics and compatibility."""
     frame_bytes = LIVE_PREVIEW.get_jpeg_frame()
     return Response(
         frame_bytes,
@@ -243,6 +250,20 @@ def live_preview_frame():
             "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
             "Pragma": "no-cache",
         },
+    )
+
+
+@app.get("/camera/live-stream.mjpg")
+def live_preview_stream():
+    """Return the live preview as a browser-friendly MJPEG stream."""
+    return Response(
+        LIVE_PREVIEW.iter_mjpeg_stream(boundary=MJPEG_BOUNDARY),
+        mimetype=f"multipart/x-mixed-replace; boundary={MJPEG_BOUNDARY}",
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+        },
+        direct_passthrough=True,
     )
 
 
@@ -397,7 +418,7 @@ def _build_idle_state_payload(
 
 def _build_live_preview_url() -> str:
     """Return the cache-busted live preview endpoint for the UI."""
-    return f"{url_for('live_preview_frame')}?t={int(datetime.now().timestamp() * 1000)}"
+    return f"{url_for('live_preview_stream')}?t={int(datetime.now().timestamp() * 1000)}"
 
 
 def _build_ui_state_api_payload() -> dict[str, Any]:
@@ -805,7 +826,6 @@ def _build_template_context(
         "mode_options": UI_MODE_OPTIONS,
         "progress_steps": _build_progress_steps(state["current_step"]),
         "live_preview_url": _build_live_preview_url(),
-        "live_preview_refresh_ms": LIVE_PREVIEW_REFRESH_MS,
         "default_capture_mode_label": MODE_LABELS[DEFAULT_CAPTURE_MODE],
         "auto_refresh_ms": _get_auto_refresh_ms(screen),
         "ui_state_api_url": url_for("ui_state_api"),

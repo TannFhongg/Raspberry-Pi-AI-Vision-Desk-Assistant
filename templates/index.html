@@ -60,8 +60,6 @@
                         src="{{ live_preview_url }}"
                         alt="Live camera feed"
                         class="preview-image"
-                        data-live-preview-url="{{ live_preview_url }}"
-                        data-live-preview-refresh-ms="{{ live_preview_refresh_ms }}"
                     >
                 </div>
 
@@ -411,16 +409,6 @@
                 window.setInterval(pollHealth, healthPollMs);
             }
 
-            var livePreviewImage = document.querySelector("[data-live-preview-url]");
-            if (!livePreviewImage) {
-                return;
-            }
-
-            var livePreviewUrl = livePreviewImage.dataset.livePreviewUrl;
-            var livePreviewRefreshMs = Number(livePreviewImage.dataset.livePreviewRefreshMs || "250");
-            window.setInterval(function () {
-                livePreviewImage.src = livePreviewUrl + "&frame=" + Date.now();
-            }, livePreviewRefreshMs);
         })();
     </script>
 </body>

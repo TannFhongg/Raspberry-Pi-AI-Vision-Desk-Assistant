@@ -307,7 +307,9 @@ class Phase11AppIntegrationTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"Live Camera Feed", response.data)
-        self.assertIn(b"/camera/live-frame.jpg", response.data)
+        self.assertIn(b"/camera/live-stream.mjpg", response.data)
+        self.assertNotIn(b"data-live-preview-url", response.data)
+        self.assertNotIn(b"&frame=", response.data)
 
     def test_live_preview_route_returns_current_frame_bytes(self) -> None:
         client = app_module.app.test_client()
@@ -317,6 +319,19 @@ class Phase11AppIntegrationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.mimetype, "image/jpeg")
         self.assertEqual(response.data, self.live_preview.frame_bytes)
+
+    def test_live_preview_stream_route_returns_mjpeg_chunk(self) -> None:
+        client = app_module.app.test_client()
+
+        response = client.get("/camera/live-stream.mjpg")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.mimetype, "multipart/x-mixed-replace")
+        self.assertIn("boundary=frame", response.content_type)
+        first_chunk = b"".join(response.response)
+        self.assertIn(b"--frame", first_chunk)
+        self.assertIn(b"Content-Type: image/jpeg", first_chunk)
+        self.assertIn(self.live_preview.frame_bytes, first_chunk)
 
     def test_ui_state_api_returns_public_state_json(self) -> None:
         client = app_module.app.test_client()
@@ -534,6 +549,20 @@ class _FakeLivePreview:
     def get_jpeg_frame(self, timeout_seconds: float = 1.0) -> bytes:
         del timeout_seconds
         return self.frame_bytes
+
+    def iter_mjpeg_stream(self, boundary: str = "frame", timeout_seconds: float = 1.0):
+        del timeout_seconds
+        yield (
+            b"--"
+            + boundary.encode("ascii")
+            + b"\r\n"
+            + b"Content-Type: image/jpeg\r\n"
+            + b"Content-Length: "
+            + str(len(self.frame_bytes)).encode("ascii")
+            + b"\r\n\r\n"
+            + self.frame_bytes
+            + b"\r\n"
+        )
 
     def pause(self) -> None:
         self.pause_calls += 1

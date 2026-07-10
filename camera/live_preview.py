@@ -7,7 +7,7 @@ import io
 import logging
 import threading
 import time
-from typing import Any
+from typing import Any, Iterator
 
 from PIL import Image, ImageDraw
 
@@ -75,6 +75,7 @@ class LivePreviewService:
             "Starting live camera feed...",
             size=self._preview_size,
         )
+        self._frame_version = 0
         self._paused = False
         self._source_active = False
         self._stop_requested = False
@@ -82,6 +83,45 @@ class LivePreviewService:
 
     def get_jpeg_frame(self, timeout_seconds: float = 1.0) -> bytes:
         """Return the latest JPEG frame, starting the worker on demand."""
+        frame_bytes, _ = self._wait_for_frame(after_version=None, timeout_seconds=timeout_seconds)
+        return frame_bytes
+
+    def iter_mjpeg_stream(
+        self,
+        *,
+        boundary: str = "frame",
+        timeout_seconds: float = 1.0,
+    ) -> Iterator[bytes]:
+        """Yield a multipart MJPEG stream for browsers and kiosk displays."""
+        last_version: int | None = None
+        separator = boundary.encode("ascii")
+
+        try:
+            while True:
+                frame_bytes, frame_version = self._wait_for_frame(
+                    after_version=last_version,
+                    timeout_seconds=timeout_seconds,
+                )
+                last_version = frame_version
+                yield (
+                    b"--" + separator + b"\r\n"
+                    b"Content-Type: image/jpeg\r\n"
+                    b"Content-Length: " + str(len(frame_bytes)).encode("ascii") + b"\r\n"
+                    b"Cache-Control: no-store, no-cache, must-revalidate, max-age=0\r\n"
+                    b"Pragma: no-cache\r\n\r\n"
+                    + frame_bytes
+                    + b"\r\n"
+                )
+        except GeneratorExit:
+            return
+
+    def _wait_for_frame(
+        self,
+        *,
+        after_version: int | None,
+        timeout_seconds: float,
+    ) -> tuple[bytes, int]:
+        """Return the latest frame, optionally waiting for a newer version."""
         with self._condition:
             paused = self._paused
 
@@ -90,18 +130,27 @@ class LivePreviewService:
         deadline = time.monotonic() + max(0.0, timeout_seconds)
 
         with self._condition:
-            while self._latest_frame is None and not self._stop_requested:
+            while not self._stop_requested:
+                has_frame = self._latest_frame is not None
+                version_ready = after_version is None or self._frame_version > after_version
+                if has_frame and version_ready:
+                    return self._latest_frame, self._frame_version
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     break
                 self._condition.wait(timeout=remaining)
 
-            if self._latest_frame is not None:
-                return self._latest_frame
+            fallback_frame = self._latest_frame
+            fallback_version = self._frame_version
 
-        return _build_placeholder_frame(
-            "Live camera feed unavailable.",
-            size=self._preview_size,
+        if fallback_frame is not None:
+            return fallback_frame, fallback_version
+        return (
+            _build_placeholder_frame(
+                "Live camera feed unavailable.",
+                size=self._preview_size,
+            ),
+            fallback_version,
         )
 
     def pause(self, timeout_seconds: float = 2.0) -> bool:
@@ -224,6 +273,7 @@ class LivePreviewService:
         """Persist the newest preview frame and wake any waiting readers."""
         with self._condition:
             self._latest_frame = frame_bytes
+            self._frame_version += 1
             self._condition.notify_all()
 
     def _mark_source_active(self, active: bool) -> None:
