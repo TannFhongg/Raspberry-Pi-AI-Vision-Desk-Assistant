@@ -28,8 +28,9 @@ Validated on July 10, 2026:
 - Successful analyses are now available again through `Recent Results`, backed by RAM cache plus persisted history on disk
 - Recent results now render as a thumbnail gallery in RAM so old scans can be reopened with faster visual recognition
 - The result screen can now re-analyze the same saved image in a different assistant mode without taking another photo
+- The main result view now gives more room to `Answer` by removing the on-screen GPIO re-analyze hint and tightening the header and health bar
 - Transient network or OpenAI failures are now saved into an offline retry queue and retried automatically when service connectivity returns
-- Automated regression coverage is currently green: `python -m pytest` -> `104 passed`
+- Automated regression coverage is currently green: `python -m pytest` -> `105 passed`
 
 ## Portfolio Value
 
@@ -697,7 +698,7 @@ Phase 15 improvements:
 - a background retry worker replays queued analyses automatically from copied processed images in `data/offline_retry/`
 - queued failures appear to the user as `Queued for retry` instead of only showing a hard error
 - recent-result cards now include RAM-backed thumbnails for faster visual browsing
-- the result and history-detail screens can re-run AI analysis against the same saved image under another mode without recapture
+- saved images can still be re-run under another mode without recapture, but the main result screen now stays answer-first by hiding the touch `Analyze Same Image As` panel, removing the GPIO hint text, and tightening the header and health pills
 - when the embedded GPIO listener is active, those same saved-image re-analysis flows can also be triggered from the physical mode buttons, and the physical back button exits to the ready screen
 
 ## Troubleshooting

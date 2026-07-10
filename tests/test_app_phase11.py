@@ -546,7 +546,7 @@ class Phase11AppIntegrationTests(unittest.TestCase):
         self.assertIn(b"Saved answer body", response.data)
         self.assertIn(b"1280x720", response.data)
 
-    def test_result_screen_offers_instant_reanalyze_buttons(self) -> None:
+    def test_result_screen_prioritizes_answer_space_over_reanalyze_panel(self) -> None:
         client = app_module.app.test_client()
         _create_valid_image_file(self.preview_path)
         _create_valid_image_file(self.processed_path)
@@ -566,11 +566,11 @@ class Phase11AppIntegrationTests(unittest.TestCase):
         response = client.get("/")
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn(b"Analyze Same Image As", response.data)
-        self.assertIn(b'action="/reanalyze"', response.data)
-        self.assertIn(b"Read Text", response.data)
+        self.assertNotIn(b"Analyze Same Image As", response.data)
+        self.assertNotIn(b'action="/reanalyze"', response.data)
+        self.assertIn(b"Solved", response.data)
 
-    def test_result_screen_shows_gpio_reanalyze_hint_when_listener_is_active(self) -> None:
+    def test_result_screen_hides_gpio_reanalyze_hint_to_maximize_answer_space(self) -> None:
         client = app_module.app.test_client()
         _create_valid_image_file(self.preview_path)
         _create_valid_image_file(self.processed_path)
@@ -592,7 +592,40 @@ class Phase11AppIntegrationTests(unittest.TestCase):
         response = client.get("/")
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn(b"GPIO: press a mode button to re-analyze this same image", response.data)
+        self.assertNotIn(b"GPIO: press a mode button to re-analyze this same image", response.data)
+        self.assertIn(b"Solved", response.data)
+
+    def test_history_detail_keeps_reanalyze_actions_for_saved_results(self) -> None:
+        client = app_module.app.test_client()
+        source_image_path = self.temp_dir / "history-source.jpg"
+        processed_image_path = self.temp_dir / "history-processed.jpg"
+        _create_valid_image_file(source_image_path)
+        _create_valid_image_file(processed_image_path)
+        app_module._write_result_history(
+            [
+                {
+                    "id": "entry-1",
+                    "created_at": "2026-07-10T22:00:00",
+                    "selected_mode": "read_text",
+                    "selected_mode_internal": "document_reader",
+                    "mode_label": "Read Text",
+                    "answer": "Saved answer body",
+                    "summary": "Saved answer summary",
+                    "camera_backend_used": "picamera2",
+                    "camera_resolution": [1920, 1080],
+                    "source_image_path": str(source_image_path),
+                    "processed_image_path": str(processed_image_path),
+                }
+            ]
+        )
+
+        response = client.get("/history/entry-1")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Analyze Same Image As", response.data)
+        self.assertIn(b'action="/reanalyze"', response.data)
+        self.assertIn(b"Summarize Document", response.data)
+        self.assertNotIn(b"GPIO: press a mode button to re-analyze this same image", response.data)
 
     def test_reanalyze_job_reuses_saved_image_without_new_capture(self) -> None:
         source_image_path = self.temp_dir / "history-source.jpg"

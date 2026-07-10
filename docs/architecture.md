@@ -80,6 +80,8 @@ Phase 8 adds a typed device configuration layer, hardware-aware camera control r
 - `app.py` persists selected mode and current screen in `data/ui_state.json`, tracks recent successful answers in `data/result_history.json`, and renders screen-specific sections from `templates/index.html`.
 - `app.py` also keeps a RAM thumbnail cache for history cards and supports analyze-only jobs that reuse the same saved image under another mode.
 - The hardware mode-button handler now branches by screen context: it still selects a mode from `home`, but on a saved `result` it can trigger same-image re-analysis instead of forcing a recapture.
+- The touchscreen `result` view is now intentionally answer-first: the touch re-analysis panel and the GPIO helper text were removed there so the answer box keeps more vertical room, while `history_detail` still exposes the touch re-analysis controls.
+- The `result` and `history_detail` layouts also use a tighter header and health-bar stack so more of the `480x320` screen is reserved for readable assistant output.
 - The current touchscreen state machine is `home -> processing -> result/error`, with `history` and `history_detail` screens for reopening recent answers.
 - `/capture`, `/capture-analyze`, and `/analyze` are compatibility routes that currently all start the same background `run_capture_analyze` job.
 - `camera/live_preview.py` keeps a background preview worker alive and now exposes a browser-friendly MJPEG stream for smoother live framing.

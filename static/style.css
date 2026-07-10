@@ -549,14 +549,6 @@ button:disabled {
     text-align: center;
 }
 
-.gpio-reanalyze-hint {
-    margin: 0 0 8px;
-    color: var(--text-soft);
-    font-size: calc(var(--base-font-size) * 0.48);
-    font-weight: 800;
-    line-height: 1.18;
-}
-
 .answer-empty {
     color: var(--text-soft);
 }
@@ -669,6 +661,69 @@ button:disabled {
     border-radius: 999px;
     background: rgba(17, 17, 17, 0.08);
     color: var(--text-dark);
+}
+
+.app-screen-result .device-panel,
+.app-screen-history_detail .device-panel {
+    gap: 4px;
+}
+
+.app-screen-result .panel-header,
+.app-screen-history_detail .panel-header {
+    gap: 4px;
+}
+
+.app-screen-result .header-title,
+.app-screen-history_detail .header-title {
+    font-size: calc(var(--title-font-size) * 0.46);
+    line-height: 0.92;
+}
+
+.app-screen-result .header-subtitle,
+.app-screen-history_detail .header-subtitle {
+    margin-top: 1px;
+    font-size: calc(var(--base-font-size) * 0.48);
+    line-height: 1.02;
+}
+
+.app-screen-result .header-capture-link,
+.app-screen-history_detail .header-capture-link {
+    min-height: 20px;
+    font-size: calc(var(--base-font-size) * 0.64);
+}
+
+.app-screen-result .system-health-bar,
+.app-screen-history_detail .system-health-bar {
+    gap: 3px;
+}
+
+.app-screen-result .health-pill,
+.app-screen-history_detail .health-pill {
+    min-height: 16px;
+    padding: 1px 6px;
+    font-size: calc(var(--base-font-size) * 0.38);
+}
+
+.app-screen-result .answer-box-postcapture,
+.app-screen-history_detail .answer-box-postcapture {
+    gap: 4px;
+    padding: 8px;
+}
+
+.app-screen-result .answer-toolbar,
+.app-screen-history_detail .answer-toolbar {
+    gap: 6px;
+    margin-bottom: 4px;
+}
+
+.app-screen-result .section-title,
+.app-screen-result .secondary-action-link,
+.app-screen-result .header-status-chip,
+.app-screen-history_detail .section-title,
+.app-screen-history_detail .secondary-action-link,
+.app-screen-history_detail .header-status-chip {
+    font-size: calc(var(--base-font-size) * 0.52);
+    line-height: 1.08;
 }
 
 .header-capture-link:focus-visible,
@@ -875,13 +930,33 @@ button:disabled {
         font-size: calc(var(--base-font-size) * 0.42);
     }
 
-    .gpio-reanalyze-hint {
-        margin-bottom: 6px;
-        font-size: calc(var(--base-font-size) * 0.4);
-    }
-
     .progress-step {
         font-size: calc(var(--base-font-size) * 0.72);
+    }
+
+    .app-screen-result .header-title,
+    .app-screen-history_detail .header-title {
+        font-size: calc(var(--title-font-size) * 0.42);
+    }
+
+    .app-screen-result .header-subtitle,
+    .app-screen-history_detail .header-subtitle {
+        font-size: calc(var(--base-font-size) * 0.44);
+    }
+
+    .app-screen-result .header-capture-link,
+    .app-screen-history_detail .header-capture-link {
+        font-size: calc(var(--base-font-size) * 0.56);
+    }
+
+    .app-screen-result .health-pill,
+    .app-screen-history_detail .health-pill {
+        font-size: calc(var(--base-font-size) * 0.34);
+    }
+
+    .app-screen-result .answer-box-postcapture,
+    .app-screen-history_detail .answer-box-postcapture {
+        padding: 7px;
     }
 
     .app-state-live .header-title {

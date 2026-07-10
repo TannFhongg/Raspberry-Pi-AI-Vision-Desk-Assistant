@@ -265,9 +265,6 @@
                         </div>
                     </div>
                     {% endif %}
-                    {% if show_gpio_reanalyze_hint %}
-                    <p class="gpio-reanalyze-hint">GPIO: press a mode button to re-analyze this same image, or press Back to exit.</p>
-                    {% endif %}
                     <div class="answer-area" tabindex="0">
                         <div class="answer-copy">{{ answer_html }}</div>
                     </div>
@@ -284,23 +281,6 @@
                         </form>
                         {% endif %}
                     </div>
-                    {% if reanalyze_entry and reanalyze_mode_options %}
-                    <div class="reanalyze-panel">
-                        <p class="reanalyze-label">Analyze Same Image As</p>
-                        <div class="reanalyze-grid">
-                            {% for mode_option in reanalyze_mode_options %}
-                            <form method="post" action="{{ url_for('reanalyze') }}" class="reanalyze-form">
-                                <input type="hidden" name="entry_id" value="{{ reanalyze_entry.id }}">
-                                <input type="hidden" name="mode" value="{{ mode_option.id }}">
-                                <button type="submit" class="reanalyze-button">{{ mode_option.name }}</button>
-                            </form>
-                            {% endfor %}
-                        </div>
-                    </div>
-                    {% endif %}
-                    {% if show_gpio_reanalyze_hint %}
-                    <p class="gpio-reanalyze-hint">GPIO: press a mode button to re-analyze this same image, or press Back to exit.</p>
-                    {% endif %}
                     <div class="answer-area" tabindex="0">
                         <div class="answer-copy">{{ answer_html }}</div>
                     </div>

@@ -87,7 +87,7 @@ Current touchscreen flow:
 - `home` with a selected mode: live MJPEG preview, current mode header, health pills, and capture CTA
 - `processing`: background capture job status with auto-refresh, simplified centered messaging, and a `Thinking...` state during AI-heavy steps
 - `result`: large scrollable answer screen with `Capture Again` and optional `Recent Results`
-- `result`: can also re-run AI analysis on the same just-captured image under another assistant mode without using the camera again
+- `result`: answer-first screen that now keeps the full answer area visible instead of showing the touch `Analyze Same Image As` panel or the GPIO helper line
 - `error`: classified camera/network/API/generic error screen with the same touch-friendly action row
 - `history`: recent saved answers list with RAM-backed thumbnail previews
 - `history_detail`: full saved answer view for a single previous scan, plus same-image re-analysis actions
@@ -100,6 +100,7 @@ Interaction notes:
 - `/retry` re-runs the same shared capture workflow for the currently selected mode
 - `/camera/live-stream.mjpg` serves the current live preview as an MJPEG stream
 - `/reanalyze` starts an analyze-only job that reuses a saved image from the current result or history detail flow
+- touch re-analysis actions are kept on `history_detail`, while the active `result` screen leaves that space for the answer box and uses a tighter header/health stack
 - when the GPIO listener is started inside Flask, short press triggers capture/analyze and long press clears the visible result or error
 - when a result or history-detail screen has a saved image available, the physical mode buttons can trigger same-image re-analysis and the physical back button exits to the ready screen
 - the `home`, `result`, and `error` screens auto-refresh while the embedded GPIO listener is active so hardware-triggered state changes appear without manual reload

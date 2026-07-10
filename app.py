@@ -1065,9 +1065,6 @@ def _build_template_context(
     reanalyze_mode_options: list[dict[str, str]] = []
     if reanalyze_entry is not None and reanalyze_entry.get("has_reanalyze_assets"):
         reanalyze_mode_options = _build_reanalyze_mode_options(str(reanalyze_entry.get("selected_mode", selected_mode)))
-    show_gpio_reanalyze_hint = bool(
-        GPIO_TRIGGER is not None and reanalyze_entry is not None and reanalyze_mode_options
-    )
 
     active_mode_definition = None
     if selected_mode_internal:
@@ -1093,7 +1090,6 @@ def _build_template_context(
         "current_result_history_entry": current_result_history_entry,
         "reanalyze_entry": reanalyze_entry,
         "reanalyze_mode_options": reanalyze_mode_options,
-        "show_gpio_reanalyze_hint": show_gpio_reanalyze_hint,
         "mode_options": UI_MODE_OPTIONS,
         "progress_steps": _build_progress_steps(state["current_step"]),
         "live_preview_url": _build_live_preview_url(),
