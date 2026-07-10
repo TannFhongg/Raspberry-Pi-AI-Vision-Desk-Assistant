@@ -327,7 +327,7 @@ button:disabled {
 }
 
 .answer-copy {
-    font-size: calc(var(--base-font-size) * 0.585);
+    font-size: calc(var(--base-font-size) * 0.385);
     font-weight: 700;
 }
 
@@ -554,7 +554,7 @@ button:disabled {
     }
 
     .answer-copy {
-        font-size: calc(var(--base-font-size) * 0.546);
+        font-size: calc(var(--base-font-size) * 0.346);
     }
 
     .progress-step {
