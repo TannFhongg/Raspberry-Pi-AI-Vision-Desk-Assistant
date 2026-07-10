@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body
-    class="app-screen-{{ screen }} orientation-{{ ui_config.orientation }}"
+    class="app-screen-{{ screen }} orientation-{{ ui_config.orientation }}{% if screen == 'home' and has_mode_selected %} app-state-live{% elif screen == 'processing' %} app-state-processing{% elif screen == 'result' %} app-state-done{% elif screen == 'error' %} app-state-error{% endif %}"
     style="
         --screen-width: {{ ui_config.screen_width }}px;
         --screen-height: {{ ui_config.screen_height }}px;
@@ -25,6 +25,41 @@
                 Ready screen. {% if has_mode_selected %}Selected mode: {{ selected_mode_label }}.{% else %}No mode selected yet.{% endif %}
             </div>
 
+            {% if has_mode_selected %}
+            <header class="panel-header panel-header-compact">
+                <div class="header-copy">
+                    <p class="header-title">{{ selected_mode_label }}</p>
+                    <p class="header-subtitle">Live Camera Feed</p>
+                </div>
+                <form method="post" action="{{ url_for('capture') }}" class="header-action-form">
+                    <button type="submit" class="header-capture-link">Click Button to Capture</button>
+                </form>
+            </header>
+
+            <section class="content-box answer-box answer-box-live" aria-label="Live camera feed">
+                <div class="answer-box-title-row">
+                    <p class="section-title">Live Camera Feed</p>
+                    <p class="capture-hint-inline">Ready to capture</p>
+                </div>
+
+                <div class="answer-preview-wrap preview-panel">
+                    <img
+                        src="{{ live_preview_url }}"
+                        alt="Live camera feed"
+                        class="preview-image"
+                        data-live-preview-url="{{ live_preview_url }}"
+                        data-live-preview-refresh-ms="{{ live_preview_refresh_ms }}"
+                    >
+                </div>
+
+                <div class="answer-footer-row">
+                    <form method="post" action="{{ url_for('back') }}" class="secondary-action-form">
+                        <button type="submit" class="secondary-action-link">Change Mode</button>
+                    </form>
+                    <p class="capture-hint">Frame the subject, then capture.</p>
+                </div>
+            </section>
+            {% else %}
             <header class="panel-header">
                 <div class="header-copy">
                     <p class="header-title">Ready ...</p>
@@ -53,74 +88,81 @@
                     </form>
                 </div>
             </section>
+            {% endif %}
             {% else %}
             <div class="sr-only" aria-live="polite">
-                Assistant screen. Status: {{ display_status }}. {% if has_mode_selected %}Mode: {{ selected_mode_label }}.{% endif %}
+                Assistant screen. Status: {{ display_status }}. {% if has_mode_selected %}Mode: {{ selected_mode_label }}.{% endif %} Live Camera Feed hidden after capture.
             </div>
+            <div class="sr-only" data-live-preview-route="{{ live_preview_url }}">Live Camera Feed</div>
 
-            <header class="panel-header">
+            <header class="panel-header panel-header-compact">
                 <div class="header-copy">
                     <p class="header-title">{% if has_mode_selected %}{{ selected_mode_label }}{% else %}{{ default_capture_mode_label }}{% endif %}</p>
                     <p class="header-subtitle">
                         {% if screen == "processing" %}
-                        {{ detail or display_status }}
+                        {{ display_status }}
                         {% elif screen == "error" %}
                         {{ error or display_status }}
+                        {% elif screen == "result" %}
+                        Answer Ready
                         {% else %}
-                        Live Camera Feed
+                        {{ display_status }}
                         {% endif %}
                     </p>
                 </div>
+                {% if screen == "processing" %}
+                <div class="header-status-chip" aria-hidden="true">{{ display_status }}</div>
+                {% elif screen == "error" %}
+                <form method="post" action="{{ url_for('retry') }}" class="header-action-form">
+                    <button type="submit" class="header-capture-link">Capture Again</button>
+                </form>
+                {% else %}
                 <form method="post" action="{{ url_for('capture') }}" class="header-action-form">
                     <button
                         type="submit"
                         class="header-capture-link"
-                        {% if screen == "processing" %}disabled{% endif %}
                     >
-                        Click Button to Capture
+                        Capture Again
                     </button>
                 </form>
+                {% endif %}
             </header>
 
-            <section class="content-box answer-box" aria-label="Live camera feed and assistant output">
-                <div class="answer-box-title-row">
-                    <p class="section-title">Live Camera Feed</p>
-                </div>
-
-                <div class="answer-preview-wrap">
-                    <img
-                        src="{{ live_preview_url }}"
-                        alt="Live camera feed"
-                        class="preview-image"
-                        data-live-preview-url="{{ live_preview_url }}"
-                        data-live-preview-refresh-ms="{{ live_preview_refresh_ms }}"
-                    >
-                </div>
-
-                <div class="answer-content-wrap">
-                    {% if screen == "processing" %}
-                    <div class="processing-state">
+            <section class="content-box answer-box answer-box-postcapture" aria-label="Assistant output">
+                {% if screen == "processing" %}
+                <div class="status-panel processing-state">
+                    <div class="status-copy">
                         <p class="processing-title">{{ display_status }}</p>
                         {% if detail and detail != display_status %}
                         <p class="processing-detail">{{ detail }}</p>
                         {% endif %}
                     </div>
-                    {% endif %}
-                    {% if screen == "error" %}
-                    <div class="error-state">
+                    <div class="progress-list" aria-label="Processing steps">
+                        {% for step in progress_steps %}
+                        <div class="progress-step progress-step-{{ step.state }}">
+                            <span class="progress-dot" aria-hidden="true"></span>
+                            <span>{{ step.label }}</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% elif screen == "error" %}
+                <div class="status-panel error-state">
+                    <div class="status-copy">
                         <p class="error-title">{{ error or "Something went wrong" }}</p>
                         <p class="error-detail">{{ detail }}</p>
                         {% if show_debug and error_detail %}
                         <p class="debug-text">{{ error_detail }}</p>
                         {% endif %}
                     </div>
-                    {% endif %}
-                    {% if screen == "result" %}
+                </div>
+                {% elif screen == "result" %}
+                <div class="answer-content-wrap answer-content-wrap-full">
                     <div class="answer-area" tabindex="0">
                         <div class="answer-copy">{{ answer_html }}</div>
                     </div>
-                    {% endif %}
                 </div>
+                {% endif %}
             </section>
             {% endif %}
         </section>
