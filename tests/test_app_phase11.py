@@ -8,6 +8,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from PIL import Image
+
 os.environ.setdefault("ENABLE_GPIO_BUTTON", "0")
 os.environ.setdefault("ENABLE_GPIO_LED", "0")
 os.environ.setdefault("OFFLINE_RETRY_ENABLED", "0")
@@ -27,6 +29,7 @@ class Phase11AppIntegrationTests(unittest.TestCase):
         self.health_status_path = self.temp_dir / "health_status.json"
         self.latest_result_path = self.temp_dir / "latest_result.txt"
         self.result_history_path = self.temp_dir / "result_history.json"
+        self.result_history_asset_dir = self.temp_dir / "history_assets"
         self.preview_path = self.temp_dir / "captured.jpg"
         self.processed_path = self.temp_dir / "processed.jpg"
         self.led_indicator = _FakeLEDIndicator()
@@ -36,10 +39,16 @@ class Phase11AppIntegrationTests(unittest.TestCase):
         self.health_path_patcher = patch.object(app_module, "HEALTH_STATUS_PATH", self.health_status_path)
         self.result_patcher = patch.object(app_module, "LATEST_RESULT_PATH", self.latest_result_path)
         self.history_patcher = patch.object(app_module, "RESULT_HISTORY_PATH", self.result_history_path)
+        self.history_asset_patcher = patch.object(
+            app_module,
+            "RESULT_HISTORY_ASSET_DIR",
+            self.result_history_asset_dir,
+        )
         self.preview_patcher = patch.object(app_module, "CAPTURED_IMAGE_PATH", self.preview_path)
         self.processed_patcher = patch.object(app_module, "PROCESSED_IMAGE_PATH", self.processed_path)
         self.led_patcher = patch.object(app_module, "LED_INDICATOR", self.led_indicator)
         self.live_preview_patcher = patch.object(app_module, "LIVE_PREVIEW", self.live_preview)
+        self.thumbnail_cache_patcher = patch.object(app_module, "RESULT_HISTORY_THUMBNAIL_CACHE", {})
         self.offline_retry_patcher = patch.object(
             app_module,
             "OFFLINE_RETRY_QUEUE",
@@ -49,10 +58,12 @@ class Phase11AppIntegrationTests(unittest.TestCase):
         self.health_path_patcher.start()
         self.result_patcher.start()
         self.history_patcher.start()
+        self.history_asset_patcher.start()
         self.preview_patcher.start()
         self.processed_patcher.start()
         self.led_patcher.start()
         self.live_preview_patcher.start()
+        self.thumbnail_cache_patcher.start()
         self.offline_retry_patcher.start()
         app_module.app.config["TESTING"] = True
         app_module.RUNNING = False
@@ -66,10 +77,12 @@ class Phase11AppIntegrationTests(unittest.TestCase):
         self.health_path_patcher.stop()
         self.result_patcher.stop()
         self.history_patcher.stop()
+        self.history_asset_patcher.stop()
         self.preview_patcher.stop()
         self.processed_patcher.stop()
         self.led_patcher.stop()
         self.live_preview_patcher.stop()
+        self.thumbnail_cache_patcher.stop()
         self.offline_retry_patcher.stop()
 
     def test_home_result_and_error_screens_refresh_when_gpio_listener_is_active(self) -> None:
@@ -183,6 +196,23 @@ class Phase11AppIntegrationTests(unittest.TestCase):
         self.assertEqual(state["answer"], "Line one")
         self.assertEqual(state["selected_mode"], "solve_problem")
         self.assertEqual(state["selected_mode_internal"], "math_solver")
+
+    def test_back_route_clears_result_history_anchor_for_gpio_exit(self) -> None:
+        client = app_module.app.test_client()
+        app_module._write_device_state(
+            DeviceState.DONE,
+            selected_mode="solve_problem",
+            selected_mode_internal="math_solver",
+            history_entry_id="entry-1",
+            answer="Done",
+            current_step=3,
+        )
+
+        response = client.post("/back")
+
+        self.assertEqual(response.status_code, 302)
+        state = app_module._load_ui_state()
+        self.assertEqual(state["history_entry_id"], "")
 
     def test_home_screen_shows_the_new_raspberry_pi_mode_buttons(self) -> None:
         client = app_module.app.test_client()
@@ -461,6 +491,36 @@ class Phase11AppIntegrationTests(unittest.TestCase):
         self.assertIn(b"Saved answer summary", response.data)
         self.assertIn(b"/history/entry-1", response.data)
 
+    def test_history_screen_renders_thumbnail_gallery_when_assets_exist(self) -> None:
+        client = app_module.app.test_client()
+        source_image_path = self.temp_dir / "history-source.jpg"
+        processed_image_path = self.temp_dir / "history-processed.jpg"
+        _create_valid_image_file(source_image_path)
+        _create_valid_image_file(processed_image_path)
+        app_module._write_result_history(
+            [
+                {
+                    "id": "entry-1",
+                    "created_at": "2026-07-10T22:00:00",
+                    "selected_mode": "read_text",
+                    "selected_mode_internal": "document_reader",
+                    "mode_label": "Read Text",
+                    "answer": "Saved answer body",
+                    "summary": "Saved answer summary",
+                    "camera_backend_used": "picamera2",
+                    "camera_resolution": [1920, 1080],
+                    "source_image_path": str(source_image_path),
+                    "processed_image_path": str(processed_image_path),
+                }
+            ]
+        )
+
+        response = client.get("/history")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"history-card-thumb-image", response.data)
+        self.assertIn(b"data:image/jpeg;base64,", response.data)
+
     def test_history_detail_screen_renders_saved_answer(self) -> None:
         client = app_module.app.test_client()
         app_module._write_result_history(
@@ -485,6 +545,138 @@ class Phase11AppIntegrationTests(unittest.TestCase):
         self.assertIn(b"Solve Problem", response.data)
         self.assertIn(b"Saved answer body", response.data)
         self.assertIn(b"1280x720", response.data)
+
+    def test_result_screen_offers_instant_reanalyze_buttons(self) -> None:
+        client = app_module.app.test_client()
+        _create_valid_image_file(self.preview_path)
+        _create_valid_image_file(self.processed_path)
+        result = app_module.PipelineResult(
+            captured_path=self.preview_path,
+            processed_path=self.processed_path,
+            answer="Solved",
+            mode="math_solver",
+            camera_backend_used="opencv",
+            camera_resolution=(640, 480),
+            status="success",
+        )
+
+        with patch("app.run_capture_analyze", return_value=result):
+            app_module._run_capture_job("solve_problem", "math_solver")
+
+        response = client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Analyze Same Image As", response.data)
+        self.assertIn(b'action="/reanalyze"', response.data)
+        self.assertIn(b"Read Text", response.data)
+
+    def test_result_screen_shows_gpio_reanalyze_hint_when_listener_is_active(self) -> None:
+        client = app_module.app.test_client()
+        _create_valid_image_file(self.preview_path)
+        _create_valid_image_file(self.processed_path)
+        result = app_module.PipelineResult(
+            captured_path=self.preview_path,
+            processed_path=self.processed_path,
+            answer="Solved",
+            mode="math_solver",
+            camera_backend_used="opencv",
+            camera_resolution=(640, 480),
+            status="success",
+        )
+
+        with patch("app.run_capture_analyze", return_value=result):
+            app_module._run_capture_job("solve_problem", "math_solver")
+
+        app_module.GPIO_TRIGGER = object()
+
+        response = client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"GPIO: press a mode button to re-analyze this same image", response.data)
+
+    def test_reanalyze_job_reuses_saved_image_without_new_capture(self) -> None:
+        source_image_path = self.temp_dir / "history-source.jpg"
+        processed_image_path = self.temp_dir / "history-processed.jpg"
+        _create_valid_image_file(source_image_path)
+        _create_valid_image_file(processed_image_path)
+        app_module._write_result_history(
+            [
+                {
+                    "id": "entry-1",
+                    "created_at": "2026-07-10T22:00:00",
+                    "selected_mode": "read_text",
+                    "selected_mode_internal": "document_reader",
+                    "mode_label": "Read Text",
+                    "answer": "Saved answer body",
+                    "summary": "Saved answer summary",
+                    "camera_backend_used": "picamera2",
+                    "camera_resolution": [1920, 1080],
+                    "source_image_path": str(source_image_path),
+                    "processed_image_path": str(processed_image_path),
+                }
+            ]
+        )
+        analyze_result = app_module.PipelineResult(
+            captured_path=source_image_path,
+            processed_path=processed_image_path,
+            answer="Reanalyzed answer",
+            mode="math_solver",
+            camera_backend_used=None,
+            camera_resolution=None,
+            status="success",
+        )
+
+        with patch("app.run_analyze", return_value=analyze_result) as run_analyze_mock:
+            app_module._run_reanalyze_job("entry-1", "solve_problem", "math_solver")
+
+        self.assertEqual(self.live_preview.pause_calls, 0)
+        self.assertEqual(self.live_preview.resume_calls, 0)
+        run_analyze_mock.assert_called_once()
+        self.assertEqual(run_analyze_mock.call_args.kwargs["captured_path"], str(source_image_path))
+        self.assertEqual(run_analyze_mock.call_args.kwargs["processed_path"], str(processed_image_path))
+        state = app_module._load_ui_state()
+        self.assertEqual(state["device_state"], "DONE")
+        self.assertEqual(state["answer"], "Reanalyzed answer")
+        history_entries = app_module._load_result_history()
+        self.assertEqual(len(history_entries), 2)
+        self.assertEqual(history_entries[0]["selected_mode_internal"], "math_solver")
+
+    def test_physical_mode_button_reanalyzes_current_result_image(self) -> None:
+        source_image_path = self.temp_dir / "history-source.jpg"
+        processed_image_path = self.temp_dir / "history-processed.jpg"
+        _create_valid_image_file(source_image_path)
+        _create_valid_image_file(processed_image_path)
+        app_module._write_result_history(
+            [
+                {
+                    "id": "entry-1",
+                    "created_at": "2026-07-10T22:00:00",
+                    "selected_mode": "solve_problem",
+                    "selected_mode_internal": "math_solver",
+                    "mode_label": "Solve Problem",
+                    "answer": "Saved answer body",
+                    "summary": "Saved answer summary",
+                    "camera_backend_used": "opencv",
+                    "camera_resolution": [1280, 720],
+                    "source_image_path": str(source_image_path),
+                    "processed_image_path": str(processed_image_path),
+                }
+            ]
+        )
+        app_module._write_device_state(
+            DeviceState.DONE,
+            selected_mode="solve_problem",
+            selected_mode_internal="math_solver",
+            history_entry_id="entry-1",
+            answer="Saved answer body",
+            current_step=3,
+        )
+
+        with patch("app._start_reanalyze_job", return_value=True) as reanalyze_mock:
+            changed = app_module._select_mode_from_hardware("read_text")
+
+        self.assertTrue(changed)
+        reanalyze_mock.assert_called_once_with("entry-1", "read_text")
 
     def test_run_capture_job_success_resumes_live_preview(self) -> None:
         result = app_module.PipelineResult(
@@ -639,3 +831,10 @@ class _FakeThread:
 
     def start(self) -> None:
         return None
+
+
+def _create_valid_image_file(path: Path) -> None:
+    """Create a small valid JPEG image for thumbnail and history tests."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with Image.new("RGB", (48, 36), color=(210, 210, 210)) as image:
+        image.save(path)

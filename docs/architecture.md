@@ -57,6 +57,7 @@ Phase 8 adds a typed device configuration layer, hardware-aware camera control r
               |                                                v
               |                                      data/ui_state.json
               |                                      data/result_history.json
+              |                                      data/result_history_assets/
               |                                      templates/index.html
               |                                      static/style.css
               |                                      camera/live_preview.py
@@ -77,9 +78,12 @@ Phase 8 adds a typed device configuration layer, hardware-aware camera control r
 - `hardware/device_check.py` runs standalone diagnostics for camera, display, internet, OpenAI API reachability, and GPIO readiness.
 - `ai/modes.py` and `ai/context.py` now separate mode metadata from hidden OpenAI request instructions so the device can switch between professional assistant behaviors cleanly.
 - `app.py` persists selected mode and current screen in `data/ui_state.json`, tracks recent successful answers in `data/result_history.json`, and renders screen-specific sections from `templates/index.html`.
+- `app.py` also keeps a RAM thumbnail cache for history cards and supports analyze-only jobs that reuse the same saved image under another mode.
+- The hardware mode-button handler now branches by screen context: it still selects a mode from `home`, but on a saved `result` it can trigger same-image re-analysis instead of forcing a recapture.
 - The current touchscreen state machine is `home -> processing -> result/error`, with `history` and `history_detail` screens for reopening recent answers.
 - `/capture`, `/capture-analyze`, and `/analyze` are compatibility routes that currently all start the same background `run_capture_analyze` job.
 - `camera/live_preview.py` keeps a background preview worker alive and now exposes a browser-friendly MJPEG stream for smoother live framing.
 - The current touchscreen layout uses a landscape-first visual system: title, health pills, live preview or answer box, and touch-friendly actions.
 - `static/style.css` now targets kiosk-safe `480x320` landscape rendering with visible scrollbars, live-preview emphasis, and classified error styling.
+- `history` now behaves more like a visual gallery than a plain text log because each entry can render a cached thumbnail in RAM.
 - `gpio/button.py` can run standalone or call back into Flask through `trigger_action` so the physical button mirrors the touch workflow without overlapping jobs.

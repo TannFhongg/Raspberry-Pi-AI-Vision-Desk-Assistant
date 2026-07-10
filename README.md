@@ -26,8 +26,10 @@ Validated on July 10, 2026:
 - The compact answer screen was refined for readability by reducing the response font size by 35 percent so longer OCR and AI outputs fit better on the device display
 - The live preview now streams over MJPEG for smoother on-device framing instead of browser-side image polling
 - Successful analyses are now available again through `Recent Results`, backed by RAM cache plus persisted history on disk
+- Recent results now render as a thumbnail gallery in RAM so old scans can be reopened with faster visual recognition
+- The result screen can now re-analyze the same saved image in a different assistant mode without taking another photo
 - Transient network or OpenAI failures are now saved into an offline retry queue and retried automatically when service connectivity returns
-- Automated regression coverage is currently green: `python -m pytest` -> `98 passed`
+- Automated regression coverage is currently green: `python -m pytest` -> `104 passed`
 
 ## Portfolio Value
 
@@ -54,6 +56,8 @@ Validated on July 10, 2026:
 - Stream a smoother live preview over MJPEG while framing the subject before capture
 - Show a compact health bar with overall system, CPU temperature, RAM usage, network, and camera status
 - Keep recent successful results available for nearly instant re-open without recapturing
+- Show thumbnail previews for recent saved scans directly inside the history gallery
+- Re-analyze the same already-captured image under a different AI mode without touching the camera again
 - Queue retryable OpenAI or network failures offline and retry them automatically in the background
 - Use 5 dedicated GPIO mode buttons plus 1 capture button to trigger the same capture flow
 - Use a production-style hardware state machine with short-press capture, long-press clear, physical mode selection, and optional LED feedback
@@ -290,6 +294,7 @@ Runtime reliability artifacts:
 - `logs/error.log`: rotating error-only log
 - `data/health_status.json`: latest system health snapshot
 - `data/result_history.json`: persisted recent successful assistant results
+- `data/result_history_assets/`: saved source and processed images used for RAM thumbnails and instant re-analysis
 - `data/offline_retry_queue.json`: persisted retry queue metadata for transient AI failures
 - `data/offline_retry/`: copied processed images waiting for automatic retry
 
@@ -443,8 +448,8 @@ Screen flow:
 - `home` with a selected mode: live MJPEG camera preview, selected mode header, `Click Button to Capture`, health pills, and `Change Mode`
 - `processing`: auto-refreshing progress screen with simplified centered status and a `Thinking...` state during AI analysis
 - `result`: readable answer screen with a large scrollable answer box, `Capture Again`, and optional `Recent Results`
-- `history`: saved recent results list for reopening previous successful scans
-- `history_detail`: full saved answer view for one historical scan
+- `history`: saved recent results list with thumbnail previews for reopening previous successful scans
+- `history_detail`: full saved answer view for one historical scan, plus same-image re-analysis actions
 - `error`: classified `Camera error`, `Network error`, `API error`, or generic error screen with retry actions
 
 Tapping `Capture` starts the full background capture -> preprocess -> analyze workflow for the currently selected mode.
@@ -691,6 +696,9 @@ Phase 15 improvements:
 - retryable OpenAI failures such as network loss, timeout, rate limiting, or `5xx` responses are stored in `data/offline_retry_queue.json`
 - a background retry worker replays queued analyses automatically from copied processed images in `data/offline_retry/`
 - queued failures appear to the user as `Queued for retry` instead of only showing a hard error
+- recent-result cards now include RAM-backed thumbnails for faster visual browsing
+- the result and history-detail screens can re-run AI analysis against the same saved image under another mode without recapture
+- when the embedded GPIO listener is active, those same saved-image re-analysis flows can also be triggered from the physical mode buttons, and the physical back button exits to the ready screen
 
 ## Troubleshooting
 

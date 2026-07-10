@@ -22,6 +22,9 @@
 - Narrate the processing screen as it moves through capture, preprocessing, AI analysis, and the `Thinking...` state
 - Show the final answer on the result screen and scroll the answer box if the response is long
 - Open `Recent Results` to show that a successful scan can be reopened almost instantly
+- Show the thumbnail gallery view so the saved scans are visually recognizable, not just text-only
+- Trigger one `Analyze Same Image As` action to demonstrate that the same captured image can be reinterpreted under another mode without recapturing
+- Trigger one same-image re-analysis from a physical GPIO mode button, then press the GPIO back button to return to mode selection
 - Use `Capture Again` to show the repeatable flow
 - Press the GPIO button from the home screen to demonstrate the same shared pipeline without touch input
 - Show the updated `data/latest_result.txt`

@@ -213,6 +213,12 @@
                     {% if recent_results %}
                     {% for entry in recent_results %}
                     <a class="history-card" href="{{ url_for('history_detail', entry_id=entry.id) }}" role="listitem">
+                        {% if entry.has_thumbnail %}
+                        <span class="history-card-thumb" aria-hidden="true">
+                            <img src="{{ entry.thumbnail_data_url }}" alt="" class="history-card-thumb-image">
+                        </span>
+                        {% endif %}
+                        <span class="history-card-body">
                         <span class="history-card-head">
                             <span class="history-card-title">{{ entry.mode_label }}</span>
                             <span class="history-card-time">{{ entry.created_at }}</span>
@@ -222,6 +228,7 @@
                             {% if entry.camera_backend_used %}{{ entry.camera_backend_used|upper }}{% endif %}
                             {% if entry.camera_resolution %} · {{ entry.camera_resolution[0] }}x{{ entry.camera_resolution[1] }}{% endif %}
                         </span>
+                        </span>
                     </a>
                     {% endfor %}
                     {% else %}
@@ -230,6 +237,11 @@
                 </div>
                 {% elif screen == "history_detail" and history_entry %}
                 <div class="answer-content-wrap answer-content-wrap-full">
+                    {% if history_entry.has_thumbnail %}
+                    <div class="history-detail-preview">
+                        <img src="{{ history_entry.thumbnail_data_url }}" alt="{{ history_entry.mode_label }} preview" class="history-detail-preview-image">
+                    </div>
+                    {% endif %}
                     <div class="history-detail-meta">
                         <span class="history-detail-chip">{{ history_entry.created_at }}</span>
                         {% if history_entry.camera_backend_used %}
@@ -239,6 +251,23 @@
                         <span class="history-detail-chip">{{ history_entry.camera_resolution[0] }}x{{ history_entry.camera_resolution[1] }}</span>
                         {% endif %}
                     </div>
+                    {% if reanalyze_entry and reanalyze_mode_options %}
+                    <div class="reanalyze-panel">
+                        <p class="reanalyze-label">Analyze Same Image As</p>
+                        <div class="reanalyze-grid">
+                            {% for mode_option in reanalyze_mode_options %}
+                            <form method="post" action="{{ url_for('reanalyze') }}" class="reanalyze-form">
+                                <input type="hidden" name="entry_id" value="{{ reanalyze_entry.id }}">
+                                <input type="hidden" name="mode" value="{{ mode_option.id }}">
+                                <button type="submit" class="reanalyze-button">{{ mode_option.name }}</button>
+                            </form>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+                    {% if show_gpio_reanalyze_hint %}
+                    <p class="gpio-reanalyze-hint">GPIO: press a mode button to re-analyze this same image, or press Back to exit.</p>
+                    {% endif %}
                     <div class="answer-area" tabindex="0">
                         <div class="answer-copy">{{ answer_html }}</div>
                     </div>
@@ -255,6 +284,23 @@
                         </form>
                         {% endif %}
                     </div>
+                    {% if reanalyze_entry and reanalyze_mode_options %}
+                    <div class="reanalyze-panel">
+                        <p class="reanalyze-label">Analyze Same Image As</p>
+                        <div class="reanalyze-grid">
+                            {% for mode_option in reanalyze_mode_options %}
+                            <form method="post" action="{{ url_for('reanalyze') }}" class="reanalyze-form">
+                                <input type="hidden" name="entry_id" value="{{ reanalyze_entry.id }}">
+                                <input type="hidden" name="mode" value="{{ mode_option.id }}">
+                                <button type="submit" class="reanalyze-button">{{ mode_option.name }}</button>
+                            </form>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+                    {% if show_gpio_reanalyze_hint %}
+                    <p class="gpio-reanalyze-hint">GPIO: press a mode button to re-analyze this same image, or press Back to exit.</p>
+                    {% endif %}
                     <div class="answer-area" tabindex="0">
                         <div class="answer-copy">{{ answer_html }}</div>
                     </div>

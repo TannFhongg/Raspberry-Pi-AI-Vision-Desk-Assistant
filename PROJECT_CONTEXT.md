@@ -54,6 +54,7 @@ Runtime artifacts:
 - `data/latest_result.txt`: latest readable pipeline result from Flask or standalone GPIO runs
 - `data/ui_state.json`: saved UI mode, current screen, `device_state`, status text, and answer/error state
 - `data/result_history.json`: saved recent successful assistant results
+- `data/result_history_assets/`: stored source and processed images used for history thumbnails and same-image re-analysis
 - `data/health_status.json`: latest background health snapshot for CPU, RAM, network, and camera status
 - `data/offline_retry_queue.json`: persisted metadata for retryable queued AI failures
 - `data/offline_retry/`: copied processed images waiting for automatic background retry
@@ -86,9 +87,10 @@ Current touchscreen flow:
 - `home` with a selected mode: live MJPEG preview, current mode header, health pills, and capture CTA
 - `processing`: background capture job status with auto-refresh, simplified centered messaging, and a `Thinking...` state during AI-heavy steps
 - `result`: large scrollable answer screen with `Capture Again` and optional `Recent Results`
+- `result`: can also re-run AI analysis on the same just-captured image under another assistant mode without using the camera again
 - `error`: classified camera/network/API/generic error screen with the same touch-friendly action row
-- `history`: recent saved answers list
-- `history_detail`: full saved answer view for a single previous scan
+- `history`: recent saved answers list with RAM-backed thumbnail previews
+- `history_detail`: full saved answer view for a single previous scan, plus same-image re-analysis actions
 
 Interaction notes:
 
@@ -97,7 +99,9 @@ Interaction notes:
 - `/clear` resets the UI to `READY` and clears `data/latest_result.txt`
 - `/retry` re-runs the same shared capture workflow for the currently selected mode
 - `/camera/live-stream.mjpg` serves the current live preview as an MJPEG stream
+- `/reanalyze` starts an analyze-only job that reuses a saved image from the current result or history detail flow
 - when the GPIO listener is started inside Flask, short press triggers capture/analyze and long press clears the visible result or error
+- when a result or history-detail screen has a saved image available, the physical mode buttons can trigger same-image re-analysis and the physical back button exits to the ready screen
 - the `home`, `result`, and `error` screens auto-refresh while the embedded GPIO listener is active so hardware-triggered state changes appear without manual reload
 - retryable OpenAI failures are queued on disk instead of being discarded immediately when the processed image is available
 
