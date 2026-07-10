@@ -165,6 +165,7 @@ MODE_BUTTON_2_PIN = SETTINGS.button.mode_button_2_pin
 MODE_BUTTON_3_PIN = SETTINGS.button.mode_button_3_pin
 MODE_BUTTON_4_PIN = SETTINGS.button.mode_button_4_pin
 MODE_BUTTON_5_PIN = SETTINGS.button.mode_button_5_pin
+BACK_BUTTON_PIN = SETTINGS.button.back_button_pin
 ENABLE_GPIO_LED = SETTINGS.led.enabled
 GPIO_LED_PIN = SETTINGS.led.pin
 GPIO_LED_ACTIVE_HIGH = SETTINGS.led.active_high
@@ -275,7 +276,7 @@ def retry():
 @app.post("/back")
 def back():
     """Return to the startup ready screen."""
-    _reset_ui_state(clear_saved_result=False, clear_selected_mode=True)
+    _return_to_mode_selection()
     return redirect(url_for("index"))
 
 
@@ -798,6 +799,17 @@ def _set_selected_mode(mode: str) -> None:
     _write_state(_build_idle_state_payload(mode))
 
 
+def _return_to_mode_selection() -> bool:
+    """Return to the mode picker when the device is idle."""
+    if _is_running() or is_busy_device_state(_get_device_state()):
+        LOGGER.info("Ignoring back request while device is busy")
+        return False
+
+    _reset_ui_state(clear_saved_result=False, clear_selected_mode=True)
+    LOGGER.info("Returned to mode selection")
+    return True
+
+
 def _reset_ui_state(
     clear_saved_result: bool = False,
     clear_selected_mode: bool = False,
@@ -926,17 +938,20 @@ def _ensure_gpio_button_listener_started() -> None:
                 pin=CAPTURE_BUTTON_PIN,
                 debounce_seconds=GPIO_BUTTON_DEBOUNCE_SECONDS,
                 hold_seconds=GPIO_BUTTON_HOLD_SECONDS,
+                back_button_pin=BACK_BUTTON_PIN,
                 mode_buttons=configured_mode_buttons,
                 mode_action=_select_mode_from_hardware,
                 trigger_action=_start_capture_job,
+                back_action=_return_to_mode_selection,
                 clear_action=lambda: _clear_and_reset_ui_state(clear_selected_mode=True) or True,
                 get_device_state=_get_device_state,
             )
             GPIO_TRIGGER.start()
             LOGGER.info(
-                "GPIO controls started capture_pin=%s mode_pins=%s",
+                "GPIO controls started capture_pin=%s mode_pins=%s back_pin=%s",
                 CAPTURE_BUTTON_PIN,
                 configured_mode_buttons,
+                BACK_BUTTON_PIN,
             )
         except GPIOButtonError as exc:
             GPIO_TRIGGER = None

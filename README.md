@@ -133,6 +133,8 @@ MODE_BUTTON_2_PIN=6
 MODE_BUTTON_3_PIN=13
 MODE_BUTTON_4_PIN=19
 MODE_BUTTON_5_PIN=26
+# Optional dedicated back button:
+# BACK_BUTTON_PIN=21
 # Legacy alias still accepted:
 # GPIO_BUTTON_PIN=17
 GPIO_BUTTON_DEBOUNCE_SECONDS=0.15
@@ -213,6 +215,7 @@ button:
   mode_button_3_pin: 13
   mode_button_4_pin: 19
   mode_button_5_pin: 26
+  back_button_pin: null
   debounce_seconds: 0.15
   hold_seconds: 1.2
 

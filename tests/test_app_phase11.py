@@ -109,6 +109,39 @@ class Phase11AppIntegrationTests(unittest.TestCase):
         self.assertIn("Status: cleared", latest_result)
         self.assertIn("Message: No result available", latest_result)
 
+    def test_back_route_returns_to_mode_selection_without_clearing_saved_result(self) -> None:
+        client = app_module.app.test_client()
+        self.latest_result_path.write_text("Old result\n", encoding="utf-8")
+        app_module._write_device_state(
+            DeviceState.DONE,
+            selected_mode="read_text",
+            selected_mode_internal="document_reader",
+            answer="Persistent answer",
+            current_step=3,
+        )
+
+        response = client.post("/back")
+
+        self.assertEqual(response.status_code, 302)
+        state = app_module._load_ui_state()
+        self.assertEqual(state["device_state"], "READY")
+        self.assertEqual(state["screen"], "home")
+        self.assertEqual(state["selected_mode"], "")
+        self.assertEqual(state["selected_mode_internal"], "")
+        self.assertEqual(self.latest_result_path.read_text(encoding="utf-8"), "Old result\n")
+
+    def test_back_request_is_ignored_while_capture_job_is_running(self) -> None:
+        app_module._set_selected_mode("solve_problem")
+        app_module.RUNNING = True
+
+        changed = app_module._return_to_mode_selection()
+
+        self.assertFalse(changed)
+        state = app_module._load_ui_state()
+        self.assertEqual(state["device_state"], "MODE_SELECTED")
+        self.assertEqual(state["selected_mode"], "solve_problem")
+        self.assertEqual(state["selected_mode_internal"], "math_solver")
+
     def test_done_answer_stays_visible_after_render(self) -> None:
         client = app_module.app.test_client()
         app_module._write_device_state(

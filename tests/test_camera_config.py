@@ -93,6 +93,7 @@ def _build_settings() -> DeviceSettings:
             mode_button_3_pin=13,
             mode_button_4_pin=19,
             mode_button_5_pin=26,
+            back_button_pin=None,
             debounce_seconds=0.15,
             hold_seconds=1.2,
         ),

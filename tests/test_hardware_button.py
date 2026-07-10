@@ -104,25 +104,50 @@ class GPIOButtonTriggerTests(unittest.TestCase):
         self.assertTrue(selected.wait(1))
         self.assertEqual(mode_calls, ["solve_problem"])
 
+    def test_back_button_triggers_back_action_once(self) -> None:
+        returned = threading.Event()
+        back_calls: list[str] = []
+
+        def back_action() -> bool:
+            back_calls.append("back")
+            returned.set()
+            return True
+
+        trigger = _build_trigger(
+            trigger_action=lambda: True,
+            clear_action=lambda: True,
+            back_action=back_action,
+            get_device_state=lambda: DeviceState.DONE,
+        )
+
+        trigger._handle_back_release()
+
+        self.assertTrue(returned.wait(1))
+        self.assertEqual(back_calls, ["back"])
+
     def test_input_is_ignored_during_processing_states(self) -> None:
         capture_calls: list[str] = []
         clear_calls: list[str] = []
+        back_calls: list[str] = []
         mode_calls: list[str] = []
 
         trigger = _build_trigger(
             trigger_action=lambda: capture_calls.append("capture") or True,
             clear_action=lambda: clear_calls.append("clear") or True,
+            back_action=lambda: back_calls.append("back") or True,
             mode_action=lambda mode: mode_calls.append(mode) or True,
             get_device_state=lambda: DeviceState.PROCESSING,
         )
 
         trigger._handle_release()
         trigger._handle_hold()
+        trigger._handle_back_release()
         trigger._handle_mode_release("read_text")
         time.sleep(0.05)
 
         self.assertEqual(capture_calls, [])
         self.assertEqual(clear_calls, [])
+        self.assertEqual(back_calls, [])
         self.assertEqual(mode_calls, [])
 
     def test_failure_releases_busy_guard_for_next_press(self) -> None:
@@ -157,6 +182,7 @@ def _build_trigger(
     *,
     trigger_action,
     clear_action,
+    back_action=None,
     mode_action=None,
     get_device_state,
 ) -> GPIOButtonTrigger:
@@ -166,6 +192,7 @@ def _build_trigger(
         return GPIOButtonTrigger(
             trigger_action=trigger_action,
             clear_action=clear_action,
+            back_action=back_action,
             mode_action=mode_action,
             get_device_state=get_device_state,
         )
@@ -183,6 +210,7 @@ class _FakeSettings:
 class _FakeButtonSettings:
     enabled = True
     pin = 17
+    back_button_pin = None
     debounce_seconds = 0.15
     hold_seconds = 1.2
 

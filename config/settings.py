@@ -79,6 +79,7 @@ class ButtonSettings:
     mode_button_3_pin: int | None
     mode_button_4_pin: int | None
     mode_button_5_pin: int | None
+    back_button_pin: int | None
     debounce_seconds: float
     hold_seconds: float
 
@@ -251,6 +252,11 @@ def load_device_settings(
             mode_button_5_pin=_parse_optional_int(
                 button.get("mode_button_5_pin"),
                 "button.mode_button_5_pin",
+                minimum=0,
+            ),
+            back_button_pin=_parse_optional_int(
+                button.get("back_button_pin"),
+                "button.back_button_pin",
                 minimum=0,
             ),
             debounce_seconds=_parse_float(
@@ -440,6 +446,13 @@ def _apply_environment_overrides(
     _set_if_present(merged["button"], "mode_button_3_pin", env, "MODE_BUTTON_3_PIN")
     _set_if_present(merged["button"], "mode_button_4_pin", env, "MODE_BUTTON_4_PIN")
     _set_if_present(merged["button"], "mode_button_5_pin", env, "MODE_BUTTON_5_PIN")
+    _set_if_present(
+        merged["button"],
+        "back_button_pin",
+        env,
+        "BACK_BUTTON_PIN",
+        "GPIO_BACK_BUTTON_PIN",
+    )
     _set_if_present(
         merged["button"],
         "debounce_seconds",
