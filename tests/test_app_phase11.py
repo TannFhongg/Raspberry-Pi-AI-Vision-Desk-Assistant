@@ -25,6 +25,7 @@ class Phase11AppIntegrationTests(unittest.TestCase):
         self.ui_state_path = self.temp_dir / "ui_state.json"
         self.health_status_path = self.temp_dir / "health_status.json"
         self.latest_result_path = self.temp_dir / "latest_result.txt"
+        self.result_history_path = self.temp_dir / "result_history.json"
         self.preview_path = self.temp_dir / "captured.jpg"
         self.processed_path = self.temp_dir / "processed.jpg"
         self.led_indicator = _FakeLEDIndicator()
@@ -32,6 +33,7 @@ class Phase11AppIntegrationTests(unittest.TestCase):
         self.path_patcher = patch.object(app_module, "UI_STATE_PATH", self.ui_state_path)
         self.health_path_patcher = patch.object(app_module, "HEALTH_STATUS_PATH", self.health_status_path)
         self.result_patcher = patch.object(app_module, "LATEST_RESULT_PATH", self.latest_result_path)
+        self.history_patcher = patch.object(app_module, "RESULT_HISTORY_PATH", self.result_history_path)
         self.preview_patcher = patch.object(app_module, "CAPTURED_IMAGE_PATH", self.preview_path)
         self.processed_patcher = patch.object(app_module, "PROCESSED_IMAGE_PATH", self.processed_path)
         self.led_patcher = patch.object(app_module, "LED_INDICATOR", self.led_indicator)
@@ -39,6 +41,7 @@ class Phase11AppIntegrationTests(unittest.TestCase):
         self.path_patcher.start()
         self.health_path_patcher.start()
         self.result_patcher.start()
+        self.history_patcher.start()
         self.preview_patcher.start()
         self.processed_patcher.start()
         self.led_patcher.start()
@@ -47,12 +50,14 @@ class Phase11AppIntegrationTests(unittest.TestCase):
         app_module.RUNNING = False
         app_module.GPIO_TRIGGER = None
         app_module.HEALTH_MONITOR = None
+        app_module.RESULT_HISTORY_CACHE = None
         app_module._reset_ui_state(clear_saved_result=False)
 
     def tearDown(self) -> None:
         self.path_patcher.stop()
         self.health_path_patcher.stop()
         self.result_patcher.stop()
+        self.history_patcher.stop()
         self.preview_patcher.stop()
         self.processed_patcher.stop()
         self.led_patcher.stop()
@@ -358,6 +363,76 @@ class Phase11AppIntegrationTests(unittest.TestCase):
         self.assertEqual(payload["memory"]["label"], "RAM 12.5%")
         self.assertEqual(payload["network"]["label"], "NET OK")
         self.assertEqual(payload["camera"]["label"], "CAM OK")
+
+    def test_successful_capture_is_added_to_recent_results_history(self) -> None:
+        result = app_module.PipelineResult(
+            captured_path=self.preview_path,
+            processed_path=self.processed_path,
+            answer="First line\nSecond line",
+            mode="document_reader",
+            camera_backend_used="picamera2",
+            camera_resolution=(1920, 1080),
+            status="success",
+        )
+
+        with patch("app.run_capture_analyze", return_value=result):
+            app_module._run_capture_job("read_text", "document_reader")
+
+        history_entries = app_module._load_result_history()
+        self.assertEqual(len(history_entries), 1)
+        self.assertEqual(history_entries[0]["mode_label"], "Read Text")
+        self.assertEqual(history_entries[0]["camera_resolution"], [1920, 1080])
+        self.assertIn("First line", history_entries[0]["summary"])
+
+    def test_history_screen_renders_saved_entries(self) -> None:
+        client = app_module.app.test_client()
+        app_module._write_result_history(
+            [
+                {
+                    "id": "entry-1",
+                    "created_at": "2026-07-10T22:00:00",
+                    "selected_mode": "read_text",
+                    "selected_mode_internal": "document_reader",
+                    "mode_label": "Read Text",
+                    "answer": "Saved answer body",
+                    "summary": "Saved answer summary",
+                    "camera_backend_used": "picamera2",
+                    "camera_resolution": [1920, 1080],
+                }
+            ]
+        )
+
+        response = client.get("/history")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Recent Results", response.data)
+        self.assertIn(b"Saved answer summary", response.data)
+        self.assertIn(b"/history/entry-1", response.data)
+
+    def test_history_detail_screen_renders_saved_answer(self) -> None:
+        client = app_module.app.test_client()
+        app_module._write_result_history(
+            [
+                {
+                    "id": "entry-1",
+                    "created_at": "2026-07-10T22:00:00",
+                    "selected_mode": "solve_problem",
+                    "selected_mode_internal": "math_solver",
+                    "mode_label": "Solve Problem",
+                    "answer": "Saved answer body",
+                    "summary": "Saved answer summary",
+                    "camera_backend_used": "opencv",
+                    "camera_resolution": [1280, 720],
+                }
+            ]
+        )
+
+        response = client.get("/history/entry-1")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Solve Problem", response.data)
+        self.assertIn(b"Saved answer body", response.data)
+        self.assertIn(b"1280x720", response.data)
 
     def test_run_capture_job_success_resumes_live_preview(self) -> None:
         result = app_module.PipelineResult(

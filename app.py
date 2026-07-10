@@ -51,9 +51,10 @@ app.logger.setLevel(logging.getLogger().level)
 UI_STATE_PATH = Path("data/ui_state.json")
 HEALTH_STATUS_PATH = Path("data/health_status.json")
 LATEST_RESULT_PATH = Path("data/latest_result.txt")
+RESULT_HISTORY_PATH = Path("data/result_history.json")
 CAPTURED_IMAGE_PATH = Path("static/captured.jpg")
 PROCESSED_IMAGE_PATH = Path("static/processed.jpg")
-VALID_SCREENS = {"home", "processing", "result", "error"}
+VALID_SCREENS = {"home", "processing", "result", "error", "history", "history_detail"}
 UI_MODE_OPTIONS = (
     {
         "id": "read_text",
@@ -104,12 +105,14 @@ PROGRESS_STEPS = [
 ]
 
 STATE_LOCK = threading.Lock()
+RESULT_HISTORY_LOCK = threading.Lock()
 RUN_LOCK = threading.Lock()
 GPIO_START_LOCK = threading.Lock()
 RUNNING = False
 GPIO_START_ATTEMPTED = False
 GPIO_TRIGGER: GPIOButtonTrigger | None = None
 HEALTH_MONITOR: HealthMonitor | None = None
+RESULT_HISTORY_CACHE: list[dict[str, Any]] | None = None
 
 
 def _read_int_env(
@@ -183,6 +186,7 @@ UI_DISPLAY_ORIENTATION = _read_orientation_env(
 )
 LIVE_PREVIEW_REFRESH_MS = 250
 UI_HEALTH_REFRESH_MS = _read_int_env("UI_HEALTH_REFRESH_MS", 5000, minimum=2000, maximum=60000)
+RESULT_HISTORY_LIMIT = _read_int_env("RESULT_HISTORY_LIMIT", 12, minimum=3, maximum=50)
 RAW_SCREEN_WIDTH = max(240, min(1920, SETTINGS.display.size.width))
 RAW_SCREEN_HEIGHT = max(240, min(1920, SETTINGS.display.size.height))
 if UI_DISPLAY_ORIENTATION == "landscape" and RAW_SCREEN_WIDTH < RAW_SCREEN_HEIGHT:
@@ -299,6 +303,24 @@ def clear():
     """Clear the saved result/error and return to the ready screen."""
     _clear_and_reset_ui_state(clear_selected_mode=True)
     return redirect(url_for("index"))
+
+
+@app.get("/history")
+def history():
+    """Render the recent-results screen."""
+    return render_template("index.html", **_build_template_context(screen_override="history"))
+
+
+@app.get("/history/<entry_id>")
+def history_detail(entry_id: str):
+    """Render a saved history entry without disturbing the active device state."""
+    entry = _get_result_history_entry(entry_id)
+    if entry is None:
+        return redirect(url_for("history"))
+    return render_template(
+        "index.html",
+        **_build_template_context(screen_override="history_detail", history_entry=entry),
+    )
 
 
 def _normalize_internal_mode(mode: Any) -> str:
@@ -566,7 +588,153 @@ def _normalize_overall_health_status(value: Any) -> str:
     return "unknown"
 
 
-def _build_template_context(screen_override: str | None = None) -> dict[str, Any]:
+def _load_result_history() -> list[dict[str, Any]]:
+    """Return the recent result history from memory or disk."""
+    global RESULT_HISTORY_CACHE
+
+    with RESULT_HISTORY_LOCK:
+        if RESULT_HISTORY_CACHE is not None:
+            return [entry.copy() for entry in RESULT_HISTORY_CACHE]
+
+        if not RESULT_HISTORY_PATH.is_file():
+            RESULT_HISTORY_CACHE = []
+            return []
+
+        try:
+            raw_entries = json.loads(RESULT_HISTORY_PATH.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            RESULT_HISTORY_CACHE = []
+            return []
+
+        parsed_entries: list[dict[str, Any]] = []
+        if isinstance(raw_entries, list):
+            for raw_entry in raw_entries:
+                entry = _coerce_result_history_entry(raw_entry)
+                if entry is not None:
+                    parsed_entries.append(entry)
+
+        RESULT_HISTORY_CACHE = parsed_entries[:RESULT_HISTORY_LIMIT]
+        return [entry.copy() for entry in RESULT_HISTORY_CACHE]
+
+
+def _write_result_history(entries: list[dict[str, Any]]) -> None:
+    """Persist recent result history and refresh the in-memory cache."""
+    global RESULT_HISTORY_CACHE
+
+    normalized_entries = [
+        entry.copy() for entry in entries[:RESULT_HISTORY_LIMIT]
+        if _coerce_result_history_entry(entry) is not None
+    ]
+    RESULT_HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+    with RESULT_HISTORY_LOCK:
+        RESULT_HISTORY_CACHE = normalized_entries
+        RESULT_HISTORY_PATH.write_text(
+            json.dumps(normalized_entries, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
+
+def _append_result_history(
+    result: PipelineResult,
+    selected_mode: str,
+    selected_mode_internal: str,
+) -> None:
+    """Save a successful assistant response into recent-results history."""
+    answer = (result.answer or "").strip()
+    if not answer:
+        return
+
+    ui_mode, internal_mode = _resolve_mode_pair(selected_mode, selected_mode_internal)
+    history_entries = _load_result_history()
+    created_at = _timestamp()
+    history_entry = {
+        "id": str(int(datetime.now().timestamp() * 1000)),
+        "created_at": created_at,
+        "selected_mode": ui_mode,
+        "selected_mode_internal": internal_mode,
+        "mode_label": _history_mode_label(ui_mode, internal_mode),
+        "answer": answer,
+        "summary": _history_summary(answer),
+        "camera_backend_used": result.camera_backend_used or "",
+        "camera_resolution": list(result.camera_resolution) if result.camera_resolution else [],
+    }
+    history_entries.insert(0, history_entry)
+    _write_result_history(history_entries)
+
+
+def _get_result_history_entry(entry_id: str) -> dict[str, Any] | None:
+    """Return a single saved result history entry by identifier."""
+    for entry in _load_result_history():
+        if entry.get("id") == entry_id:
+            return entry
+    return None
+
+
+def _coerce_result_history_entry(raw_entry: Any) -> dict[str, Any] | None:
+    """Validate the stored history payload shape."""
+    if not isinstance(raw_entry, dict):
+        return None
+
+    entry_id = str(raw_entry.get("id", "")).strip()
+    answer = str(raw_entry.get("answer", "")).strip()
+    if not entry_id or not answer:
+        return None
+
+    selected_mode, selected_mode_internal = _resolve_mode_pair(
+        raw_entry.get("selected_mode", ""),
+        raw_entry.get("selected_mode_internal", ""),
+    )
+    mode_label = str(raw_entry.get("mode_label", "")).strip() or _history_mode_label(
+        selected_mode,
+        selected_mode_internal,
+    )
+    summary = str(raw_entry.get("summary", "")).strip() or _history_summary(answer)
+
+    raw_resolution = raw_entry.get("camera_resolution", [])
+    camera_resolution: list[int] = []
+    if (
+        isinstance(raw_resolution, (list, tuple))
+        and len(raw_resolution) == 2
+        and all(isinstance(value, (int, float)) for value in raw_resolution)
+    ):
+        camera_resolution = [int(raw_resolution[0]), int(raw_resolution[1])]
+
+    return {
+        "id": entry_id,
+        "created_at": str(raw_entry.get("created_at", "")),
+        "selected_mode": selected_mode,
+        "selected_mode_internal": selected_mode_internal,
+        "mode_label": mode_label,
+        "answer": answer,
+        "summary": summary,
+        "camera_backend_used": str(raw_entry.get("camera_backend_used", "")),
+        "camera_resolution": camera_resolution,
+    }
+
+
+def _history_mode_label(selected_mode: str, selected_mode_internal: str) -> str:
+    """Return the best user-facing label for a stored history entry."""
+    if selected_mode in MODE_LABELS:
+        return MODE_LABELS[selected_mode]
+    if selected_mode_internal:
+        return get_mode(selected_mode_internal).name
+    return "Saved Result"
+
+
+def _history_summary(answer: str, max_chars: int = 160) -> str:
+    """Return a compact one-line summary for the recent-results list."""
+    cleaned = " ".join(answer.split())
+    if len(cleaned) <= max_chars:
+        return cleaned
+    return cleaned[: max_chars - 3].rstrip() + "..."
+
+
+def _build_template_context(
+    screen_override: str | None = None,
+    *,
+    history_entry: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Build the render context for the current screen."""
     state = _load_ui_state()
     screen = screen_override or state["screen"]
@@ -586,11 +754,32 @@ def _build_template_context(screen_override: str | None = None) -> dict[str, Any
         if selected_mode_definition
         else "Press one of the mode buttons to choose what the assistant should do."
     )
+    recent_results = _load_result_history()
+    effective_history_entry = history_entry
+    answer_text = state["answer"]
     display_status = state["status"]
     if screen == "processing":
         display_status = state["detail"] or "Processing..."
     elif screen == "result":
         display_status = "Done"
+    elif screen == "history":
+        display_status = f"{len(recent_results)} saved result{'s' if len(recent_results) != 1 else ''}"
+    elif screen == "history_detail":
+        if effective_history_entry is None:
+            if recent_results:
+                effective_history_entry = recent_results[0]
+            else:
+                screen = "history"
+                display_status = "No saved results"
+        if effective_history_entry is not None:
+            answer_text = effective_history_entry["answer"]
+            selected_mode = str(effective_history_entry.get("selected_mode", ""))
+            selected_mode_internal = str(effective_history_entry.get("selected_mode_internal", ""))
+            selected_mode_label = str(
+                effective_history_entry.get("mode_label", selected_mode_label or "Saved Result")
+            )
+            selected_mode_description = "Recent result stored in memory for quick review."
+            display_status = "Saved Result"
 
     active_mode_definition = None
     if selected_mode_internal:
@@ -603,13 +792,16 @@ def _build_template_context(screen_override: str | None = None) -> dict[str, Any
         "detail": state["detail"],
         "error": state["error"],
         "error_detail": state["error_detail"],
-        "answer_html": _format_answer_html(state["answer"]),
+        "answer_html": _format_answer_html(answer_text),
         "selected_mode": selected_mode,
         "selected_mode_internal": selected_mode_internal,
         "selected_mode_label": selected_mode_label,
         "selected_mode_description": selected_mode_description,
         "active_mode_name": active_mode_definition.name if active_mode_definition else "",
         "has_mode_selected": bool(selected_mode),
+        "recent_results": recent_results,
+        "has_recent_results": bool(recent_results),
+        "history_entry": effective_history_entry,
         "mode_options": UI_MODE_OPTIONS,
         "progress_steps": _build_progress_steps(state["current_step"]),
         "live_preview_url": _build_live_preview_url(),
@@ -701,6 +893,7 @@ def _run_capture_job(selected_mode: str, selected_mode_internal: str) -> None:
             ),
         )
         save_latest_result(result, output_path=str(LATEST_RESULT_PATH))
+        _append_result_history(result, selected_mode, selected_mode_internal)
         _write_device_state(
             DeviceState.DONE,
             selected_mode=selected_mode,

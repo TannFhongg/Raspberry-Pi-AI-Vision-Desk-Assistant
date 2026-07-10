@@ -78,6 +78,11 @@
                     <p class="header-title">Ready ...</p>
                     <p class="header-subtitle">Press button to select the mode.</p>
                 </div>
+                {% if has_recent_results %}
+                <form action="{{ url_for('history') }}" class="header-action-form">
+                    <button type="submit" class="header-capture-link">Recent Results</button>
+                </form>
+                {% endif %}
             </header>
             <div class="system-health-bar" aria-label="Device health" data-health-bar>
                 <span class="health-pill health-pill-overall" data-health-overall data-status="{{ health_summary.overall.status }}" title="{{ health_summary.overall.message }}">{{ health_summary.overall.label }}</span>
@@ -117,7 +122,17 @@
 
             <header class="panel-header panel-header-compact">
                 <div class="header-copy">
-                    <p class="header-title">{% if has_mode_selected %}{{ selected_mode_label }}{% else %}{{ default_capture_mode_label }}{% endif %}</p>
+                    <p class="header-title">
+                        {% if screen == "history" %}
+                        Recent Results
+                        {% elif screen == "history_detail" and history_entry %}
+                        {{ history_entry.mode_label }}
+                        {% elif has_mode_selected %}
+                        {{ selected_mode_label }}
+                        {% else %}
+                        {{ default_capture_mode_label }}
+                        {% endif %}
+                    </p>
                     <p class="header-subtitle">
                         {% if screen == "processing" %}
                         {{ display_status }}
@@ -125,6 +140,10 @@
                         {{ error or display_status }}
                         {% elif screen == "result" %}
                         Answer Ready
+                        {% elif screen == "history" %}
+                        {{ display_status }}
+                        {% elif screen == "history_detail" and history_entry %}
+                        {{ history_entry.created_at }}
                         {% else %}
                         {{ display_status }}
                         {% endif %}
@@ -132,6 +151,14 @@
                 </div>
                 {% if screen == "processing" %}
                 <div class="header-status-chip" aria-hidden="true">{{ display_status }}</div>
+                {% elif screen == "history" %}
+                <form action="{{ url_for('index') }}" class="header-action-form">
+                    <button type="submit" class="header-capture-link">Back</button>
+                </form>
+                {% elif screen == "history_detail" %}
+                <form action="{{ url_for('history') }}" class="header-action-form">
+                    <button type="submit" class="header-capture-link">Recent Results</button>
+                </form>
                 {% elif screen == "error" %}
                 <form method="post" action="{{ url_for('retry') }}" class="header-action-form">
                     <button type="submit" class="header-capture-link">Capture Again</button>
@@ -183,8 +210,53 @@
                         {% endif %}
                     </div>
                 </div>
+                {% elif screen == "history" %}
+                <div class="history-list" role="list">
+                    {% if recent_results %}
+                    {% for entry in recent_results %}
+                    <a class="history-card" href="{{ url_for('history_detail', entry_id=entry.id) }}" role="listitem">
+                        <span class="history-card-head">
+                            <span class="history-card-title">{{ entry.mode_label }}</span>
+                            <span class="history-card-time">{{ entry.created_at }}</span>
+                        </span>
+                        <span class="history-card-summary">{{ entry.summary }}</span>
+                        <span class="history-card-meta">
+                            {% if entry.camera_backend_used %}{{ entry.camera_backend_used|upper }}{% endif %}
+                            {% if entry.camera_resolution %} · {{ entry.camera_resolution[0] }}x{{ entry.camera_resolution[1] }}{% endif %}
+                        </span>
+                    </a>
+                    {% endfor %}
+                    {% else %}
+                    <p class="answer-empty">No saved results yet.</p>
+                    {% endif %}
+                </div>
+                {% elif screen == "history_detail" and history_entry %}
+                <div class="answer-content-wrap answer-content-wrap-full">
+                    <div class="history-detail-meta">
+                        <span class="history-detail-chip">{{ history_entry.created_at }}</span>
+                        {% if history_entry.camera_backend_used %}
+                        <span class="history-detail-chip">{{ history_entry.camera_backend_used|upper }}</span>
+                        {% endif %}
+                        {% if history_entry.camera_resolution %}
+                        <span class="history-detail-chip">{{ history_entry.camera_resolution[0] }}x{{ history_entry.camera_resolution[1] }}</span>
+                        {% endif %}
+                    </div>
+                    <div class="answer-area" tabindex="0">
+                        <div class="answer-copy">{{ answer_html }}</div>
+                    </div>
+                </div>
                 {% elif screen == "result" %}
                 <div class="answer-content-wrap answer-content-wrap-full">
+                    <div class="answer-toolbar">
+                        <form method="post" action="{{ url_for('back') }}" class="secondary-action-form">
+                            <button type="submit" class="secondary-action-link">Change Mode</button>
+                        </form>
+                        {% if has_recent_results %}
+                        <form action="{{ url_for('history') }}" class="secondary-action-form">
+                            <button type="submit" class="secondary-action-link">Recent Results</button>
+                        </form>
+                        {% endif %}
+                    </div>
                     <div class="answer-area" tabindex="0">
                         <div class="answer-copy">{{ answer_html }}</div>
                     </div>

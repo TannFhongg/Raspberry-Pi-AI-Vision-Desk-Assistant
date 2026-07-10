@@ -356,6 +356,14 @@ button:disabled {
     flex-direction: column;
 }
 
+.answer-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
 .answer-content-wrap-full {
     padding-top: 0;
     border-top: 0;
@@ -392,6 +400,66 @@ button:disabled {
 
 .answer-copy li + li {
     margin-top: 6px;
+}
+
+.history-list {
+    display: grid;
+    gap: 8px;
+    min-height: 0;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.history-card {
+    display: grid;
+    gap: 6px;
+    padding: 10px 12px;
+    border-radius: 18px;
+    border: 1px solid var(--line-soft);
+    background: linear-gradient(180deg, rgba(17, 17, 17, 0.02) 0%, rgba(17, 17, 17, 0.05) 100%);
+    color: var(--text-dark);
+    text-decoration: none;
+}
+
+.history-card-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.history-card-title {
+    font-size: calc(var(--base-font-size) * 0.64);
+    font-weight: 900;
+    line-height: 1.08;
+}
+
+.history-card-time,
+.history-card-meta,
+.history-detail-chip {
+    color: var(--text-soft);
+    font-size: calc(var(--base-font-size) * 0.48);
+    font-weight: 800;
+    line-height: 1.15;
+}
+
+.history-card-summary {
+    font-size: calc(var(--base-font-size) * 0.58);
+    font-weight: 700;
+    line-height: 1.28;
+}
+
+.history-detail-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+
+.history-detail-chip {
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: rgba(17, 17, 17, 0.06);
 }
 
 .answer-empty {
@@ -610,6 +678,25 @@ button:disabled {
 
     .answer-copy {
         font-size: calc(var(--base-font-size) * 0.346);
+    }
+
+    .history-card {
+        padding: 8px 10px;
+        gap: 5px;
+    }
+
+    .history-card-title {
+        font-size: calc(var(--base-font-size) * 0.58);
+    }
+
+    .history-card-summary {
+        font-size: calc(var(--base-font-size) * 0.52);
+    }
+
+    .history-card-time,
+    .history-card-meta,
+    .history-detail-chip {
+        font-size: calc(var(--base-font-size) * 0.44);
     }
 
     .progress-step {
