@@ -12,3 +12,4 @@ data/web_feedback.json
 .env
 *.json
 logs/
+data/ui_state.json
