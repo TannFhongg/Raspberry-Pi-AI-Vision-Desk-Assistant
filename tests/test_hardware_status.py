@@ -21,23 +21,36 @@ class DeviceStatusHelperTests(unittest.TestCase):
 
     def test_ready_payload_maps_to_home_screen(self) -> None:
         payload = build_ready_state_payload(
-            selected_mode="document_reader",
-            ready_detail="Tap Capture or press the button",
+            selected_mode="",
+            ready_detail="Press button to select the mode.",
         )
 
         self.assertEqual(payload["device_state"], "READY")
         self.assertEqual(payload["screen"], "home")
         self.assertEqual(payload["status"], "Ready")
-        self.assertEqual(payload["detail"], "Tap Capture or press the button")
+        self.assertEqual(payload["detail"], "Press button to select the mode.")
         self.assertEqual(payload["current_step"], -1)
+
+    def test_mode_selected_payload_stays_on_home_screen(self) -> None:
+        payload = build_ui_state_payload(
+            DeviceState.MODE_SELECTED,
+            selected_mode="solve_problem",
+            ready_detail="Press button to select the mode.",
+            detail="Selected mode ready. Press Button Main to capture.",
+        )
+
+        self.assertEqual(payload["device_state"], "MODE_SELECTED")
+        self.assertEqual(payload["screen"], "home")
+        self.assertEqual(payload["status"], "Mode Selected")
+        self.assertEqual(payload["detail"], "Selected mode ready. Press Button Main to capture.")
 
     def test_done_payload_maps_answer_to_result_screen(self) -> None:
         payload = build_ui_state_payload(
             DeviceState.DONE,
-            selected_mode="document_reader",
+            selected_mode="solve_problem",
             ready_detail="Ready",
             answer="Answer ready",
-            current_step=4,
+            current_step=3,
         )
 
         self.assertEqual(payload["device_state"], "DONE")
@@ -48,7 +61,7 @@ class DeviceStatusHelperTests(unittest.TestCase):
     def test_error_payload_maps_error_to_error_screen(self) -> None:
         payload = build_ui_state_payload(
             DeviceState.ERROR,
-            selected_mode="document_reader",
+            selected_mode="solve_problem",
             ready_detail="Ready",
             error="Camera not found",
             error_detail="Camera backend failed",
@@ -63,6 +76,8 @@ class DeviceStatusHelperTests(unittest.TestCase):
         self.assertTrue(is_busy_device_state(DeviceState.CAPTURING))
         self.assertTrue(is_busy_device_state("PROCESSING"))
         self.assertFalse(is_busy_device_state(DeviceState.DONE))
+        self.assertFalse(is_busy_device_state(DeviceState.MODE_SELECTED))
+        self.assertEqual(screen_for_device_state("MODE_SELECTED"), "home")
         self.assertEqual(screen_for_device_state("READY"), "home")
 
     def test_clear_latest_result_file_writes_readable_placeholder(self) -> None:

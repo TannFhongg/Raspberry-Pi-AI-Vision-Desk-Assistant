@@ -14,6 +14,7 @@ class DeviceState(str, Enum):
     """Lifecycle states shared by the UI, button controller, and LED."""
 
     READY = "READY"
+    MODE_SELECTED = "MODE_SELECTED"
     CAPTURING = "CAPTURING"
     PROCESSING = "PROCESSING"
     DONE = "DONE"
@@ -23,6 +24,7 @@ class DeviceState(str, Enum):
 BUSY_DEVICE_STATES = frozenset({DeviceState.CAPTURING, DeviceState.PROCESSING})
 DEVICE_SCREEN_MAP = {
     DeviceState.READY: "home",
+    DeviceState.MODE_SELECTED: "home",
     DeviceState.CAPTURING: "processing",
     DeviceState.PROCESSING: "processing",
     DeviceState.DONE: "result",
@@ -30,12 +32,14 @@ DEVICE_SCREEN_MAP = {
 }
 DEVICE_STATUS_MAP = {
     DeviceState.READY: "Ready",
+    DeviceState.MODE_SELECTED: "Mode Selected",
     DeviceState.CAPTURING: "Capturing",
     DeviceState.PROCESSING: "Processing",
     DeviceState.DONE: "Done",
     DeviceState.ERROR: "Error",
 }
 DEVICE_DETAIL_MAP = {
+    DeviceState.MODE_SELECTED: "Selected mode ready",
     DeviceState.CAPTURING: "Capturing image",
     DeviceState.PROCESSING: "Processing",
     DeviceState.DONE: "Answer ready",
@@ -43,9 +47,10 @@ DEVICE_DETAIL_MAP = {
 }
 DEVICE_STEP_MAP = {
     DeviceState.READY: -1,
+    DeviceState.MODE_SELECTED: -1,
     DeviceState.CAPTURING: 0,
     DeviceState.PROCESSING: 2,
-    DeviceState.DONE: 4,
+    DeviceState.DONE: 3,
     DeviceState.ERROR: -1,
 }
 

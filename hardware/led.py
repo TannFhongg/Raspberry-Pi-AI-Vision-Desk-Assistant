@@ -82,7 +82,7 @@ class LEDIndicator:
         if self._device is None:
             return
 
-        if self.last_state in {DeviceState.READY, DeviceState.DONE}:
+        if self.last_state in {DeviceState.READY, DeviceState.MODE_SELECTED, DeviceState.DONE}:
             self._device.on()
             return
 

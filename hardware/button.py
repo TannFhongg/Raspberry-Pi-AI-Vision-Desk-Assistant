@@ -1,4 +1,4 @@
-"""GPIO button controller with short-press capture and long-press clear."""
+"""GPIO button controller with capture, clear, and optional mode-selection buttons."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ class GPIOButtonError(Exception):
 
 
 class GPIOButtonTrigger:
-    """GPIO button controller with debounce, hold detection, and busy guards."""
+    """GPIO control panel with debounce, hold detection, and busy guards."""
 
     def __init__(
         self,
@@ -48,6 +48,8 @@ class GPIOButtonTrigger:
         result_path: str = "data/latest_result.txt",
         trigger_action: Callable[[], bool] | None = None,
         clear_action: Callable[[], bool] | None = None,
+        mode_buttons: dict[str, int] | None = None,
+        mode_action: Callable[[str], bool] | None = None,
         get_device_state: Callable[[], DeviceState | str] | None = None,
         led_indicator: LEDIndicator | None = None,
         button_factory: ButtonFactory | None = None,
@@ -82,6 +84,8 @@ class GPIOButtonTrigger:
         self.result_path = result_path
         self.trigger_action = trigger_action or self._run_managed_pipeline
         self.clear_action = clear_action or self._run_managed_clear
+        self.mode_buttons = self._normalize_mode_buttons(mode_buttons)
+        self.mode_action = mode_action or self._set_managed_mode
         self.get_device_state = get_device_state
         self.led_indicator = led_indicator
         self.button_factory = button_factory
@@ -89,6 +93,7 @@ class GPIOButtonTrigger:
         self._busy = False
         self._hold_fired = False
         self._button = None
+        self._mode_button_devices: list[Any] = []
         self._managed_pipeline = trigger_action is None
         self._device_state = DeviceState.READY
 
@@ -110,8 +115,14 @@ class GPIOButtonTrigger:
                 self._button.hold_repeat = False
             self._button.when_held = self._handle_hold
             self._button.when_released = self._handle_release
-            LOGGER.info("GPIO button listener started pin=%s", self.pin)
+            self._bind_mode_buttons(button_class)
+            LOGGER.info(
+                "GPIO button listener started capture_pin=%s mode_pins=%s",
+                self.pin,
+                self.mode_buttons,
+            )
         except Exception as exc:
+            self.close()
             raise GPIOButtonError(
                 f"Could not initialize GPIO button on pin {self.pin}. {exc}"
             ) from exc
@@ -135,6 +146,41 @@ class GPIOButtonTrigger:
             except Exception:
                 pass
             self._button = None
+        for button in self._mode_button_devices:
+            try:
+                button.close()
+            except Exception:
+                pass
+        self._mode_button_devices = []
+
+    def _bind_mode_buttons(self, button_class: ButtonFactory) -> None:
+        """Create optional mode-selection buttons alongside the capture button."""
+        for mode, pin in self.mode_buttons.items():
+            button = button_class(
+                pin,
+                pull_up=True,
+                bounce_time=self.debounce_seconds,
+            )
+            button.when_released = lambda mode=mode: self._handle_mode_release(mode)
+            self._mode_button_devices.append(button)
+
+    def _normalize_mode_buttons(self, mode_buttons: dict[str, int] | None) -> dict[str, int]:
+        """Return a cleaned map of mode ids to GPIO pins."""
+        if not mode_buttons:
+            return {}
+
+        normalized: dict[str, int] = {}
+        for mode, pin in mode_buttons.items():
+            if not isinstance(mode, str):
+                continue
+            try:
+                resolved_pin = int(pin)
+            except (TypeError, ValueError):
+                continue
+            if resolved_pin < 0 or resolved_pin == self.pin:
+                continue
+            normalized[mode.strip().lower()] = resolved_pin
+        return normalized
 
     def _handle_hold(self) -> None:
         """Trigger a clear action for a long press and suppress short release."""
@@ -176,6 +222,21 @@ class GPIOButtonTrigger:
         )
         worker.start()
 
+    def _handle_mode_release(self, mode: str) -> None:
+        """Trigger a mode-selection action when the device is idle."""
+        if self._input_is_blocked():
+            print("Device is busy. Ignoring button input.")
+            LOGGER.info("Ignoring GPIO mode press because device is busy mode=%s", mode)
+            return
+
+        worker = threading.Thread(
+            target=self._run_mode_action,
+            args=(mode,),
+            daemon=True,
+            name=f"gpio-mode-{mode}",
+        )
+        worker.start()
+
     def _run_trigger_action(self) -> None:
         """Run the configured short-press action behind a duplicate-trigger guard."""
         try:
@@ -203,6 +264,17 @@ class GPIOButtonTrigger:
         except Exception as exc:
             print(f"Error: {exc}")
             LOGGER.exception("GPIO clear action failed pin=%s", self.pin)
+
+    def _run_mode_action(self, mode: str) -> None:
+        """Run the configured mode-selection action."""
+        try:
+            changed = self.mode_action(mode)
+            if changed:
+                print(f"Mode selected: {mode}")
+                LOGGER.info("GPIO mode action succeeded mode=%s pin=%s", mode, self.mode_buttons.get(mode))
+        except Exception as exc:
+            print(f"Error: {exc}")
+            LOGGER.exception("GPIO mode action failed mode=%s", mode)
 
     def _current_device_state(self) -> DeviceState:
         """Return the externally-managed or internal device state."""
@@ -278,6 +350,13 @@ class GPIOButtonTrigger:
         self._set_managed_state(DeviceState.READY)
         print("Result cleared")
         LOGGER.info("Managed GPIO result cleared pin=%s mode=%s", self.pin, self.mode)
+        return True
+
+    def _set_managed_mode(self, mode: str) -> bool:
+        """Update the managed default mode from a physical mode-selection button."""
+        self.mode = normalize_mode(mode)
+        self._set_managed_state(DeviceState.MODE_SELECTED)
+        LOGGER.info("Managed GPIO mode updated pin=%s mode=%s", self.pin, self.mode)
         return True
 
     def _set_managed_state(self, device_state: DeviceState | str) -> None:

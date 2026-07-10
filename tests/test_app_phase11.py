@@ -1,4 +1,4 @@
-"""App-level tests for the Phase 11 hardware state flow."""
+"""App-level tests for the Raspberry Pi hardware-first screen flow."""
 
 from __future__ import annotations
 
@@ -18,18 +18,24 @@ from hardware.status import DeviceState
 
 
 class Phase11AppIntegrationTests(unittest.TestCase):
-    """Verify the shared app state behavior used by hardware-only control."""
+    """Verify the shared app state behavior used by hardware-first control."""
 
     def setUp(self) -> None:
         self.temp_dir = Path(tempfile.mkdtemp(prefix="phase11-app-test-"))
         self.ui_state_path = self.temp_dir / "ui_state.json"
         self.latest_result_path = self.temp_dir / "latest_result.txt"
+        self.preview_path = self.temp_dir / "captured.jpg"
+        self.processed_path = self.temp_dir / "processed.jpg"
         self.led_indicator = _FakeLEDIndicator()
         self.path_patcher = patch.object(app_module, "UI_STATE_PATH", self.ui_state_path)
         self.result_patcher = patch.object(app_module, "LATEST_RESULT_PATH", self.latest_result_path)
+        self.preview_patcher = patch.object(app_module, "CAPTURED_IMAGE_PATH", self.preview_path)
+        self.processed_patcher = patch.object(app_module, "PROCESSED_IMAGE_PATH", self.processed_path)
         self.led_patcher = patch.object(app_module, "LED_INDICATOR", self.led_indicator)
         self.path_patcher.start()
         self.result_patcher.start()
+        self.preview_patcher.start()
+        self.processed_patcher.start()
         self.led_patcher.start()
         app_module.app.config["TESTING"] = True
         app_module.RUNNING = False
@@ -40,6 +46,8 @@ class Phase11AppIntegrationTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.path_patcher.stop()
         self.result_patcher.stop()
+        self.preview_patcher.stop()
+        self.processed_patcher.stop()
         self.led_patcher.stop()
 
     def test_home_result_and_error_screens_refresh_when_gpio_listener_is_active(self) -> None:
@@ -47,7 +55,7 @@ class Phase11AppIntegrationTests(unittest.TestCase):
         app_module.GPIO_TRIGGER = object()
 
         cases = (
-            (DeviceState.READY, {"detail": "Tap Capture or press the button"}, b"window.location.reload()"),
+            (DeviceState.READY, {"detail": "Press button to select the mode."}, b"window.location.reload()"),
             (DeviceState.DONE, {"answer": "Answer stays visible"}, b"window.location.reload()"),
             (
                 DeviceState.ERROR,
@@ -60,7 +68,8 @@ class Phase11AppIntegrationTests(unittest.TestCase):
             with self.subTest(state=state):
                 app_module._write_device_state(
                     state,
-                    selected_mode="document_reader",
+                    selected_mode="read_text",
+                    selected_mode_internal="document_reader",
                     detail=extra.get("detail"),
                     answer=extra.get("answer", ""),
                     error=extra.get("error", ""),
@@ -75,9 +84,10 @@ class Phase11AppIntegrationTests(unittest.TestCase):
         self.latest_result_path.write_text("Old result\n", encoding="utf-8")
         app_module._write_device_state(
             DeviceState.DONE,
-            selected_mode="document_reader",
+            selected_mode="read_text",
+            selected_mode_internal="document_reader",
             answer="Persistent answer",
-            current_step=4,
+            current_step=3,
         )
 
         response = client.post("/clear")
@@ -86,6 +96,8 @@ class Phase11AppIntegrationTests(unittest.TestCase):
         state = app_module._load_ui_state()
         self.assertEqual(state["device_state"], "READY")
         self.assertEqual(state["screen"], "home")
+        self.assertEqual(state["selected_mode"], "")
+        self.assertEqual(state["selected_mode_internal"], "")
         self.assertEqual(state["answer"], "")
         self.assertEqual(state["error"], "")
 
@@ -97,66 +109,86 @@ class Phase11AppIntegrationTests(unittest.TestCase):
         client = app_module.app.test_client()
         app_module._write_device_state(
             DeviceState.DONE,
-            selected_mode="math_solver",
+            selected_mode="solve_problem",
+            selected_mode_internal="math_solver",
             answer="Line one",
-            current_step=4,
+            current_step=3,
         )
 
         response = client.get("/")
 
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"Line one", response.data)
+        self.assertIn(b"Solve Problem", response.data)
         state = app_module._load_ui_state()
         self.assertEqual(state["device_state"], "DONE")
         self.assertEqual(state["screen"], "result")
         self.assertEqual(state["answer"], "Line one")
+        self.assertEqual(state["selected_mode"], "solve_problem")
+        self.assertEqual(state["selected_mode_internal"], "math_solver")
 
-    def test_mode_screen_shows_only_new_mode_names_and_descriptions(self) -> None:
-        client = app_module.app.test_client()
-
-        response = client.get("/mode")
-
-        self.assertEqual(response.status_code, 200)
-        self.assertIn(b"Document Reader", response.data)
-        self.assertIn(b"Math Solver", response.data)
-        self.assertIn(b"Meeting Assistant", response.data)
-        self.assertIn(b"Engineering Mode", response.data)
-        self.assertIn(b"General Vision", response.data)
-        self.assertIn(b"Extract key text and summarize documents or screens.", response.data)
-        self.assertNotIn(b"Read Text", response.data)
-        self.assertNotIn(b"Solve Problem", response.data)
-
-    def test_home_screen_renders_capture_mode_and_retry_actions(self) -> None:
+    def test_home_screen_shows_the_new_raspberry_pi_mode_buttons(self) -> None:
         client = app_module.app.test_client()
 
         response = client.get("/")
 
         self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Ready ...", response.data)
+        self.assertIn(b"Read Text", response.data)
+        self.assertIn(b"Summarize Document", response.data)
+        self.assertIn(b"Analyze Image", response.data)
+        self.assertIn(b"Professional Assistant", response.data)
+        self.assertIn(b"Solve Problem", response.data)
+        self.assertIn(b"Button Main", response.data)
         self.assertIn(b"Capture", response.data)
-        self.assertIn(b"Mode", response.data)
-        self.assertIn(b"Retry", response.data)
-        self.assertIn(b'action="/analyze"', response.data)
-        self.assertIn(b'action="/mode"', response.data)
-        self.assertIn(b'action="/retry"', response.data)
+        self.assertIn(b"Press button to select the mode.", response.data)
+        self.assertNotIn(b"Document Reader", response.data)
 
-    def test_app_defaults_render_portrait_small_screen_shell(self) -> None:
+    def test_home_screen_uses_landscape_shell_dimensions(self) -> None:
         client = app_module.app.test_client()
 
         response = client.get("/")
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn(b"orientation-portrait", response.data)
-        self.assertIn(b"--screen-width: 320px;", response.data)
-        self.assertIn(b"--screen-height: 480px;", response.data)
+        self.assertIn(b"orientation-landscape", response.data)
+        self.assertIn(b"--screen-width: 480px;", response.data)
+        self.assertIn(b"--screen-height: 320px;", response.data)
+        self.assertIn(b'action="/mode/select"', response.data)
+        self.assertIn(b'action="/analyze"', response.data)
 
-    def test_legacy_mode_selection_is_saved_as_canonical_mode(self) -> None:
+    def test_legacy_mode_selection_is_saved_with_ui_and_internal_modes(self) -> None:
         client = app_module.app.test_client()
 
         response = client.post("/mode/select", data={"mode": "solve_problem"})
 
         self.assertEqual(response.status_code, 302)
         state = app_module._load_ui_state()
-        self.assertEqual(state["selected_mode"], "math_solver")
+        self.assertEqual(state["device_state"], "MODE_SELECTED")
+        self.assertEqual(state["selected_mode"], "solve_problem")
+        self.assertEqual(state["selected_mode_internal"], "math_solver")
+
+    def test_professional_assistant_maps_to_general_vision_pipeline(self) -> None:
+        client = app_module.app.test_client()
+
+        response = client.post("/mode/select", data={"mode": "professional_assistant"})
+
+        self.assertEqual(response.status_code, 302)
+        state = app_module._load_ui_state()
+        self.assertEqual(state["selected_mode"], "professional_assistant")
+        self.assertEqual(state["selected_mode_internal"], "general_vision")
+
+    def test_capture_without_selected_mode_defaults_to_solve_problem(self) -> None:
+        app_module._reset_ui_state(clear_saved_result=False, clear_selected_mode=True)
+
+        with patch("app.threading.Thread", _FakeThread):
+            started = app_module._start_capture_job()
+
+        self.assertTrue(started)
+        state = app_module._load_ui_state()
+        self.assertEqual(state["device_state"], "CAPTURING")
+        self.assertEqual(state["selected_mode"], "solve_problem")
+        self.assertEqual(state["selected_mode_internal"], "math_solver")
+        app_module.RUNNING = False
 
     def test_legacy_saved_mode_renders_with_new_label(self) -> None:
         client = app_module.app.test_client()
@@ -165,9 +197,9 @@ class Phase11AppIntegrationTests(unittest.TestCase):
                 "{\n"
                 '  "screen": "home",\n'
                 '  "device_state": "READY",\n'
-                '  "selected_mode": "read_text",\n'
+                '  "selected_mode": "document_reader",\n'
                 '  "status": "Ready",\n'
-                '  "detail": "Tap Capture to begin",\n'
+                '  "detail": "Press button to select the mode.",\n'
                 '  "answer": "",\n'
                 '  "error": "",\n'
                 '  "error_detail": "",\n'
@@ -181,9 +213,10 @@ class Phase11AppIntegrationTests(unittest.TestCase):
         response = client.get("/")
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn(b"Document Reader", response.data)
+        self.assertIn(b"Read Text", response.data)
         state = app_module._load_ui_state()
-        self.assertEqual(state["selected_mode"], "document_reader")
+        self.assertEqual(state["selected_mode"], "read_text")
+        self.assertEqual(state["selected_mode_internal"], "document_reader")
 
     def test_humanize_error_maps_reliability_failures(self) -> None:
         cases = {
@@ -199,13 +232,66 @@ class Phase11AppIntegrationTests(unittest.TestCase):
 
     def test_run_capture_job_failure_updates_error_screen(self) -> None:
         with patch("app.run_capture_analyze", side_effect=app_module.PipelineError("Invalid image file")):
-            app_module._run_capture_job("document_reader")
+            app_module._run_capture_job("read_text", "document_reader")
 
         state = app_module._load_ui_state()
         self.assertEqual(state["device_state"], "ERROR")
         self.assertEqual(state["screen"], "error")
+        self.assertEqual(state["selected_mode"], "read_text")
+        self.assertEqual(state["selected_mode_internal"], "document_reader")
         self.assertEqual(state["error"], "Invalid image")
         self.assertIn("Invalid image file", state["error_detail"])
+
+    def test_preview_image_is_rendered_when_capture_file_exists(self) -> None:
+        client = app_module.app.test_client()
+        self.preview_path.write_bytes(b"fake image bytes")
+        app_module._write_device_state(
+            DeviceState.DONE,
+            selected_mode="analyze_image",
+            selected_mode_internal="general_vision",
+            answer="Preview test",
+            current_step=3,
+        )
+
+        response = client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"/static/captured.jpg?v=", response.data)
+
+    def test_back_route_returns_to_ready_screen_without_selected_mode(self) -> None:
+        client = app_module.app.test_client()
+        app_module._write_device_state(
+            DeviceState.DONE,
+            selected_mode="solve_problem",
+            selected_mode_internal="math_solver",
+            answer="Done",
+            current_step=3,
+        )
+
+        response = client.post("/back")
+
+        self.assertEqual(response.status_code, 302)
+        state = app_module._load_ui_state()
+        self.assertEqual(state["device_state"], "READY")
+        self.assertEqual(state["selected_mode"], "")
+        self.assertEqual(state["selected_mode_internal"], "")
+
+    def test_bootstrap_ui_state_resets_result_screen_to_ready(self) -> None:
+        app_module._write_device_state(
+            DeviceState.DONE,
+            selected_mode="solve_problem",
+            selected_mode_internal="math_solver",
+            answer="Done",
+            current_step=3,
+        )
+
+        app_module._bootstrap_ui_state()
+
+        state = app_module._load_ui_state()
+        self.assertEqual(state["device_state"], "READY")
+        self.assertEqual(state["screen"], "home")
+        self.assertEqual(state["selected_mode"], "")
+        self.assertEqual(state["selected_mode_internal"], "")
 
     def test_health_monitor_can_be_started_from_app(self) -> None:
         fake_monitor = _FakeHealthMonitor()
@@ -239,3 +325,14 @@ class _FakeHealthMonitor:
     def start(self) -> bool:
         self.started = True
         return True
+
+
+class _FakeThread:
+    """Minimal thread double used to validate job startup state without background work."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        self.args = args
+        self.kwargs = kwargs
+
+    def start(self) -> None:
+        return None

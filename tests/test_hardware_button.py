@@ -83,22 +83,47 @@ class GPIOButtonTriggerTests(unittest.TestCase):
 
         self.assertEqual(calls, ["capture"])
 
+    def test_mode_button_triggers_mode_action_once(self) -> None:
+        selected = threading.Event()
+        mode_calls: list[str] = []
+
+        def mode_action(mode: str) -> bool:
+            mode_calls.append(mode)
+            selected.set()
+            return True
+
+        trigger = _build_trigger(
+            trigger_action=lambda: True,
+            clear_action=lambda: True,
+            mode_action=mode_action,
+            get_device_state=lambda: DeviceState.READY,
+        )
+
+        trigger._handle_mode_release("solve_problem")
+
+        self.assertTrue(selected.wait(1))
+        self.assertEqual(mode_calls, ["solve_problem"])
+
     def test_input_is_ignored_during_processing_states(self) -> None:
         capture_calls: list[str] = []
         clear_calls: list[str] = []
+        mode_calls: list[str] = []
 
         trigger = _build_trigger(
             trigger_action=lambda: capture_calls.append("capture") or True,
             clear_action=lambda: clear_calls.append("clear") or True,
+            mode_action=lambda mode: mode_calls.append(mode) or True,
             get_device_state=lambda: DeviceState.PROCESSING,
         )
 
         trigger._handle_release()
         trigger._handle_hold()
+        trigger._handle_mode_release("read_text")
         time.sleep(0.05)
 
         self.assertEqual(capture_calls, [])
         self.assertEqual(clear_calls, [])
+        self.assertEqual(mode_calls, [])
 
     def test_failure_releases_busy_guard_for_next_press(self) -> None:
         first_call = threading.Event()
@@ -132,6 +157,7 @@ def _build_trigger(
     *,
     trigger_action,
     clear_action,
+    mode_action=None,
     get_device_state,
 ) -> GPIOButtonTrigger:
     """Create a trigger with patched device settings for deterministic tests."""
@@ -140,6 +166,7 @@ def _build_trigger(
         return GPIOButtonTrigger(
             trigger_action=trigger_action,
             clear_action=clear_action,
+            mode_action=mode_action,
             get_device_state=get_device_state,
         )
 
