@@ -13,3 +13,4 @@ data/web_feedback.json
 *.json
 logs/
 data/ui_state.json
+data/ui_state.json
