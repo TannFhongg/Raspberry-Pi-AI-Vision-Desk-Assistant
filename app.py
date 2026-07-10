@@ -449,7 +449,9 @@ def _start_capture_job() -> bool:
         selected_mode,
         selected_mode_internal,
     )
-    LIVE_PREVIEW.pause()
+    preview_released = LIVE_PREVIEW.pause()
+    if preview_released is False:
+        LOGGER.warning("Live preview did not release the camera before capture started")
     _write_device_state(
         DeviceState.CAPTURING,
         selected_mode=selected_mode,

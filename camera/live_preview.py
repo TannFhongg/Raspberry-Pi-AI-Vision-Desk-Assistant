@@ -76,6 +76,7 @@ class LivePreviewService:
             size=self._preview_size,
         )
         self._paused = False
+        self._source_active = False
         self._stop_requested = False
         self._worker: threading.Thread | None = None
 
@@ -103,11 +104,19 @@ class LivePreviewService:
             size=self._preview_size,
         )
 
-    def pause(self) -> None:
-        """Temporarily stop reading the camera so still capture can take over."""
+    def pause(self, timeout_seconds: float = 2.0) -> bool:
+        """Stop the preview and wait for the current camera handle to be released."""
+        deadline = time.monotonic() + max(0.0, timeout_seconds)
         with self._condition:
             self._paused = True
             self._condition.notify_all()
+            while self._source_active and not self._stop_requested:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    LOGGER.warning("Timed out waiting for live preview to release the camera")
+                    return False
+                self._condition.wait(timeout=remaining)
+            return not self._source_active
 
     def resume(self) -> None:
         """Allow the worker to reopen the camera and continue preview updates."""
@@ -153,16 +162,20 @@ class LivePreviewService:
 
                 if paused:
                     if source is not None:
-                        source.close()
-                        source = None
-                    time.sleep(0.1)
+                        source = self._close_source(source)
+                    with self._condition:
+                        if self._stop_requested:
+                            break
+                        self._condition.wait(timeout=0.1)
                     continue
 
                 if source is None:
+                    self._mark_source_active(True)
                     try:
                         source = _open_frame_source(self._request)
                         LOGGER.info("Live preview source opened")
                     except LivePreviewError as exc:
+                        self._mark_source_active(False)
                         LOGGER.warning("Live preview unavailable: %s", exc)
                         self._update_frame(
                             _build_placeholder_frame(
@@ -173,6 +186,11 @@ class LivePreviewService:
                         )
                         time.sleep(1.0)
                         continue
+
+                    with self._condition:
+                        if self._paused or self._stop_requested:
+                            source = self._close_source(source)
+                            continue
 
                 try:
                     frame = source.read_frame()
@@ -186,21 +204,45 @@ class LivePreviewService:
                             size=self._preview_size,
                         )
                     )
-                    source.close()
-                    source = None
+                    source = self._close_source(source)
                     time.sleep(0.5)
                     continue
 
-                time.sleep(self._frame_interval_seconds)
+                with self._condition:
+                    if self._stop_requested:
+                        break
+                    if self._paused:
+                        continue
+                    self._condition.wait(timeout=self._frame_interval_seconds)
         finally:
             if source is not None:
-                source.close()
+                self._close_source(source)
+            else:
+                self._mark_source_active(False)
 
     def _update_frame(self, frame_bytes: bytes) -> None:
         """Persist the newest preview frame and wake any waiting readers."""
         with self._condition:
             self._latest_frame = frame_bytes
             self._condition.notify_all()
+
+    def _mark_source_active(self, active: bool) -> None:
+        """Track whether the preview worker currently owns the camera."""
+        with self._condition:
+            self._source_active = active
+            self._condition.notify_all()
+
+    def _close_source(self, source: "_BaseFrameSource | None") -> "_BaseFrameSource | None":
+        """Close the active preview source and publish that the camera is free."""
+        if source is None:
+            self._mark_source_active(False)
+            return None
+
+        try:
+            source.close()
+        finally:
+            self._mark_source_active(False)
+        return None
 
 
 def _build_preview_resolution(width: int, height: int) -> tuple[int, int]:
