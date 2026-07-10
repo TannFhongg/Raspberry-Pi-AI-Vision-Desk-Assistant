@@ -42,14 +42,12 @@
                             class="mode-button{% if selected_mode == mode_option.id %} mode-button-active{% endif %}"
                             aria-pressed="{{ 'true' if selected_mode == mode_option.id else 'false' }}"
                         >
-                            <span class="mode-button-meta">{{ mode_option.button_label }}</span>
                             <span class="mode-button-name">{{ mode_option.name }}</span>
                         </button>
                     </form>
                     {% endfor %}
                     <form method="post" action="{{ url_for('capture') }}" class="mode-form">
                         <button type="submit" class="mode-button mode-button-capture">
-                            <span class="mode-button-meta">Button Main</span>
                             <span class="mode-button-name">Capture</span>
                         </button>
                     </form>
@@ -57,17 +55,19 @@
             </section>
             {% else %}
             <div class="sr-only" aria-live="polite">
-                Answer screen. Status: {{ display_status }}. {% if has_mode_selected %}Mode: {{ selected_mode_label }}.{% endif %}
+                Assistant screen. Status: {{ display_status }}. {% if has_mode_selected %}Mode: {{ selected_mode_label }}.{% endif %}
             </div>
 
             <header class="panel-header">
                 <div class="header-copy">
-                    <p class="header-title">Answer:</p>
+                    <p class="header-title">{% if has_mode_selected %}{{ selected_mode_label }}{% else %}{{ default_capture_mode_label }}{% endif %}</p>
                     <p class="header-subtitle">
-                        {% if has_mode_selected %}
-                        {{ selected_mode_button_label }}: {{ selected_mode_label }}
+                        {% if screen == "processing" %}
+                        {{ detail or display_status }}
+                        {% elif screen == "error" %}
+                        {{ error or display_status }}
                         {% else %}
-                        {{ default_capture_mode_label }}
+                        Live Camera Feed
                         {% endif %}
                     </p>
                 </div>
@@ -82,17 +82,19 @@
                 </form>
             </header>
 
-            <section class="content-box answer-box" aria-label="Preview and answer">
+            <section class="content-box answer-box" aria-label="Live camera feed and assistant output">
                 <div class="answer-box-title-row">
-                    <p class="section-title">Preview Image</p>
+                    <p class="section-title">Live Camera Feed</p>
                 </div>
 
                 <div class="answer-preview-wrap">
-                    {% if preview_image_url %}
-                    <img src="{{ preview_image_url }}" alt="Captured camera preview" class="preview-image">
-                    {% else %}
-                    <p class="preview-placeholder">Preview appears after capture.</p>
-                    {% endif %}
+                    <img
+                        src="{{ live_preview_url }}"
+                        alt="Live camera feed"
+                        class="preview-image"
+                        data-live-preview-url="{{ live_preview_url }}"
+                        data-live-preview-refresh-ms="{{ live_preview_refresh_ms }}"
+                    >
                 </div>
 
                 <div class="answer-content-wrap">
@@ -131,5 +133,16 @@
         }, {{ auto_refresh_ms }});
     </script>
     {% endif %}
+    <script>
+        var livePreviewImage = document.querySelector("[data-live-preview-url]");
+        if (livePreviewImage) {
+            var livePreviewUrl = livePreviewImage.dataset.livePreviewUrl;
+            var livePreviewRefreshMs = Number(livePreviewImage.dataset.livePreviewRefreshMs || "250");
+
+            window.setInterval(function () {
+                livePreviewImage.src = livePreviewUrl + "&frame=" + Date.now();
+            }, livePreviewRefreshMs);
+        }
+    </script>
 </body>
 </html>

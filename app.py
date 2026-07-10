@@ -12,10 +12,11 @@ from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
-from flask import Flask, redirect, render_template, request, url_for
+from flask import Flask, Response, redirect, render_template, request, url_for
 from markupsafe import Markup, escape
 
 from ai.modes import get_mode, normalize_mode
+from camera.live_preview import LivePreviewService
 from config import SettingsError, load_device_settings
 from hardware import (
     DeviceState,
@@ -56,35 +57,30 @@ UI_MODE_OPTIONS = (
     {
         "id": "read_text",
         "name": "Read Text",
-        "button_label": "Button 1",
         "description": "Read the visible text clearly and quickly.",
         "internal_mode": "document_reader",
     },
     {
         "id": "summarize_document",
         "name": "Summarize Document",
-        "button_label": "Button 2",
         "description": "Summarize documents, notes, and text-heavy pages.",
         "internal_mode": "document_reader",
     },
     {
         "id": "analyze_image",
         "name": "Analyze Image",
-        "button_label": "Button 3",
         "description": "Describe what the camera sees and explain the important parts.",
         "internal_mode": "general_vision",
     },
     {
         "id": "professional_assistant",
         "name": "Professional Assistant",
-        "button_label": "Button 4",
         "description": "Give quick professional help for work, meetings, and presentations.",
         "internal_mode": "general_vision",
     },
     {
         "id": "solve_problem",
         "name": "Solve Problem",
-        "button_label": "Button 5",
         "description": "Solve visible questions, tasks, calculations, and problems.",
         "internal_mode": "math_solver",
     },
@@ -183,6 +179,7 @@ UI_DISPLAY_ORIENTATION = _read_orientation_env(
     "UI_DISPLAY_ORIENTATION",
     "landscape",
 )
+LIVE_PREVIEW_REFRESH_MS = 250
 RAW_SCREEN_WIDTH = max(240, min(1920, SETTINGS.display.size.width))
 RAW_SCREEN_HEIGHT = max(240, min(1920, SETTINGS.display.size.height))
 if UI_DISPLAY_ORIENTATION == "landscape" and RAW_SCREEN_WIDTH < RAW_SCREEN_HEIGHT:
@@ -211,12 +208,35 @@ LED_INDICATOR = LEDIndicator.create(
     enabled=ENABLE_GPIO_LED,
     active_high=GPIO_LED_ACTIVE_HIGH,
 )
+LIVE_PREVIEW = LivePreviewService(
+    backend=CAMERA_BACKEND,
+    camera_index=CAMERA_INDEX,
+    width=CAPTURE_WIDTH,
+    height=CAPTURE_HEIGHT,
+    autofocus_mode=CAMERA_AUTOFOCUS_MODE,
+    exposure=CAMERA_EXPOSURE,
+    brightness=CAMERA_BRIGHTNESS,
+)
 
 
 @app.get("/")
 def index():
     """Render the current device screen."""
     return render_template("index.html", **_build_template_context())
+
+
+@app.get("/camera/live-frame.jpg")
+def live_preview_frame():
+    """Return the latest live camera frame for the touchscreen preview."""
+    frame_bytes = LIVE_PREVIEW.get_jpeg_frame()
+    return Response(
+        frame_bytes,
+        mimetype="image/jpeg",
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+        },
+    )
 
 
 @app.get("/mode")
@@ -338,17 +358,9 @@ def _build_idle_state_payload(
     return payload
 
 
-def _build_preview_image_url() -> str | None:
-    """Return a cache-busted preview image URL when a recent capture exists."""
-    preview_candidates = (
-        ("captured.jpg", CAPTURED_IMAGE_PATH),
-        ("processed.jpg", PROCESSED_IMAGE_PATH),
-    )
-    for filename, path in preview_candidates:
-        if not path.is_file():
-            continue
-        return f"{url_for('static', filename=filename)}?v={path.stat().st_mtime_ns}"
-    return None
+def _build_live_preview_url() -> str:
+    """Return the cache-busted live preview endpoint for the UI."""
+    return f"{url_for('live_preview_frame')}?t={int(datetime.now().timestamp() * 1000)}"
 
 
 def _build_template_context(screen_override: str | None = None) -> dict[str, Any]:
@@ -393,14 +405,12 @@ def _build_template_context(screen_override: str | None = None) -> dict[str, Any
         "selected_mode_internal": selected_mode_internal,
         "selected_mode_label": selected_mode_label,
         "selected_mode_description": selected_mode_description,
-        "selected_mode_button_label": (
-            selected_mode_definition["button_label"] if selected_mode_definition else ""
-        ),
         "active_mode_name": active_mode_definition.name if active_mode_definition else "",
         "has_mode_selected": bool(selected_mode),
         "mode_options": UI_MODE_OPTIONS,
         "progress_steps": _build_progress_steps(state["current_step"]),
-        "preview_image_url": _build_preview_image_url(),
+        "live_preview_url": _build_live_preview_url(),
+        "live_preview_refresh_ms": LIVE_PREVIEW_REFRESH_MS,
         "default_capture_mode_label": MODE_LABELS[DEFAULT_CAPTURE_MODE],
         "auto_refresh_ms": _get_auto_refresh_ms(screen),
         "show_debug": UI_DEBUG,
@@ -438,6 +448,7 @@ def _start_capture_job() -> bool:
         selected_mode,
         selected_mode_internal,
     )
+    LIVE_PREVIEW.pause()
     _write_device_state(
         DeviceState.CAPTURING,
         selected_mode=selected_mode,
@@ -512,6 +523,7 @@ def _run_capture_job(selected_mode: str, selected_mode_internal: str) -> None:
             f"Unexpected error: {exc}",
         )
     finally:
+        LIVE_PREVIEW.resume()
         with RUN_LOCK:
             RUNNING = False
 

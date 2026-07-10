@@ -167,12 +167,12 @@ button:disabled {
     min-height: 34px;
     display: flex;
     align-items: center;
-    gap: 8px;
+    justify-content: center;
     padding: 8px 12px;
     border-radius: 16px;
     color: var(--text-dark);
     background: linear-gradient(180deg, #f4f4f4 0%, #e8e8e8 100%);
-    text-align: left;
+    text-align: center;
     transition: transform 120ms ease, background 120ms ease, color 120ms ease;
 }
 
@@ -189,6 +189,7 @@ button:disabled {
     font-weight: 900;
     line-height: 1.08;
     flex: 1;
+    text-align: center;
 }
 
 .mode-button-active {
@@ -242,12 +243,14 @@ button:disabled {
     justify-content: center;
     padding: 0;
     overflow: hidden;
+    border-radius: 18px;
+    background: #06080d;
 }
 
 .preview-image {
     width: 100%;
     height: 100%;
-    object-fit: contain;
+    object-fit: cover;
     display: block;
 }
 

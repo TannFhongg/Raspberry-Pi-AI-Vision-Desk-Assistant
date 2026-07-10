@@ -27,16 +27,19 @@ class Phase11AppIntegrationTests(unittest.TestCase):
         self.preview_path = self.temp_dir / "captured.jpg"
         self.processed_path = self.temp_dir / "processed.jpg"
         self.led_indicator = _FakeLEDIndicator()
+        self.live_preview = _FakeLivePreview()
         self.path_patcher = patch.object(app_module, "UI_STATE_PATH", self.ui_state_path)
         self.result_patcher = patch.object(app_module, "LATEST_RESULT_PATH", self.latest_result_path)
         self.preview_patcher = patch.object(app_module, "CAPTURED_IMAGE_PATH", self.preview_path)
         self.processed_patcher = patch.object(app_module, "PROCESSED_IMAGE_PATH", self.processed_path)
         self.led_patcher = patch.object(app_module, "LED_INDICATOR", self.led_indicator)
+        self.live_preview_patcher = patch.object(app_module, "LIVE_PREVIEW", self.live_preview)
         self.path_patcher.start()
         self.result_patcher.start()
         self.preview_patcher.start()
         self.processed_patcher.start()
         self.led_patcher.start()
+        self.live_preview_patcher.start()
         app_module.app.config["TESTING"] = True
         app_module.RUNNING = False
         app_module.GPIO_TRIGGER = None
@@ -49,6 +52,7 @@ class Phase11AppIntegrationTests(unittest.TestCase):
         self.preview_patcher.stop()
         self.processed_patcher.stop()
         self.led_patcher.stop()
+        self.live_preview_patcher.stop()
 
     def test_home_result_and_error_screens_refresh_when_gpio_listener_is_active(self) -> None:
         client = app_module.app.test_client()
@@ -120,6 +124,8 @@ class Phase11AppIntegrationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"Line one", response.data)
         self.assertIn(b"Solve Problem", response.data)
+        self.assertNotIn(b"Answer:", response.data)
+        self.assertNotIn(b"Button 5", response.data)
         state = app_module._load_ui_state()
         self.assertEqual(state["device_state"], "DONE")
         self.assertEqual(state["screen"], "result")
@@ -139,9 +145,10 @@ class Phase11AppIntegrationTests(unittest.TestCase):
         self.assertIn(b"Analyze Image", response.data)
         self.assertIn(b"Professional Assistant", response.data)
         self.assertIn(b"Solve Problem", response.data)
-        self.assertIn(b"Button Main", response.data)
         self.assertIn(b"Capture", response.data)
         self.assertIn(b"Press button to select the mode.", response.data)
+        self.assertNotIn(b"Button 1", response.data)
+        self.assertNotIn(b"Button 5", response.data)
         self.assertNotIn(b"Document Reader", response.data)
 
     def test_home_screen_uses_landscape_shell_dimensions(self) -> None:
@@ -184,6 +191,7 @@ class Phase11AppIntegrationTests(unittest.TestCase):
             started = app_module._start_capture_job()
 
         self.assertTrue(started)
+        self.assertEqual(self.live_preview.pause_calls, 1)
         state = app_module._load_ui_state()
         self.assertEqual(state["device_state"], "CAPTURING")
         self.assertEqual(state["selected_mode"], "solve_problem")
@@ -234,6 +242,7 @@ class Phase11AppIntegrationTests(unittest.TestCase):
         with patch("app.run_capture_analyze", side_effect=app_module.PipelineError("Invalid image file")):
             app_module._run_capture_job("read_text", "document_reader")
 
+        self.assertEqual(self.live_preview.resume_calls, 1)
         state = app_module._load_ui_state()
         self.assertEqual(state["device_state"], "ERROR")
         self.assertEqual(state["screen"], "error")
@@ -242,9 +251,8 @@ class Phase11AppIntegrationTests(unittest.TestCase):
         self.assertEqual(state["error"], "Invalid image")
         self.assertIn("Invalid image file", state["error_detail"])
 
-    def test_preview_image_is_rendered_when_capture_file_exists(self) -> None:
+    def test_live_preview_image_is_rendered_from_the_live_route(self) -> None:
         client = app_module.app.test_client()
-        self.preview_path.write_bytes(b"fake image bytes")
         app_module._write_device_state(
             DeviceState.DONE,
             selected_mode="analyze_image",
@@ -256,7 +264,36 @@ class Phase11AppIntegrationTests(unittest.TestCase):
         response = client.get("/")
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn(b"/static/captured.jpg?v=", response.data)
+        self.assertIn(b"Live Camera Feed", response.data)
+        self.assertIn(b"/camera/live-frame.jpg", response.data)
+
+    def test_live_preview_route_returns_current_frame_bytes(self) -> None:
+        client = app_module.app.test_client()
+
+        response = client.get("/camera/live-frame.jpg")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.mimetype, "image/jpeg")
+        self.assertEqual(response.data, self.live_preview.frame_bytes)
+
+    def test_run_capture_job_success_resumes_live_preview(self) -> None:
+        result = app_module.PipelineResult(
+            captured_path=self.preview_path,
+            processed_path=self.processed_path,
+            answer="Solved",
+            mode="math_solver",
+            camera_backend_used="opencv",
+            camera_resolution=(640, 480),
+            status="success",
+        )
+
+        with patch("app.run_capture_analyze", return_value=result):
+            app_module._run_capture_job("solve_problem", "math_solver")
+
+        self.assertEqual(self.live_preview.resume_calls, 1)
+        state = app_module._load_ui_state()
+        self.assertEqual(state["device_state"], "DONE")
+        self.assertEqual(state["answer"], "Solved")
 
     def test_back_route_returns_to_ready_screen_without_selected_mode(self) -> None:
         client = app_module.app.test_client()
@@ -325,6 +362,25 @@ class _FakeHealthMonitor:
     def start(self) -> bool:
         self.started = True
         return True
+
+
+class _FakeLivePreview:
+    """Small live-preview double used by the Flask screen tests."""
+
+    def __init__(self) -> None:
+        self.pause_calls = 0
+        self.resume_calls = 0
+        self.frame_bytes = b"fake-live-jpeg"
+
+    def get_jpeg_frame(self, timeout_seconds: float = 1.0) -> bytes:
+        del timeout_seconds
+        return self.frame_bytes
+
+    def pause(self) -> None:
+        self.pause_calls += 1
+
+    def resume(self) -> None:
+        self.resume_calls += 1
 
 
 class _FakeThread:
