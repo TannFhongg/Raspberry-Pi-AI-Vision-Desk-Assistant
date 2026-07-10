@@ -10,6 +10,29 @@ Camera Capture -> OpenCV Preprocessing / Screen Optimization -> OpenAI Vision An
 
 The project is organized in phases so each layer can be tested independently and then combined into a single shared pipeline.
 
+## Portfolio Snapshot
+
+- Built an embedded AI assistant on Raspberry Pi 5 that combines camera capture, OpenCV preprocessing, OpenAI vision analysis, touchscreen UI, and GPIO hardware controls in one shared workflow
+- Designed the interface for a compact `480x320` landscape touchscreen with large mode buttons, live preview, background processing states, and a scrollable answer view
+- Structured the codebase like a deployable product instead of a one-off demo, with shared pipeline orchestration, persisted UI state, rotating logs, health monitoring, and hardware-safe busy-state handling
+
+## Validated Results
+
+Validated on July 10, 2026:
+
+- The `READY` screen renders correctly on the target landscape touchscreen and exposes 5 assistant modes: `Read Text`, `Summarize Document`, `Analyze Image`, `Professional Assistant`, and `Solve Problem`
+- The `Read Text` flow successfully captured and analyzed a Raspberry Pi 27W USB-C power supply box and returned structured content including product name, product link, mixed-language label text, input range, output rails, and max power
+- The physical capture path triggered from `GPIO17` now works end-to-end after fixing the live-preview-to-capture camera handoff race that previously surfaced as `Camera disconnected`
+- The compact answer screen was refined for readability by reducing the response font size by 35 percent so longer OCR and AI outputs fit better on the device display
+- Automated regression coverage is currently green: `python -m pytest` -> `86 passed`
+
+## Portfolio Value
+
+- Demonstrates end-to-end hardware and software integration on Raspberry Pi
+- Shows small-screen UX thinking for a real embedded device instead of a desktop-only AI demo
+- Reuses one shared workflow across terminal, touchscreen, and physical button control paths
+- Includes production-minded reliability work such as retries, logs, health checks, and safer camera lifecycle handling
+
 ## Features
 
 - Capture high-resolution images from a Raspberry Pi CSI camera with Picamera2

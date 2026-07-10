@@ -8,6 +8,12 @@
 </head>
 <body
     class="app-screen-{{ screen }} orientation-{{ ui_config.orientation }}{% if screen == 'home' and has_mode_selected %} app-state-live{% elif screen == 'processing' %} app-state-processing{% elif screen == 'result' %} app-state-done{% elif screen == 'error' %} app-state-error{% endif %}"
+    data-current-screen="{{ screen }}"
+    data-ui-state-url="{{ ui_state_api_url }}"
+    data-ui-state-updated-at="{{ ui_state_updated_at }}"
+    data-ui-state-poll-ms="{{ auto_refresh_ms or 0 }}"
+    data-health-url="{{ health_api_url }}"
+    data-health-poll-ms="{{ health_refresh_ms }}"
     style="
         --screen-width: {{ ui_config.screen_width }}px;
         --screen-height: {{ ui_config.screen_height }}px;
@@ -35,6 +41,13 @@
                     <button type="submit" class="header-capture-link">Click Button to Capture</button>
                 </form>
             </header>
+            <div class="system-health-bar" aria-label="Device health" data-health-bar>
+                <span class="health-pill health-pill-overall" data-health-overall data-status="{{ health_summary.overall.status }}" title="{{ health_summary.overall.message }}">{{ health_summary.overall.label }}</span>
+                <span class="health-pill" data-health-cpu data-status="{{ health_summary.cpu.status }}" title="{{ health_summary.cpu.message }}">{{ health_summary.cpu.label }}</span>
+                <span class="health-pill" data-health-memory data-status="{{ health_summary.memory.status }}" title="{{ health_summary.memory.message }}">{{ health_summary.memory.label }}</span>
+                <span class="health-pill" data-health-network data-status="{{ health_summary.network.status }}" title="{{ health_summary.network.message }}">{{ health_summary.network.label }}</span>
+                <span class="health-pill" data-health-camera data-status="{{ health_summary.camera.status }}" title="{{ health_summary.camera.message }}">{{ health_summary.camera.label }}</span>
+            </div>
 
             <section class="content-box answer-box answer-box-live" aria-label="Live camera feed">
                 <div class="answer-box-title-row">
@@ -66,6 +79,13 @@
                     <p class="header-subtitle">Press button to select the mode.</p>
                 </div>
             </header>
+            <div class="system-health-bar" aria-label="Device health" data-health-bar>
+                <span class="health-pill health-pill-overall" data-health-overall data-status="{{ health_summary.overall.status }}" title="{{ health_summary.overall.message }}">{{ health_summary.overall.label }}</span>
+                <span class="health-pill" data-health-cpu data-status="{{ health_summary.cpu.status }}" title="{{ health_summary.cpu.message }}">{{ health_summary.cpu.label }}</span>
+                <span class="health-pill" data-health-memory data-status="{{ health_summary.memory.status }}" title="{{ health_summary.memory.message }}">{{ health_summary.memory.label }}</span>
+                <span class="health-pill" data-health-network data-status="{{ health_summary.network.status }}" title="{{ health_summary.network.message }}">{{ health_summary.network.label }}</span>
+                <span class="health-pill" data-health-camera data-status="{{ health_summary.camera.status }}" title="{{ health_summary.camera.message }}">{{ health_summary.camera.label }}</span>
+            </div>
 
             <section class="content-box startup-box" aria-label="Mode selection">
                 <div class="mode-list" role="list">
@@ -127,6 +147,13 @@
                 </form>
                 {% endif %}
             </header>
+            <div class="system-health-bar" aria-label="Device health" data-health-bar>
+                <span class="health-pill health-pill-overall" data-health-overall data-status="{{ health_summary.overall.status }}" title="{{ health_summary.overall.message }}">{{ health_summary.overall.label }}</span>
+                <span class="health-pill" data-health-cpu data-status="{{ health_summary.cpu.status }}" title="{{ health_summary.cpu.message }}">{{ health_summary.cpu.label }}</span>
+                <span class="health-pill" data-health-memory data-status="{{ health_summary.memory.status }}" title="{{ health_summary.memory.message }}">{{ health_summary.memory.label }}</span>
+                <span class="health-pill" data-health-network data-status="{{ health_summary.network.status }}" title="{{ health_summary.network.message }}">{{ health_summary.network.label }}</span>
+                <span class="health-pill" data-health-camera data-status="{{ health_summary.camera.status }}" title="{{ health_summary.camera.message }}">{{ health_summary.camera.label }}</span>
+            </div>
 
             <section class="content-box answer-box answer-box-postcapture" aria-label="Assistant output">
                 {% if screen == "processing" %}
@@ -168,23 +195,161 @@
         </section>
     </main>
 
-    {% if auto_refresh_ms %}
     <script>
-        window.setTimeout(function () {
-            window.location.reload();
-        }, {{ auto_refresh_ms }});
-    </script>
-    {% endif %}
-    <script>
-        var livePreviewImage = document.querySelector("[data-live-preview-url]");
-        if (livePreviewImage) {
+        (function () {
+            var root = document.body;
+            if (!root) {
+                return;
+            }
+
+            var currentScreen = root.dataset.currentScreen || "";
+            var latestUiState = root.dataset.uiStateUpdatedAt || "";
+            var uiStateUrl = root.dataset.uiStateUrl || "";
+            var uiStatePollMs = Number(root.dataset.uiStatePollMs || "0");
+            var healthUrl = root.dataset.healthUrl || "";
+            var healthPollMs = Number(root.dataset.healthPollMs || "0");
+            var uiStateRequestInFlight = false;
+            var healthRequestInFlight = false;
+
+            function setText(selector, text) {
+                var element = document.querySelector(selector);
+                if (!element) {
+                    return;
+                }
+                element.textContent = text || "";
+            }
+
+            function setPill(selector, payload) {
+                var element = document.querySelector(selector);
+                if (!element || !payload) {
+                    return;
+                }
+                element.textContent = payload.label || "";
+                element.dataset.status = payload.status || "unknown";
+                element.title = payload.message || "";
+            }
+
+            function applyHealthPayload(payload) {
+                if (!payload || typeof payload !== "object") {
+                    return;
+                }
+                setPill("[data-health-overall]", payload.overall);
+                setPill("[data-health-cpu]", payload.cpu);
+                setPill("[data-health-memory]", payload.memory);
+                setPill("[data-health-network]", payload.network);
+                setPill("[data-health-camera]", payload.camera);
+            }
+
+            function updateProcessingState(payload) {
+                setText(".header-subtitle", payload.display_status || "");
+                setText(".header-status-chip", payload.display_status || "");
+                setText(".processing-title", payload.display_status || "");
+
+                var detailElement = document.querySelector(".processing-detail");
+                if (detailElement) {
+                    var detailText = payload.detail && payload.detail !== payload.display_status ? payload.detail : "";
+                    detailElement.textContent = detailText;
+                    detailElement.hidden = !detailText;
+                }
+
+                var stepElements = document.querySelectorAll(".progress-step");
+                var progressSteps = Array.isArray(payload.progress_steps) ? payload.progress_steps : [];
+                for (var index = 0; index < stepElements.length; index += 1) {
+                    var stepElement = stepElements[index];
+                    var stepPayload = progressSteps[index];
+                    if (!stepPayload) {
+                        continue;
+                    }
+                    stepElement.className = "progress-step progress-step-" + stepPayload.state;
+                    var labelElement = stepElement.querySelector("span:last-child");
+                    if (labelElement) {
+                        labelElement.textContent = stepPayload.label || "";
+                    }
+                }
+            }
+
+            function applyUiStatePayload(payload) {
+                if (!payload || typeof payload !== "object" || !payload.updated_at) {
+                    return;
+                }
+                if (payload.updated_at === latestUiState) {
+                    return;
+                }
+                if (currentScreen === "processing" && payload.screen === "processing") {
+                    latestUiState = payload.updated_at;
+                    root.dataset.uiStateUpdatedAt = latestUiState;
+                    updateProcessingState(payload);
+                    return;
+                }
+                window.location.reload();
+            }
+
+            function pollJson(url, onSuccess, onFinally) {
+                fetch(url, {
+                    cache: "no-store",
+                    headers: {
+                        "Accept": "application/json"
+                    }
+                })
+                    .then(function (response) {
+                        if (!response.ok) {
+                            throw new Error("Request failed");
+                        }
+                        return response.json();
+                    })
+                    .then(onSuccess)
+                    .catch(function () {
+                        return null;
+                    })
+                    .finally(onFinally);
+            }
+
+            if (uiStateUrl && uiStatePollMs > 0) {
+                window.setInterval(function () {
+                    if (uiStateRequestInFlight) {
+                        return;
+                    }
+                    uiStateRequestInFlight = true;
+                    pollJson(
+                        uiStateUrl,
+                        applyUiStatePayload,
+                        function () {
+                            uiStateRequestInFlight = false;
+                        }
+                    );
+                }, uiStatePollMs);
+            }
+
+            if (healthUrl && healthPollMs > 0 && document.querySelector("[data-health-bar]")) {
+                var pollHealth = function () {
+                    if (healthRequestInFlight) {
+                        return;
+                    }
+                    healthRequestInFlight = true;
+                    pollJson(
+                        healthUrl,
+                        applyHealthPayload,
+                        function () {
+                            healthRequestInFlight = false;
+                        }
+                    );
+                };
+
+                pollHealth();
+                window.setInterval(pollHealth, healthPollMs);
+            }
+
+            var livePreviewImage = document.querySelector("[data-live-preview-url]");
+            if (!livePreviewImage) {
+                return;
+            }
+
             var livePreviewUrl = livePreviewImage.dataset.livePreviewUrl;
             var livePreviewRefreshMs = Number(livePreviewImage.dataset.livePreviewRefreshMs || "250");
-
             window.setInterval(function () {
                 livePreviewImage.src = livePreviewUrl + "&frame=" + Date.now();
             }, livePreviewRefreshMs);
-        }
+        })();
     </script>
 </body>
 </html>

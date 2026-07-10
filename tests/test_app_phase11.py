@@ -23,18 +23,21 @@ class Phase11AppIntegrationTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = Path(tempfile.mkdtemp(prefix="phase11-app-test-"))
         self.ui_state_path = self.temp_dir / "ui_state.json"
+        self.health_status_path = self.temp_dir / "health_status.json"
         self.latest_result_path = self.temp_dir / "latest_result.txt"
         self.preview_path = self.temp_dir / "captured.jpg"
         self.processed_path = self.temp_dir / "processed.jpg"
         self.led_indicator = _FakeLEDIndicator()
         self.live_preview = _FakeLivePreview()
         self.path_patcher = patch.object(app_module, "UI_STATE_PATH", self.ui_state_path)
+        self.health_path_patcher = patch.object(app_module, "HEALTH_STATUS_PATH", self.health_status_path)
         self.result_patcher = patch.object(app_module, "LATEST_RESULT_PATH", self.latest_result_path)
         self.preview_patcher = patch.object(app_module, "CAPTURED_IMAGE_PATH", self.preview_path)
         self.processed_patcher = patch.object(app_module, "PROCESSED_IMAGE_PATH", self.processed_path)
         self.led_patcher = patch.object(app_module, "LED_INDICATOR", self.led_indicator)
         self.live_preview_patcher = patch.object(app_module, "LIVE_PREVIEW", self.live_preview)
         self.path_patcher.start()
+        self.health_path_patcher.start()
         self.result_patcher.start()
         self.preview_patcher.start()
         self.processed_patcher.start()
@@ -48,6 +51,7 @@ class Phase11AppIntegrationTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.path_patcher.stop()
+        self.health_path_patcher.stop()
         self.result_patcher.stop()
         self.preview_patcher.stop()
         self.processed_patcher.stop()
@@ -309,6 +313,52 @@ class Phase11AppIntegrationTests(unittest.TestCase):
         self.assertEqual(response.mimetype, "image/jpeg")
         self.assertEqual(response.data, self.live_preview.frame_bytes)
 
+    def test_ui_state_api_returns_public_state_json(self) -> None:
+        client = app_module.app.test_client()
+        app_module._write_device_state(
+            DeviceState.PROCESSING,
+            selected_mode="read_text",
+            selected_mode_internal="document_reader",
+            detail="Processing...",
+            current_step=1,
+        )
+
+        response = client.get("/api/ui-state")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        assert payload is not None
+        self.assertEqual(payload["screen"], "processing")
+        self.assertEqual(payload["selected_mode"], "read_text")
+        self.assertEqual(payload["selected_mode_label"], "Read Text")
+        self.assertEqual(payload["display_status"], "Processing...")
+        self.assertEqual(payload["current_step"], 1)
+        self.assertEqual(payload["progress_steps"][1]["state"], "active")
+
+    def test_health_api_prefers_latest_monitor_snapshot(self) -> None:
+        client = app_module.app.test_client()
+        app_module.HEALTH_MONITOR = _FakeHealthMonitor(
+            latest_snapshot={
+                "overall_status": "healthy",
+                "updated_at": "2026-07-10T21:35:09",
+                "cpu": {"status": "pass", "temperature_c": 46.3, "message": "CPU temperature is 46.3 C."},
+                "memory": {"status": "pass", "used_percent": 12.5, "message": "Memory usage is 12.5%."},
+                "network": {"status": "pass", "message": "Internet connection check succeeded."},
+                "camera": {"status": "pass", "message": "Camera capture succeeded.", "last_probe_at": "2026-07-10T21:35:09"},
+            }
+        )
+
+        response = client.get("/api/health")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        assert payload is not None
+        self.assertEqual(payload["overall"]["label"], "System OK")
+        self.assertEqual(payload["cpu"]["label"], "CPU 46.3C")
+        self.assertEqual(payload["memory"]["label"], "RAM 12.5%")
+        self.assertEqual(payload["network"]["label"], "NET OK")
+        self.assertEqual(payload["camera"]["label"], "CAM OK")
+
     def test_run_capture_job_success_resumes_live_preview(self) -> None:
         result = app_module.PipelineResult(
             captured_path=self.preview_path,
@@ -389,8 +439,9 @@ class _FakeLEDIndicator:
 class _FakeHealthMonitor:
     """Small monitor double used to validate startup wiring."""
 
-    def __init__(self) -> None:
+    def __init__(self, latest_snapshot=None) -> None:
         self.started = False
+        self.latest_snapshot = latest_snapshot
 
     def start(self) -> bool:
         self.started = True

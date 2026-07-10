@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
-from flask import Flask, Response, redirect, render_template, request, url_for
+from flask import Flask, Response, jsonify, redirect, render_template, request, url_for
 from markupsafe import Markup, escape
 
 from ai.modes import get_mode, normalize_mode
@@ -49,6 +49,7 @@ app.logger.propagate = True
 app.logger.setLevel(logging.getLogger().level)
 
 UI_STATE_PATH = Path("data/ui_state.json")
+HEALTH_STATUS_PATH = Path("data/health_status.json")
 LATEST_RESULT_PATH = Path("data/latest_result.txt")
 CAPTURED_IMAGE_PATH = Path("static/captured.jpg")
 PROCESSED_IMAGE_PATH = Path("static/processed.jpg")
@@ -181,6 +182,7 @@ UI_DISPLAY_ORIENTATION = _read_orientation_env(
     "landscape",
 )
 LIVE_PREVIEW_REFRESH_MS = 250
+UI_HEALTH_REFRESH_MS = _read_int_env("UI_HEALTH_REFRESH_MS", 5000, minimum=2000, maximum=60000)
 RAW_SCREEN_WIDTH = max(240, min(1920, SETTINGS.display.size.width))
 RAW_SCREEN_HEIGHT = max(240, min(1920, SETTINGS.display.size.height))
 if UI_DISPLAY_ORIENTATION == "landscape" and RAW_SCREEN_WIDTH < RAW_SCREEN_HEIGHT:
@@ -238,6 +240,18 @@ def live_preview_frame():
             "Pragma": "no-cache",
         },
     )
+
+
+@app.get("/api/ui-state")
+def ui_state_api():
+    """Return the current UI state for smooth in-browser synchronization."""
+    return jsonify(_build_ui_state_api_payload())
+
+
+@app.get("/api/health")
+def health_status_api():
+    """Return a compact device-health snapshot for the touchscreen status bar."""
+    return jsonify(_build_health_summary())
 
 
 @app.get("/mode")
@@ -364,6 +378,194 @@ def _build_live_preview_url() -> str:
     return f"{url_for('live_preview_frame')}?t={int(datetime.now().timestamp() * 1000)}"
 
 
+def _build_ui_state_api_payload() -> dict[str, Any]:
+    """Return a public JSON-safe view of the current UI state."""
+    state = _load_ui_state()
+    screen = state["screen"] if state["screen"] in VALID_SCREENS else "home"
+    selected_mode, selected_mode_internal = _resolve_mode_pair(
+        state.get("selected_mode"),
+        state.get("selected_mode_internal"),
+    )
+    display_status = state["status"]
+    if screen == "processing":
+        display_status = state["detail"] or "Processing..."
+    elif screen == "result":
+        display_status = "Done"
+
+    selected_mode_definition = UI_MODE_BY_ID.get(selected_mode)
+    selected_mode_label = (
+        selected_mode_definition["name"] if selected_mode_definition else "No mode selected"
+    )
+
+    return {
+        "screen": screen,
+        "device_state": state["device_state"],
+        "selected_mode": selected_mode,
+        "selected_mode_internal": selected_mode_internal,
+        "selected_mode_label": selected_mode_label,
+        "status": state["status"],
+        "display_status": display_status,
+        "detail": state["detail"],
+        "error": state["error"],
+        "error_detail": state["error_detail"],
+        "current_step": state["current_step"],
+        "updated_at": state["updated_at"],
+        "progress_steps": _build_progress_steps(state["current_step"]),
+        "has_mode_selected": bool(selected_mode),
+    }
+
+
+def _build_health_summary() -> dict[str, Any]:
+    """Return compact health labels for the small-screen device UI."""
+    snapshot = _load_health_snapshot()
+    overall_status = _normalize_overall_health_status(snapshot.get("overall_status") if snapshot else None)
+
+    return {
+        "updated_at": str(snapshot.get("updated_at", "")) if snapshot else "",
+        "overall": _build_overall_health_chip(overall_status, snapshot),
+        "cpu": _build_cpu_health_chip(snapshot),
+        "memory": _build_memory_health_chip(snapshot),
+        "network": _build_component_health_chip(snapshot, "network", prefix="NET"),
+        "camera": _build_component_health_chip(snapshot, "camera", prefix="CAM"),
+    }
+
+
+def _load_health_snapshot() -> dict[str, Any] | None:
+    """Return the newest in-memory or on-disk health snapshot when available."""
+    if HEALTH_MONITOR is not None and HEALTH_MONITOR.latest_snapshot is not None:
+        return HEALTH_MONITOR.latest_snapshot
+
+    if not HEALTH_STATUS_PATH.is_file():
+        return None
+
+    try:
+        snapshot = json.loads(HEALTH_STATUS_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+    if isinstance(snapshot, dict):
+        return snapshot
+    return None
+
+
+def _build_overall_health_chip(
+    overall_status: str,
+    snapshot: dict[str, Any] | None,
+) -> dict[str, str]:
+    """Return the overall device-health chip."""
+    label_lookup = {
+        "pass": "System OK",
+        "fail": "Check Device",
+        "unknown": "Health Pending",
+    }
+    message_lookup = {
+        "pass": "All monitored device checks are passing.",
+        "fail": "One or more monitored device checks need attention.",
+        "unknown": "Waiting for a complete health snapshot.",
+    }
+    updated_at = str(snapshot.get("updated_at", "")) if snapshot else ""
+    message = message_lookup[overall_status]
+    if updated_at:
+        message = f"{message} Last update: {updated_at}."
+    return {
+        "status": overall_status,
+        "label": label_lookup[overall_status],
+        "message": message,
+    }
+
+
+def _build_cpu_health_chip(snapshot: dict[str, Any] | None) -> dict[str, str]:
+    """Return the CPU temperature chip."""
+    if not snapshot or not isinstance(snapshot.get("cpu"), dict):
+        return {
+            "status": "unknown",
+            "label": "CPU --",
+            "message": "CPU temperature is unavailable.",
+        }
+
+    cpu = snapshot["cpu"]
+    status = _normalize_component_health_status(cpu.get("status"))
+    temperature_c = cpu.get("temperature_c")
+    label = "CPU --"
+    if isinstance(temperature_c, (int, float)):
+        label = f"CPU {float(temperature_c):.1f}C"
+    return {
+        "status": status,
+        "label": label,
+        "message": str(cpu.get("message", "CPU temperature is unavailable.")),
+    }
+
+
+def _build_memory_health_chip(snapshot: dict[str, Any] | None) -> dict[str, str]:
+    """Return the memory usage chip."""
+    if not snapshot or not isinstance(snapshot.get("memory"), dict):
+        return {
+            "status": "unknown",
+            "label": "RAM --",
+            "message": "Memory usage is unavailable.",
+        }
+
+    memory = snapshot["memory"]
+    status = _normalize_component_health_status(memory.get("status"))
+    used_percent = memory.get("used_percent")
+    label = "RAM --"
+    if isinstance(used_percent, (int, float)):
+        label = f"RAM {float(used_percent):.1f}%"
+    return {
+        "status": status,
+        "label": label,
+        "message": str(memory.get("message", "Memory usage is unavailable.")),
+    }
+
+
+def _build_component_health_chip(
+    snapshot: dict[str, Any] | None,
+    key: str,
+    *,
+    prefix: str,
+) -> dict[str, str]:
+    """Return a compact pass/fail/unknown label for network and camera health."""
+    if not snapshot or not isinstance(snapshot.get(key), dict):
+        return {
+            "status": "unknown",
+            "label": f"{prefix} --",
+            "message": f"{prefix} status is unavailable.",
+        }
+
+    component = snapshot[key]
+    status = _normalize_component_health_status(component.get("status"))
+    suffix_lookup = {
+        "pass": "OK",
+        "fail": "FAIL",
+        "unknown": "WAIT",
+    }
+    return {
+        "status": status,
+        "label": f"{prefix} {suffix_lookup[status]}",
+        "message": str(component.get("message", f"{prefix} status is unavailable.")),
+    }
+
+
+def _normalize_component_health_status(value: Any) -> str:
+    """Normalize component health statuses into pass/fail/unknown."""
+    normalized = str(value or "").strip().lower()
+    if normalized == "pass":
+        return "pass"
+    if normalized == "fail":
+        return "fail"
+    return "unknown"
+
+
+def _normalize_overall_health_status(value: Any) -> str:
+    """Normalize aggregate health statuses into pass/fail/unknown."""
+    normalized = str(value or "").strip().lower()
+    if normalized == "healthy":
+        return "pass"
+    if normalized == "degraded":
+        return "fail"
+    return "unknown"
+
+
 def _build_template_context(screen_override: str | None = None) -> dict[str, Any]:
     """Build the render context for the current screen."""
     state = _load_ui_state()
@@ -414,6 +616,11 @@ def _build_template_context(screen_override: str | None = None) -> dict[str, Any
         "live_preview_refresh_ms": LIVE_PREVIEW_REFRESH_MS,
         "default_capture_mode_label": MODE_LABELS[DEFAULT_CAPTURE_MODE],
         "auto_refresh_ms": _get_auto_refresh_ms(screen),
+        "ui_state_api_url": url_for("ui_state_api"),
+        "ui_state_updated_at": state["updated_at"],
+        "health_api_url": url_for("health_status_api"),
+        "health_refresh_ms": UI_HEALTH_REFRESH_MS,
+        "health_summary": _build_health_summary(),
         "show_debug": UI_DEBUG,
         "ui_config": {
             "screen_width": UI_SCREEN_WIDTH,
