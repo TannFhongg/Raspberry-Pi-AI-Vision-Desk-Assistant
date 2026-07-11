@@ -6,7 +6,9 @@ import json
 import logging
 import os
 import re
+import sys
 import threading
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -18,7 +20,7 @@ from markupsafe import Markup, escape
 from ai.modes import get_mode, normalize_mode
 from camera import CameraCaptureError
 from camera.live_preview import LivePreviewService
-from config import SettingsError, load_device_settings
+from config import SettingsError, load_device_settings, update_device_config
 from hardware import (
     DeviceState,
     GPIOButtonError,
@@ -30,6 +32,8 @@ from hardware import (
     is_busy_device_state,
     screen_for_device_state,
 )
+from hardware.device_check import HardwareCheckResult, check_camera, check_openai_reachable
+from hardware.setup_gpio import GPIOSetupVerifier, GPIOSetupVerifierError
 from pipeline import (
     PipelineError,
     PipelineResult,
@@ -50,6 +54,13 @@ from system import (
     safe_rmtree,
     safe_unlink,
 )
+from system.device_setup import (
+    DeviceSetupError,
+    connect_wifi_network,
+    has_configured_openai_key,
+    scan_wifi_networks,
+    upsert_env_value,
+)
 
 load_dotenv()
 
@@ -68,6 +79,7 @@ app.logger.propagate = True
 app.logger.setLevel(logging.getLogger().level)
 
 UI_STATE_PATH = Path("data/ui_state.json")
+SETUP_STATE_PATH = Path("data/setup_state.json")
 HEALTH_STATUS_PATH = Path("data/health_status.json")
 LATEST_RESULT_PATH = Path("data/latest_result.txt")
 RESULT_HISTORY_PATH = Path("data/result_history.json")
@@ -76,12 +88,24 @@ PRIVATE_DATA_PATH = Path("data/private")
 PRIVATE_CURRENT_PATH = PRIVATE_DATA_PATH / "current"
 PRIVATE_RETRY_PATH = PRIVATE_DATA_PATH / "retry"
 PRIVATE_QUARANTINE_PATH = PRIVATE_DATA_PATH / "quarantine"
+ENV_FILE_PATH = Path(".env")
 CAPTURED_IMAGE_PATH = PRIVATE_CURRENT_PATH / "captured.jpg"
 PROCESSED_IMAGE_PATH = PRIVATE_CURRENT_PATH / "processed.jpg"
 OFFLINE_RETRY_QUEUE_PATH = PRIVATE_DATA_PATH / "retry_queue.json"
 OFFLINE_RETRY_STORAGE_PATH = PRIVATE_RETRY_PATH
-VALID_SCREENS = {"home", "processing", "result", "error", "history", "history_detail"}
+VALID_SCREENS = {"home", "processing", "result", "error", "history", "history_detail", "setup"}
 MJPEG_BOUNDARY = "frame"
+SETUP_STEPS = ("wifi", "openai", "camera", "gpio", "finish")
+SETUP_GPIO_LABELS = {
+    "capture": "Capture Button",
+    "mode_read_text": "Read Text Button",
+    "mode_summarize_document": "Summarize Document Button",
+    "mode_analyze_image": "Analyze Image Button",
+    "mode_professional_assistant": "Professional Assistant Button",
+    "mode_solve_problem": "Solve Problem Button",
+    "back": "Back Button",
+}
+SETUP_RESTART_DELAY_SECONDS = 0.75
 UI_MODE_OPTIONS = (
     {
         "id": "read_text",
@@ -132,17 +156,326 @@ PROGRESS_STEPS = [
 ]
 
 STATE_LOCK = threading.Lock()
+SETUP_STATE_LOCK = threading.Lock()
 RESULT_HISTORY_LOCK = threading.Lock()
 RESULT_HISTORY_THUMBNAIL_LOCK = threading.Lock()
 RUN_LOCK = threading.Lock()
 GPIO_START_LOCK = threading.Lock()
+SETUP_GPIO_LOCK = threading.Lock()
 RUNNING = False
 GPIO_START_ATTEMPTED = False
 GPIO_TRIGGER: GPIOButtonTrigger | None = None
+SETUP_GPIO_VERIFIER: GPIOSetupVerifier | None = None
 HEALTH_MONITOR: HealthMonitor | None = None
 RESULT_HISTORY_CACHE: list[dict[str, Any]] | None = None
 RESULT_HISTORY_THUMBNAIL_CACHE: dict[str, str] = {}
 OFFLINE_RETRY_QUEUE: OfflineRetryQueue | None = None
+
+
+def _current_config_path() -> Path:
+    """Return the active device config path."""
+    return SETTINGS.config_path
+
+
+def _setup_is_complete() -> bool:
+    """Return True when the first-boot flow has been completed."""
+    return bool(getattr(SETTINGS.setup, "completed", False))
+
+
+def _coerce_setup_step(value: Any) -> str:
+    """Normalize a persisted wizard step value."""
+    normalized = str(value or "").strip().lower()
+    if normalized in SETUP_STEPS:
+        return normalized
+    return SETUP_STEPS[0]
+
+
+def _default_setup_state() -> dict[str, Any]:
+    """Return the default persisted setup-wizard state."""
+    required_buttons = _build_setup_gpio_requirements()
+    return {
+        "current_step": SETUP_STEPS[0],
+        "warnings_acknowledged": False,
+        "finish_message": "",
+        "updated_at": _timestamp(),
+        "wifi": {
+            "scan_status": "idle",
+            "connect_status": "idle",
+            "available_networks": [],
+            "ssid": SETTINGS.network.wifi.ssid,
+            "connection_name": SETTINGS.network.wifi.connection_name,
+            "message": "",
+            "auto_connect": SETTINGS.network.wifi.auto_connect,
+            "managed_by": SETTINGS.network.wifi.managed_by,
+        },
+        "openai": {
+            "status": "idle",
+            "key_present": has_configured_openai_key(os.getenv("OPENAI_API_KEY")),
+            "message": "",
+        },
+        "camera": {
+            "status": "idle",
+            "message": "",
+        },
+        "gpio": {
+            "status": "idle",
+            "message": "",
+            "active": False,
+            "required": required_buttons,
+            "pressed_labels": [],
+            "all_pressed": False,
+        },
+    }
+
+
+def _coerce_setup_state(raw_state: Any) -> dict[str, Any]:
+    """Normalize any persisted setup state into the supported schema."""
+    default_state = _default_setup_state()
+    if not isinstance(raw_state, dict):
+        return default_state
+
+    wifi = raw_state.get("wifi", {})
+    gpio = raw_state.get("gpio", {})
+    normalized_state = {
+        "current_step": _coerce_setup_step(raw_state.get("current_step")),
+        "warnings_acknowledged": bool(raw_state.get("warnings_acknowledged", False)),
+        "finish_message": str(raw_state.get("finish_message", "")),
+        "updated_at": str(raw_state.get("updated_at", default_state["updated_at"])),
+        "wifi": {
+            "scan_status": str(wifi.get("scan_status", default_state["wifi"]["scan_status"])),
+            "connect_status": str(wifi.get("connect_status", default_state["wifi"]["connect_status"])),
+            "available_networks": _coerce_setup_networks(wifi.get("available_networks", [])),
+            "ssid": str(wifi.get("ssid", default_state["wifi"]["ssid"])).strip(),
+            "connection_name": str(
+                wifi.get("connection_name", default_state["wifi"]["connection_name"])
+            ).strip(),
+            "message": str(wifi.get("message", "")),
+            "auto_connect": bool(wifi.get("auto_connect", default_state["wifi"]["auto_connect"])),
+            "managed_by": str(wifi.get("managed_by", default_state["wifi"]["managed_by"])) or "nmcli",
+        },
+        "openai": {
+            "status": str(raw_state.get("openai", {}).get("status", default_state["openai"]["status"])),
+            "key_present": bool(raw_state.get("openai", {}).get("key_present", default_state["openai"]["key_present"])),
+            "message": str(raw_state.get("openai", {}).get("message", "")),
+        },
+        "camera": {
+            "status": str(raw_state.get("camera", {}).get("status", default_state["camera"]["status"])),
+            "message": str(raw_state.get("camera", {}).get("message", "")),
+        },
+        "gpio": {
+            "status": str(gpio.get("status", default_state["gpio"]["status"])),
+            "message": str(gpio.get("message", "")),
+            "active": bool(gpio.get("active", False)),
+            "required": _coerce_setup_required_buttons(gpio.get("required", default_state["gpio"]["required"])),
+            "pressed_labels": sorted({
+                str(label).strip()
+                for label in gpio.get("pressed_labels", [])
+                if str(label).strip()
+            }),
+            "all_pressed": bool(gpio.get("all_pressed", False)),
+        },
+    }
+    normalized_state["gpio"]["all_pressed"] = _setup_gpio_complete(normalized_state)
+    return normalized_state
+
+
+def _coerce_setup_networks(value: Any) -> list[dict[str, Any]]:
+    """Return a normalized Wi-Fi scan result list."""
+    if not isinstance(value, list):
+        return []
+    networks: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        ssid = str(item.get("ssid", "")).strip()
+        if not ssid:
+            continue
+        try:
+            signal = int(item.get("signal", 0))
+        except (TypeError, ValueError):
+            signal = 0
+        security = str(item.get("security", "open")).strip() or "open"
+        networks.append({"ssid": ssid, "signal": signal, "security": security})
+    return networks
+
+
+def _coerce_setup_required_buttons(value: Any) -> list[dict[str, Any]]:
+    """Return a normalized GPIO setup requirements list."""
+    if not isinstance(value, list):
+        return _build_setup_gpio_requirements()
+    required: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        label = str(item.get("label", "")).strip()
+        if not label:
+            continue
+        try:
+            pin = int(item.get("pin"))
+        except (TypeError, ValueError):
+            continue
+        required.append(
+            {
+                "label": label,
+                "pin": pin,
+                "pressed": bool(item.get("pressed", False)),
+            }
+        )
+    return required or _build_setup_gpio_requirements()
+
+
+def _load_setup_state() -> dict[str, Any]:
+    """Read the persisted setup-wizard state file."""
+    default_state = _default_setup_state()
+    with SETUP_STATE_LOCK:
+        if not SETUP_STATE_PATH.is_file():
+            return default_state
+        try:
+            raw_state = json.loads(SETUP_STATE_PATH.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            quarantine_file(
+                SETUP_STATE_PATH,
+                quarantine_dir=PRIVATE_QUARANTINE_PATH,
+                reason="invalid-setup-state",
+            )
+            return default_state
+    return _coerce_setup_state(raw_state)
+
+
+def _write_setup_state(updates: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Persist merged setup-wizard state to disk."""
+    next_state = _load_setup_state()
+    if updates:
+        _merge_nested_state(next_state, updates)
+    next_state["current_step"] = _coerce_setup_step(next_state.get("current_step"))
+    next_state["updated_at"] = _timestamp()
+    next_state = _coerce_setup_state(next_state)
+    SETUP_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with SETUP_STATE_LOCK:
+        atomic_write_json(
+            SETUP_STATE_PATH,
+            next_state,
+            ensure_ascii=False,
+            indent=2,
+        )
+    return next_state
+
+
+def _clear_setup_state() -> None:
+    """Delete the persisted setup state and stop any temporary GPIO verifier."""
+    _stop_setup_gpio_verifier(restart_main_listener=False)
+    safe_unlink(SETUP_STATE_PATH)
+
+
+def _merge_nested_state(target: dict[str, Any], updates: dict[str, Any]) -> None:
+    """Recursively merge nested state dictionaries in-place."""
+    for key, value in updates.items():
+        if isinstance(value, dict) and isinstance(target.get(key), dict):
+            _merge_nested_state(target[key], value)
+        else:
+            target[key] = value
+
+
+def _build_setup_gpio_requirements() -> list[dict[str, Any]]:
+    """Return the button labels and pins that the setup GPIO verifier must track."""
+    required: list[dict[str, Any]] = [
+        {"label": "capture", "pin": CAPTURE_BUTTON_PIN, "pressed": False},
+    ]
+    mode_button_pairs = [
+        ("mode_read_text", MODE_BUTTON_1_PIN),
+        ("mode_summarize_document", MODE_BUTTON_2_PIN),
+        ("mode_analyze_image", MODE_BUTTON_3_PIN),
+        ("mode_professional_assistant", MODE_BUTTON_4_PIN),
+        ("mode_solve_problem", MODE_BUTTON_5_PIN),
+    ]
+    for label, pin in mode_button_pairs:
+        if pin is None:
+            continue
+        required.append({"label": label, "pin": pin, "pressed": False})
+    if BACK_BUTTON_PIN is not None:
+        required.append({"label": "back", "pin": BACK_BUTTON_PIN, "pressed": False})
+    return required
+
+
+def _build_setup_required_pin_map() -> dict[str, int]:
+    """Return the setup verifier pin map keyed by logical button labels."""
+    return {
+        button["label"]: int(button["pin"])
+        for button in _build_setup_gpio_requirements()
+    }
+
+
+def _setup_gpio_complete(state: dict[str, Any]) -> bool:
+    """Return True when every required GPIO setup button has been pressed once."""
+    gpio = state.get("gpio", {})
+    required = gpio.get("required", [])
+    pressed_labels = {
+        str(label).strip()
+        for label in gpio.get("pressed_labels", [])
+        if str(label).strip()
+    }
+    required_labels = {
+        str(item.get("label", "")).strip()
+        for item in required
+        if isinstance(item, dict) and str(item.get("label", "")).strip()
+    }
+    return bool(required_labels) and required_labels.issubset(pressed_labels)
+
+
+def _build_setup_warnings(state: dict[str, Any] | None = None) -> list[str]:
+    """Return the unresolved warnings shown on the finish step."""
+    current_state = _load_setup_state() if state is None else state
+    warnings: list[str] = []
+    wifi = current_state["wifi"]
+    openai = current_state["openai"]
+    camera = current_state["camera"]
+    gpio = current_state["gpio"]
+
+    if wifi.get("connect_status") != "pass":
+        warnings.append("Wi-Fi setup has not completed successfully.")
+    if openai.get("status") != "pass":
+        warnings.append("OpenAI API key has not been verified successfully.")
+    if camera.get("status") != "pass":
+        warnings.append("Camera test has not completed successfully.")
+    if not _setup_gpio_complete(current_state):
+        warnings.append("GPIO button test has not completed successfully.")
+    return warnings
+
+
+def _stop_setup_gpio_verifier(*, restart_main_listener: bool) -> None:
+    """Stop the temporary setup GPIO verifier and optionally restore the main listener."""
+    global SETUP_GPIO_VERIFIER
+
+    with SETUP_GPIO_LOCK:
+        verifier = SETUP_GPIO_VERIFIER
+        SETUP_GPIO_VERIFIER = None
+    if verifier is not None:
+        verifier.close()
+    if restart_main_listener and _setup_is_complete():
+        _ensure_gpio_button_listener_started()
+
+
+def _snapshot_setup_gpio_progress() -> dict[str, Any]:
+    """Return the latest GPIO verifier snapshot, or a default requirement set."""
+    with SETUP_GPIO_LOCK:
+        verifier = SETUP_GPIO_VERIFIER
+    if verifier is None:
+        base_required = _build_setup_gpio_requirements()
+        return {
+            "required": base_required,
+            "pressed_labels": [],
+            "all_pressed": False,
+            "active": False,
+            "message": "GPIO setup test is not running.",
+        }
+    snapshot = verifier.snapshot()
+    snapshot["active"] = True
+    snapshot["message"] = (
+        "All configured GPIO setup buttons were pressed successfully."
+        if snapshot["all_pressed"]
+        else "Press each configured GPIO button once to verify it."
+    )
+    return snapshot
 
 
 def _read_int_env(
@@ -298,10 +631,65 @@ LIVE_PREVIEW = LivePreviewService(
 )
 
 
+@app.before_request
+def first_boot_setup_gate():
+    """Redirect normal routes into the mandatory setup wizard until setup completes."""
+    endpoint = request.endpoint or ""
+    setup_endpoints = {
+        "setup",
+        "admin_setup",
+        "setup_state_api",
+        "setup_wifi_scan",
+        "setup_wifi_connect",
+        "setup_openai_key",
+        "setup_camera_test",
+        "setup_gpio_test_start",
+        "setup_gpio_test_stop",
+        "setup_finish",
+        "live_preview_frame",
+        "live_preview_stream",
+        "static",
+    }
+    if _setup_is_complete():
+        if endpoint not in setup_endpoints and SETUP_GPIO_VERIFIER is not None:
+            _stop_setup_gpio_test()
+        return None
+
+    if endpoint in setup_endpoints | {"index"}:
+        if endpoint == "index":
+            return redirect(url_for("setup"))
+        return None
+    return redirect(url_for("setup"))
+
+
 @app.get("/")
 def index():
     """Render the current device screen."""
     return render_template("index.html", **_build_template_context())
+
+
+@app.get("/setup")
+def setup():
+    """Render the first-boot setup wizard."""
+    return render_template("index.html", **_build_template_context(screen_override="setup"))
+
+
+@app.get("/admin/setup")
+def admin_setup():
+    """Reopen the device setup wizard after first boot."""
+    return redirect(url_for("setup"))
+
+
+@app.get("/api/setup-state")
+def setup_state_api():
+    """Return the persisted setup wizard progress as JSON."""
+    setup_state = _sync_setup_gpio_state()
+    return jsonify(
+        {
+            **setup_state,
+            "warnings": _build_setup_warnings(setup_state),
+        }
+    )
 
 
 @app.get("/camera/live-frame.jpg")
@@ -435,6 +823,391 @@ def history_detail(entry_id: str):
         "index.html",
         **_build_template_context(screen_override="history_detail", history_entry=entry),
     )
+
+
+@app.post("/setup/wifi/scan")
+def setup_wifi_scan():
+    """Scan for nearby Wi-Fi networks via nmcli and persist the result."""
+    _run_setup_wifi_scan()
+    return redirect(url_for("setup"))
+
+
+@app.post("/setup/wifi/connect")
+def setup_wifi_connect():
+    """Connect to a Wi-Fi network via nmcli and persist non-secret metadata."""
+    _run_setup_wifi_connect(
+        selected_ssid=request.form.get("ssid", ""),
+        manual_ssid=request.form.get("manual_ssid", ""),
+        password=request.form.get("password", ""),
+        connection_name=request.form.get("connection_name", ""),
+    )
+    return redirect(url_for("setup"))
+
+
+@app.post("/setup/openai-key")
+def setup_openai_key():
+    """Save and verify the OpenAI API key."""
+    _run_setup_openai_key(request.form.get("openai_api_key", ""))
+    return redirect(url_for("setup"))
+
+
+@app.post("/setup/camera/test")
+def setup_camera_test():
+    """Run a one-shot camera diagnostic for the setup wizard."""
+    _run_setup_camera_test()
+    return redirect(url_for("setup"))
+
+
+@app.post("/setup/gpio/test/start")
+def setup_gpio_test_start():
+    """Start the temporary GPIO verifier used by the setup wizard."""
+    _start_setup_gpio_test()
+    return redirect(url_for("setup"))
+
+
+@app.post("/setup/gpio/test/stop")
+def setup_gpio_test_stop():
+    """Stop the temporary GPIO verifier and persist the final progress snapshot."""
+    _stop_setup_gpio_test()
+    return redirect(url_for("setup"))
+
+
+@app.post("/setup/finish")
+def setup_finish():
+    """Finalize the setup wizard, mark the device configured, and restart the app."""
+    _finish_setup(
+        warnings_acknowledged=request.form.get("warnings_acknowledged", "").strip().lower()
+        in {"1", "true", "yes", "on"},
+    )
+    return redirect(url_for("index" if _setup_is_complete() else "setup"))
+
+
+def _sync_setup_gpio_state() -> dict[str, Any]:
+    """Persist live GPIO setup progress while the temporary verifier is active."""
+    snapshot = _snapshot_setup_gpio_progress()
+    state = _load_setup_state()
+    if not snapshot.get("active"):
+        return state
+    if (
+        state["gpio"].get("active")
+        and state["gpio"].get("pressed_labels", []) == snapshot["pressed_labels"]
+        and bool(state["gpio"].get("all_pressed")) == bool(snapshot["all_pressed"])
+    ):
+        return state
+    required = [
+        {
+            "label": item["label"],
+            "pin": item["pin"],
+            "pressed": item["label"] in set(snapshot["pressed_labels"]),
+        }
+        for item in snapshot["required"]
+    ]
+    return _write_setup_state(
+        {
+            "gpio": {
+                "status": "pass" if snapshot["all_pressed"] else "running",
+                "message": snapshot["message"],
+                "active": True,
+                "required": required,
+                "pressed_labels": snapshot["pressed_labels"],
+                "all_pressed": snapshot["all_pressed"],
+            }
+        }
+    )
+
+
+def _run_setup_wifi_scan() -> None:
+    """Scan nearby Wi-Fi networks and save the result into setup state."""
+    try:
+        networks = scan_wifi_networks()
+        message = (
+            f"Found {len(networks)} Wi-Fi network{'s' if len(networks) != 1 else ''}."
+            if networks
+            else "No nearby Wi-Fi networks were found."
+        )
+        _write_setup_state(
+            {
+                "current_step": "wifi",
+                "finish_message": "",
+                "wifi": {
+                    "scan_status": "pass",
+                    "available_networks": networks,
+                    "message": message,
+                },
+            }
+        )
+    except DeviceSetupError as exc:
+        LOGGER.warning("Wi-Fi scan failed: %s", exc)
+        _write_setup_state(
+            {
+                "current_step": "wifi",
+                "finish_message": "",
+                "wifi": {
+                    "scan_status": "fail",
+                    "message": str(exc),
+                },
+            }
+        )
+
+
+def _run_setup_wifi_connect(
+    *,
+    selected_ssid: str,
+    manual_ssid: str,
+    password: str,
+    connection_name: str,
+) -> None:
+    """Connect to Wi-Fi, persist YAML metadata, and update setup state."""
+    state = _load_setup_state()
+    requested_ssid = manual_ssid.strip() or selected_ssid.strip()
+    hidden = bool(manual_ssid.strip()) and requested_ssid not in {
+        str(item.get("ssid", "")).strip()
+        for item in state["wifi"].get("available_networks", [])
+        if isinstance(item, dict)
+    }
+    try:
+        wifi_details = connect_wifi_network(
+            ssid=requested_ssid,
+            password=password,
+            connection_name=connection_name.strip() or requested_ssid,
+            hidden=hidden,
+            auto_connect=True,
+        )
+        update_device_config(
+            {
+                "network": {
+                    "wifi": {
+                        "ssid": wifi_details["ssid"],
+                        "connection_name": wifi_details["connection_name"],
+                        "auto_connect": True,
+                        "managed_by": "nmcli",
+                    }
+                }
+            },
+            config_path=_current_config_path(),
+        )
+        _write_setup_state(
+            {
+                "current_step": "openai",
+                "finish_message": "",
+                "wifi": {
+                    "connect_status": "pass",
+                    "ssid": wifi_details["ssid"],
+                    "connection_name": wifi_details["connection_name"],
+                    "message": wifi_details["message"],
+                    "auto_connect": True,
+                    "managed_by": "nmcli",
+                },
+            }
+        )
+    except (DeviceSetupError, SettingsError) as exc:
+        LOGGER.warning("Wi-Fi connect failed: %s", exc)
+        _write_setup_state(
+            {
+                "current_step": "wifi",
+                "finish_message": "",
+                "wifi": {
+                    "connect_status": "fail",
+                    "ssid": requested_ssid,
+                    "connection_name": connection_name.strip() or requested_ssid,
+                    "message": str(exc),
+                },
+            }
+        )
+
+
+def _run_setup_openai_key(api_key: str) -> None:
+    """Persist and verify the OpenAI API key for the device."""
+    normalized_key = api_key.strip()
+    if not has_configured_openai_key(normalized_key):
+        _write_setup_state(
+            {
+                "current_step": "openai",
+                "finish_message": "",
+                "openai": {
+                    "status": "fail",
+                    "key_present": False,
+                    "message": "Enter a real OPENAI_API_KEY before continuing.",
+                },
+            }
+        )
+        return
+
+    upsert_env_value(ENV_FILE_PATH, "OPENAI_API_KEY", normalized_key)
+    os.environ["OPENAI_API_KEY"] = normalized_key
+    result = check_openai_reachable()
+    next_step = "camera" if result.passed else "openai"
+    _write_setup_state(
+        {
+            "current_step": next_step,
+            "finish_message": "",
+            "openai": {
+                "status": "pass" if result.passed else "fail",
+                "key_present": True,
+                "message": result.message,
+            },
+        }
+    )
+
+
+def _run_setup_camera_test() -> None:
+    """Run the configured one-shot camera diagnostic."""
+    result = check_camera(SETTINGS)
+    next_step = "gpio" if result.passed else "camera"
+    _write_setup_state(
+        {
+            "current_step": next_step,
+            "finish_message": "",
+            "camera": {
+                "status": "pass" if result.passed else "fail",
+                "message": result.message,
+            },
+        }
+    )
+
+
+def _stop_gpio_button_listener() -> None:
+    """Stop the main GPIO button listener so setup can temporarily reuse the pins."""
+    global GPIO_START_ATTEMPTED, GPIO_TRIGGER
+
+    trigger = GPIO_TRIGGER
+    GPIO_TRIGGER = None
+    GPIO_START_ATTEMPTED = False
+    if trigger is not None:
+        trigger.close()
+
+
+def _start_setup_gpio_test() -> None:
+    """Start the temporary GPIO setup verifier."""
+    global SETUP_GPIO_VERIFIER
+
+    try:
+        _stop_setup_gpio_verifier(restart_main_listener=False)
+        _stop_gpio_button_listener()
+        verifier = GPIOSetupVerifier(
+            _build_setup_required_pin_map(),
+            debounce_seconds=GPIO_BUTTON_DEBOUNCE_SECONDS,
+        )
+        verifier.start()
+        with SETUP_GPIO_LOCK:
+            SETUP_GPIO_VERIFIER = verifier
+        snapshot = _snapshot_setup_gpio_progress()
+        required = [
+            {
+                "label": item["label"],
+                "pin": item["pin"],
+                "pressed": False,
+            }
+            for item in snapshot["required"]
+        ]
+        _write_setup_state(
+            {
+                "current_step": "gpio",
+                "finish_message": "",
+                "gpio": {
+                    "status": "running",
+                    "message": "Press each configured GPIO button once to verify it.",
+                    "active": True,
+                    "required": required,
+                    "pressed_labels": [],
+                    "all_pressed": False,
+                },
+            }
+        )
+    except GPIOSetupVerifierError as exc:
+        LOGGER.warning("GPIO setup verifier could not start: %s", exc)
+        _write_setup_state(
+            {
+                "current_step": "gpio",
+                "finish_message": "",
+                "gpio": {
+                    "status": "fail",
+                    "message": str(exc),
+                    "active": False,
+                    "required": _build_setup_gpio_requirements(),
+                    "pressed_labels": [],
+                    "all_pressed": False,
+                },
+            }
+        )
+        if _setup_is_complete():
+            _ensure_gpio_button_listener_started()
+
+
+def _stop_setup_gpio_test() -> None:
+    """Stop the temporary GPIO setup verifier and save the final progress snapshot."""
+    state = _sync_setup_gpio_state()
+    snapshot = state["gpio"]
+    _stop_setup_gpio_verifier(restart_main_listener=True)
+    _write_setup_state(
+        {
+            "current_step": "finish" if snapshot.get("all_pressed") else "gpio",
+            "finish_message": "",
+            "gpio": {
+                "status": "pass" if snapshot.get("all_pressed") else "fail",
+                "message": snapshot.get(
+                    "message",
+                    "All configured GPIO setup buttons were pressed successfully."
+                    if snapshot.get("all_pressed")
+                    else "GPIO button verification is incomplete.",
+                ),
+                "active": False,
+                "required": snapshot.get("required", _build_setup_gpio_requirements()),
+                "pressed_labels": snapshot.get("pressed_labels", []),
+                "all_pressed": bool(snapshot.get("all_pressed", False)),
+            },
+        }
+    )
+
+
+def _finish_setup(*, warnings_acknowledged: bool) -> None:
+    """Persist setup completion and restart the app when the wizard finishes."""
+    state = _sync_setup_gpio_state()
+    warnings = _build_setup_warnings(state)
+    if warnings and not warnings_acknowledged:
+        _write_setup_state(
+            {
+                "current_step": "finish",
+                "warnings_acknowledged": False,
+                "finish_message": "Acknowledge the setup warnings before finishing.",
+            }
+        )
+        return
+
+    completion_timestamp = datetime.now().isoformat(timespec="seconds")
+    update_device_config(
+        {
+            "setup": {
+                "completed": True,
+                "completed_at": completion_timestamp,
+                "version": 1,
+            },
+            "localization": {
+                "locale": "en",
+            },
+        },
+        config_path=_current_config_path(),
+    )
+    SETTINGS.setup.completed = True
+    SETTINGS.setup.completed_at = completion_timestamp
+    SETTINGS.setup.version = 1
+    SETTINGS.localization.locale = "en"
+    _clear_setup_state()
+    _schedule_process_restart()
+
+
+def _schedule_process_restart(delay_seconds: float = SETUP_RESTART_DELAY_SECONDS) -> None:
+    """Restart the current Flask process after a short delay."""
+    def _restart_worker() -> None:
+        time.sleep(max(0.1, delay_seconds))
+        os.execv(sys.executable, [sys.executable, *sys.argv])
+
+    worker = threading.Thread(
+        target=_restart_worker,
+        daemon=True,
+        name="setup-restart-worker",
+    )
+    worker.start()
 
 
 def _normalize_internal_mode(mode: Any) -> str:
@@ -1054,6 +1827,8 @@ def _build_template_context(
         if selected_mode_definition
         else "Press one of the mode buttons to choose what the assistant should do."
     )
+    setup_state = _sync_setup_gpio_state() if screen == "setup" else None
+    setup_warnings = _build_setup_warnings(setup_state) if setup_state is not None else []
     history_entries = _load_result_history()
     recent_results = _decorate_result_history_entries(history_entries)
     effective_history_entry = _decorate_result_history_entry(history_entry) if history_entry is not None else None
@@ -1093,6 +1868,14 @@ def _build_template_context(
     if selected_mode_internal:
         active_mode_definition = get_mode(selected_mode_internal)
 
+    ui_state_api_url = url_for("ui_state_api")
+    ui_state_updated_at = state["updated_at"]
+    auto_refresh_ms = _get_auto_refresh_ms(screen)
+    if screen == "setup" and setup_state is not None:
+        ui_state_api_url = url_for("setup_state_api")
+        ui_state_updated_at = setup_state["updated_at"]
+        auto_refresh_ms = 1500 if setup_state["gpio"].get("active") else None
+
     return {
         "screen": screen,
         "status": state["status"],
@@ -1119,12 +1902,18 @@ def _build_template_context(
         "live_preview_base_url": _build_live_preview_base_url(),
         "live_preview_refresh_ms": _build_live_preview_refresh_ms(),
         "default_capture_mode_label": MODE_LABELS[DEFAULT_CAPTURE_MODE],
-        "auto_refresh_ms": _get_auto_refresh_ms(screen),
-        "ui_state_api_url": url_for("ui_state_api"),
-        "ui_state_updated_at": state["updated_at"],
+        "auto_refresh_ms": auto_refresh_ms,
+        "ui_state_api_url": ui_state_api_url,
+        "ui_state_updated_at": ui_state_updated_at,
         "health_api_url": url_for("health_status_api"),
         "health_refresh_ms": UI_HEALTH_REFRESH_MS,
         "health_summary": _build_health_summary(),
+        "setup_state": setup_state,
+        "setup_warnings": setup_warnings,
+        "setup_has_warnings": bool(setup_warnings),
+        "setup_finish_message": setup_state.get("finish_message", "") if setup_state else "",
+        "setup_gpio_running": bool(setup_state and setup_state["gpio"].get("active")),
+        "setup_can_exit": _setup_is_complete(),
         "show_debug": UI_DEBUG,
         "ui_config": {
             "screen_width": UI_SCREEN_WIDTH,
@@ -1135,6 +1924,7 @@ def _build_template_context(
             "button_font_size": UI_BUTTON_FONT_SIZE,
             "touch_target": UI_TOUCH_TARGET,
             "orientation": _resolve_orientation(),
+            "locale": SETTINGS.localization.locale,
         },
     }
  
@@ -1635,6 +2425,7 @@ def _purge_runtime_artifacts(*, delete_all: bool = False) -> None:
         safe_unlink(RESULT_HISTORY_PATH)
         safe_unlink(LATEST_RESULT_PATH)
         safe_unlink(UI_STATE_PATH)
+        safe_unlink(SETUP_STATE_PATH)
         safe_rmtree(PRIVATE_QUARANTINE_PATH)
         global RESULT_HISTORY_CACHE
         RESULT_HISTORY_CACHE = None
@@ -1883,11 +2674,11 @@ def _ensure_gpio_button_listener_started() -> None:
     """Start the optional GPIO listener so the physical button mirrors touch capture."""
     global GPIO_START_ATTEMPTED, GPIO_TRIGGER
 
-    if not ENABLE_GPIO_BUTTON or GPIO_START_ATTEMPTED:
+    if not ENABLE_GPIO_BUTTON or not _setup_is_complete() or GPIO_TRIGGER is not None:
         return
 
     with GPIO_START_LOCK:
-        if not ENABLE_GPIO_BUTTON or GPIO_START_ATTEMPTED:
+        if not ENABLE_GPIO_BUTTON or not _setup_is_complete() or GPIO_TRIGGER is not None:
             return
 
         GPIO_START_ATTEMPTED = True
@@ -1950,7 +2741,11 @@ def _ensure_health_monitor_started() -> None:
     """Start the optional background health monitor once during app startup."""
     global HEALTH_MONITOR
 
-    if not SETTINGS.reliability.health_monitor_enabled or HEALTH_MONITOR is not None:
+    if (
+        not _setup_is_complete()
+        or not SETTINGS.reliability.health_monitor_enabled
+        or HEALTH_MONITOR is not None
+    ):
         return
 
     HEALTH_MONITOR = HealthMonitor(
@@ -1964,7 +2759,7 @@ def _ensure_health_monitor_started() -> None:
 def _ensure_offline_retry_started() -> None:
     """Start the background offline retry worker when the feature is enabled."""
     queue = OFFLINE_RETRY_QUEUE
-    if queue is None:
+    if queue is None or not _setup_is_complete():
         return
 
     started = queue.start(

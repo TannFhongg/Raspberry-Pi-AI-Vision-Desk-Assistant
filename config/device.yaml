@@ -55,6 +55,21 @@ startup:
   behavior: kiosk
   url: http://127.0.0.1:5000
 
+setup:
+  completed: true
+  completed_at: "2026-07-11T00:00:00"
+  version: 1
+
+network:
+  wifi:
+    ssid: ""
+    connection_name: ""
+    auto_connect: true
+    managed_by: nmcli
+
+localization:
+  locale: en
+
 reliability:
   log_level: INFO
   log_max_bytes: 1048576

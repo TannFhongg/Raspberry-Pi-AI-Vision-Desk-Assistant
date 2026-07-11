@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
@@ -17,6 +18,8 @@ VALID_SCREEN_OPTIMIZATIONS = ("auto", "on", "off")
 VALID_DISPLAY_ORIENTATIONS = ("landscape", "portrait", "auto")
 VALID_STARTUP_BEHAVIORS = ("kiosk", "service_only", "manual")
 VALID_LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
+VALID_WIFI_MANAGERS = ("nmcli",)
+VALID_LOCALES = ("en",)
 DEFAULT_APP_HOST = "127.0.0.1"
 DEFAULT_APP_PORT = 5000
 DEFAULT_FLASK_DEBUG = False
@@ -51,6 +54,11 @@ DEFAULT_CAMERA_PREVIEW_WIDTH = 640
 DEFAULT_CAMERA_PREVIEW_HEIGHT = 360
 DEFAULT_CAMERA_PREVIEW_TARGET_FPS = 30.0
 DEFAULT_CAMERA_PREVIEW_FORCE_MJPEG = True
+DEFAULT_SETUP_VERSION = 1
+DEFAULT_WIFI_AUTO_CONNECT = True
+DEFAULT_WIFI_MANAGER = "nmcli"
+DEFAULT_LOCALE = "en"
+OPENAI_KEY_PLACEHOLDER = "your_openai_api_key_here"
 
 
 class SettingsError(Exception):
@@ -160,6 +168,39 @@ class StartupSettings:
 
 
 @dataclass(slots=True)
+class SetupSettings:
+    """Persistent first-boot setup state for the device."""
+
+    completed: bool = False
+    completed_at: str = ""
+    version: int = 0
+
+
+@dataclass(slots=True)
+class WifiSettings:
+    """Persisted non-secret Wi-Fi metadata managed by the setup wizard."""
+
+    ssid: str = ""
+    connection_name: str = ""
+    auto_connect: bool = DEFAULT_WIFI_AUTO_CONNECT
+    managed_by: str = DEFAULT_WIFI_MANAGER
+
+
+@dataclass(slots=True)
+class NetworkSettings:
+    """Network metadata used by the device setup flow."""
+
+    wifi: WifiSettings = field(default_factory=WifiSettings)
+
+
+@dataclass(slots=True)
+class LocalizationSettings:
+    """Persistent locale defaults for UI and assistant responses."""
+
+    locale: str = DEFAULT_LOCALE
+
+
+@dataclass(slots=True)
 class ReliabilitySettings:
     """Runtime reliability, logging, and retry defaults."""
 
@@ -215,6 +256,9 @@ class DeviceSettings:
     retention: RetentionSettings
     offline_retry: OfflineRetrySettings
     config_path: Path
+    setup: SetupSettings = field(default_factory=SetupSettings)
+    network: NetworkSettings = field(default_factory=NetworkSettings)
+    localization: LocalizationSettings = field(default_factory=LocalizationSettings)
 
 
 def load_device_settings(
@@ -230,6 +274,7 @@ def load_device_settings(
     )
     raw_data = _read_yaml(resolved_path)
     merged = _apply_environment_overrides(raw_data, environment)
+    setup_declared = "setup" in raw_data
 
     camera = merged.get("camera", {})
     display = merged.get("display", {})
@@ -239,10 +284,23 @@ def load_device_settings(
     ai = merged.get("ai", {})
     vision = merged.get("vision", {})
     startup = merged.get("startup", {})
+    setup = merged.get("setup", {})
+    network = merged.get("network", {})
+    localization = merged.get("localization", {})
     reliability = merged.get("reliability", {})
     retention = merged.get("retention", {})
     offline_retry = merged.get("offline_retry", {})
     preview = camera.get("preview", {})
+    wifi = network.get("wifi", {})
+    inferred_legacy_setup_complete = (
+        not setup_declared and _infer_legacy_setup_completed(environment)
+    )
+    setup_completed_raw = setup.get("completed")
+    setup_completed = (
+        inferred_legacy_setup_complete
+        if setup_completed_raw is None
+        else _parse_bool(setup_completed_raw, "setup.completed")
+    )
 
     settings = DeviceSettings(
         camera=CameraSettings(
@@ -402,6 +460,46 @@ def load_device_settings(
             ),
             url=_parse_text(startup.get("url"), "startup.url"),
         ),
+        setup=SetupSettings(
+            completed=setup_completed,
+            completed_at=_parse_optional_text(
+                setup.get("completed_at", ""),
+                "setup.completed_at",
+            ),
+            version=_parse_int(
+                setup.get(
+                    "version",
+                    DEFAULT_SETUP_VERSION if setup_completed else 0,
+                ),
+                "setup.version",
+                minimum=0,
+            ),
+        ),
+        network=NetworkSettings(
+            wifi=WifiSettings(
+                ssid=_parse_optional_text(wifi.get("ssid", ""), "network.wifi.ssid"),
+                connection_name=_parse_optional_text(
+                    wifi.get("connection_name", ""),
+                    "network.wifi.connection_name",
+                ),
+                auto_connect=_parse_bool(
+                    wifi.get("auto_connect", DEFAULT_WIFI_AUTO_CONNECT),
+                    "network.wifi.auto_connect",
+                ),
+                managed_by=_parse_choice(
+                    wifi.get("managed_by", DEFAULT_WIFI_MANAGER),
+                    VALID_WIFI_MANAGERS,
+                    "network.wifi.managed_by",
+                ),
+            )
+        ),
+        localization=LocalizationSettings(
+            locale=_parse_choice(
+                localization.get("locale", DEFAULT_LOCALE),
+                VALID_LOCALES,
+                "localization.locale",
+            )
+        ),
         reliability=ReliabilitySettings(
             log_level=_parse_log_level(
                 reliability.get("log_level", DEFAULT_LOG_LEVEL),
@@ -555,6 +653,32 @@ def load_device_settings(
     return settings
 
 
+def update_device_config(
+    updates: Mapping[str, Any],
+    *,
+    config_path: str | Path | None = None,
+    env: Mapping[str, str] | None = None,
+) -> Path:
+    """Merge nested updates into the committed YAML config and write it atomically."""
+    environment = dict(os.environ if env is None else env)
+    resolved_path = Path(
+        environment.get("DEVICE_CONFIG_PATH")
+        or config_path
+        or DEFAULT_CONFIG_PATH
+    )
+    raw_data = _read_yaml(resolved_path)
+    if not isinstance(updates, Mapping):
+        raise SettingsError("Device config updates must be a mapping.")
+
+    merged = dict(raw_data)
+    _deep_merge(merged, updates)
+    dumped = yaml.safe_dump(merged, sort_keys=False, allow_unicode=True)
+    if not dumped.endswith("\n"):
+        dumped += "\n"
+    _atomic_write_text(resolved_path, dumped, encoding="utf-8")
+    return resolved_path
+
+
 def _read_yaml(config_path: Path) -> dict[str, Any]:
     """Read a YAML file into a dictionary."""
     if not config_path.is_file():
@@ -590,6 +714,9 @@ def _apply_environment_overrides(
     merged["ai"] = dict(raw_data.get("ai", {}))
     merged["vision"] = dict(raw_data.get("vision", {}))
     merged["startup"] = dict(raw_data.get("startup", {}))
+    merged["setup"] = dict(raw_data.get("setup", {}))
+    merged["network"] = dict(raw_data.get("network", {}))
+    merged["localization"] = dict(raw_data.get("localization", {}))
     merged["reliability"] = dict(raw_data.get("reliability", {}))
     merged["retention"] = dict(raw_data.get("retention", {}))
     merged["offline_retry"] = dict(raw_data.get("offline_retry", {}))
@@ -604,6 +731,9 @@ def _apply_environment_overrides(
     display = merged["display"]
     display_size = dict(display.get("size", {}))
     display["size"] = display_size
+    network = merged["network"]
+    network_wifi = dict(network.get("wifi", {}))
+    network["wifi"] = network_wifi
 
     _set_if_present(camera, "backend", env, "VISION_CAMERA_BACKEND")
     _set_if_present(camera, "index", env, "VISION_CAMERA_INDEX")
@@ -687,6 +817,7 @@ def _apply_environment_overrides(
 
     _set_if_present(merged["startup"], "behavior", env, "STARTUP_BEHAVIOR")
     _set_if_present(merged["startup"], "url", env, "STARTUP_URL")
+    _set_if_present(merged["localization"], "locale", env, "DEVICE_LOCALE")
     _set_if_present(merged["reliability"], "log_level", env, "RELIABILITY_LOG_LEVEL")
     _set_if_present(merged["reliability"], "log_max_bytes", env, "RELIABILITY_LOG_MAX_BYTES")
     _set_if_present(
@@ -915,6 +1046,15 @@ def _parse_text(value: Any, field_name: str) -> str:
     return text
 
 
+def _parse_optional_text(value: Any, field_name: str) -> str:
+    """Parse an optional text value, normalizing missing values to an empty string."""
+    if value in {None, ""}:
+        return ""
+    if not isinstance(value, str):
+        raise SettingsError(f"Invalid text value for '{field_name}': {value!r}.")
+    return value.strip()
+
+
 def _parse_mode(value: Any, field_name: str) -> str:
     """Parse and normalize a supported assistant mode."""
     raw_mode = _parse_text(value, field_name)
@@ -953,6 +1093,61 @@ def _parse_exposure(value: Any) -> str | int:
     if parsed_int <= 0:
         raise SettingsError("camera.exposure must be 'auto' or a positive integer.")
     return parsed_int
+
+
+def _infer_legacy_setup_completed(env: Mapping[str, str]) -> bool:
+    """Infer first-boot completion for older configs that predate the setup section."""
+    return _has_configured_openai_key(env.get("OPENAI_API_KEY", ""))
+
+
+def _has_configured_openai_key(value: Any) -> bool:
+    """Return True when a provided OpenAI API key looks intentionally configured."""
+    if not isinstance(value, str):
+        return False
+    normalized = value.strip()
+    if not normalized:
+        return False
+    return normalized != OPENAI_KEY_PLACEHOLDER
+
+
+def _deep_merge(target: dict[str, Any], updates: Mapping[str, Any]) -> None:
+    """Recursively merge nested mappings in-place."""
+    for key, value in updates.items():
+        if isinstance(value, Mapping):
+            current = target.get(key)
+            if not isinstance(current, dict):
+                current = {}
+                target[key] = current
+            _deep_merge(current, value)
+        else:
+            target[key] = value
+
+
+def _atomic_write_text(path: str | Path, content: str, *, encoding: str = "utf-8") -> Path:
+    """Atomically write text without importing the runtime storage package."""
+    destination = Path(path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temp_file = tempfile.NamedTemporaryFile(
+        delete=False,
+        dir=destination.parent,
+        prefix=f".{destination.stem}-",
+        suffix=f"{destination.suffix}.tmp",
+        mode="w",
+        encoding=encoding,
+    )
+    try:
+        with temp_file:
+            temp_file.write(content)
+            temp_file.flush()
+            os.fsync(temp_file.fileno())
+        Path(temp_file.name).replace(destination)
+        return destination
+    except Exception:
+        try:
+            Path(temp_file.name).unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
 
 
 def _validate_pin_assignments(settings: DeviceSettings) -> None:

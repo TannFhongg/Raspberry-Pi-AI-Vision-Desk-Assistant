@@ -4,7 +4,7 @@ from config.settings import (
     DeviceSettings,
     SettingsError,
     load_device_settings,
+    update_device_config,
 )
 
-__all__ = ["DeviceSettings", "SettingsError", "load_device_settings"]
-
+__all__ = ["DeviceSettings", "SettingsError", "load_device_settings", "update_device_config"]

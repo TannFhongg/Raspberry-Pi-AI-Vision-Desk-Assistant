@@ -397,6 +397,18 @@ class LoadDeviceSettingsTests(unittest.TestCase):
             startup:
               behavior: kiosk
               url: http://127.0.0.1:5000
+            setup:
+              completed: false
+              completed_at: ""
+              version: 0
+            network:
+              wifi:
+                ssid: TestSSID
+                connection_name: TestSSID
+                auto_connect: true
+                managed_by: nmcli
+            localization:
+              locale: en
             reliability:
               log_level: INFO
               log_max_bytes: 1048576
@@ -430,6 +442,14 @@ class LoadDeviceSettingsTests(unittest.TestCase):
         self.assertEqual(settings.app.host, "127.0.0.1")
         self.assertEqual(settings.app.port, 5000)
         self.assertFalse(settings.app.debug)
+        self.assertFalse(settings.setup.completed)
+        self.assertEqual(settings.setup.completed_at, "")
+        self.assertEqual(settings.setup.version, 0)
+        self.assertEqual(settings.network.wifi.ssid, "TestSSID")
+        self.assertEqual(settings.network.wifi.connection_name, "TestSSID")
+        self.assertTrue(settings.network.wifi.auto_connect)
+        self.assertEqual(settings.network.wifi.managed_by, "nmcli")
+        self.assertEqual(settings.localization.locale, "en")
         self.assertFalse(settings.retention.store_images)
         self.assertEqual(settings.retention.text_history_max_items, 100)
         self.assertEqual(settings.retention.text_history_retention_days, 30)
@@ -479,6 +499,112 @@ class LoadDeviceSettingsTests(unittest.TestCase):
             startup:
               behavior: kiosk
               url: http://127.0.0.1:5000
+            reliability:
+              log_level: INFO
+              log_max_bytes: 1048576
+              log_backup_count: 5
+              health_monitor_enabled: true
+              health_check_interval_seconds: 60.0
+              camera_probe_interval_seconds: 300.0
+              openai_timeout_seconds: 30.0
+              openai_retry_attempts: 3
+              openai_retry_backoff_seconds: 2.0
+            """
+        )
+
+        with self.assertRaises(SettingsError):
+            load_device_settings(config_path=config_path, env={})
+
+    def test_legacy_config_marks_setup_complete_only_with_real_openai_key(self) -> None:
+        config_path = _write_temp_config(
+            """
+            camera:
+              backend: opencv
+              index: 0
+              resolution:
+                width: 4608
+                height: 2592
+              autofocus_mode: continuous
+              exposure: auto
+              brightness: 0.0
+              capture_delay_seconds: 1.0
+              grayscale: false
+              max_dimension: 1600
+            display:
+              size:
+                width: 480
+                height: 320
+              orientation: landscape
+            button:
+              enabled: true
+              pin: 17
+            ai:
+              default_mode: document_reader
+            vision:
+              screen_optimization: auto
+            startup:
+              behavior: kiosk
+              url: http://127.0.0.1:5000
+            reliability:
+              log_level: INFO
+              log_max_bytes: 1048576
+              log_backup_count: 5
+              health_monitor_enabled: true
+              health_check_interval_seconds: 60.0
+              camera_probe_interval_seconds: 300.0
+              openai_timeout_seconds: 30.0
+              openai_retry_attempts: 3
+              openai_retry_backoff_seconds: 2.0
+            """
+        )
+
+        missing_key_settings = load_device_settings(config_path=config_path, env={})
+        placeholder_settings = load_device_settings(
+            config_path=config_path,
+            env={"OPENAI_API_KEY": "your_openai_api_key_here"},
+        )
+        configured_settings = load_device_settings(
+            config_path=config_path,
+            env={"OPENAI_API_KEY": "sk-test-real"},
+        )
+
+        self.assertFalse(missing_key_settings.setup.completed)
+        self.assertFalse(placeholder_settings.setup.completed)
+        self.assertTrue(configured_settings.setup.completed)
+        self.assertEqual(configured_settings.setup.version, 1)
+
+    def test_invalid_locale_raises_settings_error(self) -> None:
+        config_path = _write_temp_config(
+            """
+            camera:
+              backend: opencv
+              index: 0
+              resolution:
+                width: 1920
+                height: 1080
+              autofocus_mode: continuous
+              exposure: auto
+              brightness: 0.0
+              capture_delay_seconds: 1.0
+              grayscale: false
+              max_dimension: 1600
+            display:
+              size:
+                width: 480
+                height: 320
+              orientation: landscape
+            button:
+              enabled: true
+              pin: 17
+            ai:
+              default_mode: document_reader
+            vision:
+              screen_optimization: auto
+            startup:
+              behavior: kiosk
+              url: http://127.0.0.1:5000
+            localization:
+              locale: vi
             reliability:
               log_level: INFO
               log_max_bytes: 1048576
