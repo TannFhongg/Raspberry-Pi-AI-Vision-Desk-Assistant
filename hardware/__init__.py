@@ -22,9 +22,7 @@ _EXPORTS = {
     "is_busy_device_state": ("hardware.status", "is_busy_device_state"),
     "read_image_resolution": ("hardware.camera_config", "read_image_resolution"),
     "resolve_opencv_config": ("hardware.camera_config", "resolve_opencv_config"),
-    "resolve_picamera2_config": ("hardware.camera_config", "resolve_picamera2_config"),
     "screen_for_device_state": ("hardware.status", "screen_for_device_state"),
-    "select_best_resolution": ("hardware.camera_config", "select_best_resolution"),
 }
 
 __all__ = list(_EXPORTS)

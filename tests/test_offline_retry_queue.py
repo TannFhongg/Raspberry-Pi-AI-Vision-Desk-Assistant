@@ -32,7 +32,7 @@ class OfflineRetryQueueTests(unittest.TestCase):
             selected_mode_internal="document_reader",
             captured_path=self.captured_path,
             processed_path=self.processed_path,
-            camera_backend_used="picamera2",
+            camera_backend_used="opencv",
             camera_resolution=(1920, 1080),
             error_message="network down",
         )

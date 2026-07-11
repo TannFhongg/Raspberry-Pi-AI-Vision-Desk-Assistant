@@ -12,12 +12,12 @@ from config import SettingsError, load_device_settings
 def build_parser(settings) -> argparse.ArgumentParser:
     """Create the command-line argument parser."""
     parser = argparse.ArgumentParser(
-        description="Capture a test image using Picamera2 or an OpenCV webcam backend."
+        description="Capture a test image using the OpenCV USB webcam backend."
     )
     parser.add_argument(
         "--backend",
         default=settings.camera.backend,
-        choices=("auto", "picamera2", "opencv"),
+        choices=("opencv",),
         help="Camera backend to use.",
     )
     parser.add_argument(

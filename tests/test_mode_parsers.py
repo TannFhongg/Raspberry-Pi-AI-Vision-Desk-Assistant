@@ -16,7 +16,7 @@ class ModeParserCompatibilityTests(unittest.TestCase):
     def setUp(self) -> None:
         self.settings = SimpleNamespace(
             camera=SimpleNamespace(
-                backend="auto",
+                backend="opencv",
                 index=0,
                 resolution=SimpleNamespace(width=4608, height=2592),
                 grayscale=False,

@@ -29,8 +29,8 @@ def build_parser(settings) -> argparse.ArgumentParser:
     parser.add_argument(
         "--backend",
         default=settings.camera.backend,
-        choices=("auto", "picamera2", "opencv"),
-        help="Camera backend to use for capture.",
+        choices=("opencv",),
+        help="Camera backend to use for USB webcam capture.",
     )
     parser.add_argument(
         "--camera-index",

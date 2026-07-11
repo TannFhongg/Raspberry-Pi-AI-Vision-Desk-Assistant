@@ -216,7 +216,7 @@ class _FakeButtonSettings:
 
 
 class _FakeCameraSettings:
-    backend = "auto"
+    backend = "opencv"
     index = 0
     resolution = type("Resolution", (), {"width": 4608, "height": 2592})()
     grayscale = False

@@ -309,7 +309,7 @@ class Phase11AppIntegrationTests(unittest.TestCase):
 
     def test_humanize_error_maps_reliability_failures(self) -> None:
         cases = {
-            "Picamera2 could not capture an image.": "Camera disconnected",
+            "OpenCV could not open camera index 0.": "Camera disconnected",
             "Could not connect to OpenAI after 3 attempts. Check your internet connection and try again.": "Network unavailable",
             "The OpenAI request timed out after 3 attempts. Please try again.": "OpenAI request timed out",
             "Invalid image file 'static/processed.jpg'. Please capture a new image and try again.": "Invalid image",
@@ -341,7 +341,7 @@ class Phase11AppIntegrationTests(unittest.TestCase):
             captured_path=self.preview_path,
             processed_path=self.processed_path,
             mode="document_reader",
-            camera_backend_used="picamera2",
+            camera_backend_used="opencv",
             camera_resolution=(1920, 1080),
         )
 
@@ -452,7 +452,7 @@ class Phase11AppIntegrationTests(unittest.TestCase):
             processed_path=self.processed_path,
             answer="First line\nSecond line",
             mode="document_reader",
-            camera_backend_used="picamera2",
+            camera_backend_used="opencv",
             camera_resolution=(1920, 1080),
             status="success",
         )
@@ -478,7 +478,7 @@ class Phase11AppIntegrationTests(unittest.TestCase):
                     "mode_label": "Read Text",
                     "answer": "Saved answer body",
                     "summary": "Saved answer summary",
-                    "camera_backend_used": "picamera2",
+                    "camera_backend_used": "opencv",
                     "camera_resolution": [1920, 1080],
                 }
             ]
@@ -507,7 +507,7 @@ class Phase11AppIntegrationTests(unittest.TestCase):
                     "mode_label": "Read Text",
                     "answer": "Saved answer body",
                     "summary": "Saved answer summary",
-                    "camera_backend_used": "picamera2",
+                    "camera_backend_used": "opencv",
                     "camera_resolution": [1920, 1080],
                     "source_image_path": str(source_image_path),
                     "processed_image_path": str(processed_image_path),
@@ -611,7 +611,7 @@ class Phase11AppIntegrationTests(unittest.TestCase):
                     "mode_label": "Read Text",
                     "answer": "Saved answer body",
                     "summary": "Saved answer summary",
-                    "camera_backend_used": "picamera2",
+                    "camera_backend_used": "opencv",
                     "camera_resolution": [1920, 1080],
                     "source_image_path": str(source_image_path),
                     "processed_image_path": str(processed_image_path),
@@ -642,7 +642,7 @@ class Phase11AppIntegrationTests(unittest.TestCase):
                     "mode_label": "Read Text",
                     "answer": "Saved answer body",
                     "summary": "Saved answer summary",
-                    "camera_backend_used": "picamera2",
+                    "camera_backend_used": "opencv",
                     "camera_resolution": [1920, 1080],
                     "source_image_path": str(source_image_path),
                     "processed_image_path": str(processed_image_path),

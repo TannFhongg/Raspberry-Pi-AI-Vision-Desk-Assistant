@@ -1604,7 +1604,7 @@ def _format_answer_html(answer: str) -> Markup:
 def _humanize_error(error_message: str) -> str:
     """Convert technical errors into short, friendly touchscreen messages."""
     normalized = error_message.strip().lower()
-    if any(token in normalized for token in ("camera", "picamera2", "opencv")):
+    if any(token in normalized for token in ("camera", "opencv", "webcam", "videocapture")):
         return "Camera disconnected"
     if "could not connect to openai" in normalized or "internet connection" in normalized:
         return "Network unavailable"

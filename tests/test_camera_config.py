@@ -19,9 +19,9 @@ from config.settings import (
     VisionSettings,
 )
 from hardware.camera_config import (
+    CameraConfigError,
     build_camera_request,
     resolve_opencv_config,
-    select_best_resolution,
 )
 
 
@@ -33,23 +33,18 @@ class CameraConfigTests(unittest.TestCase):
         with patch("hardware.camera_config.load_device_settings", return_value=settings):
             request = build_camera_request()
 
-        self.assertEqual(request.backend, "auto")
+        self.assertEqual(request.backend, "opencv")
         self.assertEqual(request.camera_index, 0)
         self.assertEqual(request.width, 4608)
         self.assertEqual(request.height, 2592)
         self.assertEqual(request.autofocus_mode, "continuous")
         self.assertEqual(request.exposure, "auto")
 
-    def test_select_best_resolution_picks_closest_sensor_mode(self) -> None:
-        sensor_modes = [
-            {"size": (640, 480)},
-            {"size": (1920, 1080)},
-            {"size": (4608, 2592)},
-        ]
-
-        selected = select_best_resolution(sensor_modes, requested_width=4000, requested_height=2200)
-
-        self.assertEqual(selected, (4608, 2592))
+    def test_build_camera_request_rejects_removed_non_opencv_backends(self) -> None:
+        settings = _build_settings()
+        with patch("hardware.camera_config.load_device_settings", return_value=settings):
+            with self.assertRaises(CameraConfigError):
+                build_camera_request(backend="auto")
 
     def test_resolve_opencv_config_adds_best_effort_warnings(self) -> None:
         settings = _build_settings()
@@ -71,7 +66,7 @@ def _build_settings() -> DeviceSettings:
     """Create a test settings object."""
     return DeviceSettings(
         camera=CameraSettings(
-            backend="auto",
+            backend="opencv",
             index=0,
             resolution=ResolutionSettings(width=4608, height=2592),
             autofocus_mode="continuous",

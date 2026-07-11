@@ -12,15 +12,12 @@ from typing import Any, Iterator
 from PIL import Image, ImageDraw
 
 from camera.capture import (
-    PICAMERA2_INSTALL_HINT,
     OPENCV_INSTALL_HINT,
     _apply_opencv_controls,
-    _apply_picamera2_controls,
 )
 from hardware.camera_config import (
     build_camera_request,
     resolve_opencv_config,
-    resolve_picamera2_config,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -308,16 +305,7 @@ def _build_preview_resolution(width: int, height: int) -> tuple[int, int]:
 
 
 def _open_frame_source(request) -> "_BaseFrameSource":
-    """Open the preferred live-preview backend with auto fallback support."""
-    if request.backend == "auto":
-        try:
-            return _Picamera2FrameSource(request)
-        except LivePreviewError as picamera_error:
-            LOGGER.info("Picamera2 preview unavailable, falling back to OpenCV: %s", picamera_error)
-            return _OpenCVFrameSource(request)
-
-    if request.backend == "picamera2":
-        return _Picamera2FrameSource(request)
+    """Open the OpenCV live-preview source for the configured USB webcam."""
     return _OpenCVFrameSource(request)
 
 
@@ -361,65 +349,6 @@ class _BaseFrameSource:
 
     def close(self) -> None:
         raise NotImplementedError
-
-
-class _Picamera2FrameSource(_BaseFrameSource):
-    """Use the Raspberry Pi Picamera2 stack for continuous preview."""
-
-    def __init__(self, request) -> None:
-        try:
-            from picamera2 import Picamera2
-        except ImportError as exc:
-            raise LivePreviewError(PICAMERA2_INSTALL_HINT) from exc
-
-        self._picam2 = None
-        try:
-            picam2 = Picamera2(camera_num=request.camera_index)
-            sensor_modes = getattr(picam2, "sensor_modes", None)
-            camera_controls = getattr(picam2, "camera_controls", {})
-            control_names = camera_controls.keys() if isinstance(camera_controls, dict) else ()
-            resolved_config = resolve_picamera2_config(
-                request=request,
-                sensor_modes=sensor_modes,
-                controls=control_names,
-            )
-            configuration = picam2.create_preview_configuration(
-                main={
-                    "size": (request.width, request.height),
-                    "format": "RGB888",
-                },
-                buffer_count=4,
-            )
-            picam2.configure(configuration)
-            picam2.start()
-            _apply_picamera2_controls(picam2, resolved_config)
-            self._picam2 = picam2
-        except LivePreviewError:
-            raise
-        except Exception as exc:
-            if self._picam2 is not None:
-                self.close()
-            raise LivePreviewError(f"Picamera2 preview could not start. {exc}") from exc
-
-    def read_frame(self) -> Any:
-        """Read the newest RGB frame from Picamera2."""
-        if self._picam2 is None:
-            raise LivePreviewError("Picamera2 preview is not running.")
-        return self._picam2.capture_array("main")
-
-    def close(self) -> None:
-        """Stop and close the Picamera2 instance safely."""
-        if self._picam2 is None:
-            return
-        try:
-            self._picam2.stop()
-        except Exception:
-            pass
-        try:
-            self._picam2.close()
-        except Exception:
-            pass
-        self._picam2 = None
 
 
 class _OpenCVFrameSource(_BaseFrameSource):

@@ -1,5 +1,5 @@
 camera:
-  backend: auto
+  backend: opencv
   index: 0
   resolution:
     width: 4608

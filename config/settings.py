@@ -11,7 +11,7 @@ import yaml
 from ai.modes import get_available_modes, normalize_mode
 
 DEFAULT_CONFIG_PATH = Path("config/device.yaml")
-VALID_CAMERA_BACKENDS = ("auto", "picamera2", "opencv")
+VALID_CAMERA_BACKENDS = ("opencv",)
 VALID_AUTOFOCUS_MODES = ("continuous", "auto", "off")
 VALID_SCREEN_OPTIMIZATIONS = ("auto", "on", "off")
 VALID_DISPLAY_ORIENTATIONS = ("landscape", "portrait", "auto")

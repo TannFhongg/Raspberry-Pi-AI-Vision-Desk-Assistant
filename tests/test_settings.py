@@ -17,7 +17,7 @@ class LoadDeviceSettingsTests(unittest.TestCase):
         config_path = _write_temp_config(
             """
             camera:
-              backend: auto
+              backend: opencv
               index: 0
               resolution:
                 width: 4608
@@ -64,7 +64,7 @@ class LoadDeviceSettingsTests(unittest.TestCase):
 
         settings = load_device_settings(config_path=config_path, env={})
 
-        self.assertEqual(settings.camera.backend, "auto")
+        self.assertEqual(settings.camera.backend, "opencv")
         self.assertEqual(settings.camera.resolution.width, 4608)
         self.assertEqual(settings.display.size.height, 320)
         self.assertTrue(settings.button.enabled)
@@ -97,7 +97,7 @@ class LoadDeviceSettingsTests(unittest.TestCase):
         config_path = _write_temp_config(
             """
             camera:
-              backend: auto
+              backend: opencv
               index: 0
               resolution:
                 width: 4608
@@ -263,7 +263,7 @@ class LoadDeviceSettingsTests(unittest.TestCase):
         config_path = _write_temp_config(
             """
             camera:
-              backend: auto
+              backend: opencv
               index: 0
               resolution:
                 width: 4608
@@ -309,7 +309,7 @@ class LoadDeviceSettingsTests(unittest.TestCase):
         config_path = _write_temp_config(
             """
             camera:
-              backend: auto
+              backend: opencv
               index: 0
               resolution:
                 width: 4608

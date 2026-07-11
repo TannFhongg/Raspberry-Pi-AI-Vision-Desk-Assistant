@@ -1,6 +1,6 @@
 # Project Context
 
-Updated on: 2026-07-10
+Updated on: 2026-07-11
 Project root: `C:\Users\Admin\Desktop\Raspberry Pi AI Vision Desk Assistant`
 
 ## Purpose
@@ -28,7 +28,7 @@ Main entrypoints:
 Shared core:
 
 - `pipeline/runner.py`: central orchestration for `run_capture`, `run_preprocess`, `run_analyze`, `run_capture_analyze`, and `save_latest_result`
-- `camera/capture.py`: camera abstraction with `auto`, `picamera2`, and `opencv` backends. Auto tries Picamera2 first, then OpenCV
+- `camera/capture.py`: USB webcam capture backend built on OpenCV only
 - `vision/preprocess.py`: preprocessing orchestration for both the legacy path and the advanced screen/document optimization path
 - `vision/screen_detect.py`: preview-based rectangle detection for screens and documents
 - `vision/perspective.py`: quadrilateral ordering, scaling, and four-point perspective correction
@@ -118,7 +118,6 @@ Python package requirements in `requirements.txt`:
 
 Important Raspberry Pi OS packages are expected from APT, not pip:
 
-- `python3-picamera2`
 - `python3-opencv`
 
 Recommended venv command on Raspberry Pi:
@@ -143,7 +142,7 @@ GPIO_BUTTON_HOLD_SECONDS=1.2
 ENABLE_GPIO_LED=0
 GPIO_LED_PIN=27
 GPIO_LED_ACTIVE_HIGH=1
-VISION_CAMERA_BACKEND=auto
+VISION_CAMERA_BACKEND=opencv
 VISION_CAMERA_INDEX=0
 VISION_CAPTURE_WIDTH=1280
 VISION_CAPTURE_HEIGHT=720
@@ -179,8 +178,6 @@ python test_ai_vision.py --image test_images/document.jpg --mode document_reader
 Capture from camera:
 
 ```bash
-python test_camera_capture.py --backend auto
-python test_camera_capture.py --backend picamera2
 python test_camera_capture.py --backend opencv --camera-index 0
 ```
 
@@ -202,7 +199,6 @@ Run full terminal pipeline:
 ```bash
 python main.py --mode math_solver
 python main.py --mode engineering_mode
-python main.py --mode document_reader --backend picamera2
 python main.py --mode general_vision --backend opencv --camera-index 0
 python main.py --mode document_reader --skip-capture --screen-optimization on
 python main.py --mode document_reader --skip-capture --screen-optimization off
@@ -231,7 +227,7 @@ Run GPIO button listener:
 ```bash
 python test_gpio_button.py
 python test_gpio_button.py --mode document_reader
-python test_gpio_button.py --mode general_vision --backend picamera2
+python test_gpio_button.py --mode general_vision --backend opencv --camera-index 0
 ```
 
 ## Hardware Context
@@ -239,7 +235,7 @@ python test_gpio_button.py --mode general_vision --backend picamera2
 Required or expected hardware:
 
 - Raspberry Pi 5
-- Raspberry Pi Camera Module, Arducam CSI camera, or USB webcam
+- USB webcam
 - Push button connected to GPIO17 and GND
 - Optional LED connected to a configured GPIO pin and GND
 - Internet connection for OpenAI API access

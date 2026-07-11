@@ -1,17 +1,15 @@
-"""Hardware-aware camera configuration helpers."""
+"""Hardware-aware camera configuration helpers for USB webcam capture."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable, Sequence
-
 from PIL import Image
 
 from config import load_device_settings
 
 VALID_AUTOFOCUS_MODES = ("continuous", "auto", "off")
-VALID_CAMERA_BACKENDS = ("auto", "picamera2", "opencv")
+VALID_CAMERA_BACKENDS = ("opencv",)
 
 
 class CameraConfigError(Exception):
@@ -140,51 +138,6 @@ def build_camera_request(
         brightness=resolved_brightness,
         capture_delay_seconds=resolved_delay,
     )
-
-
-def resolve_picamera2_config(
-    request: CameraControlRequest,
-    sensor_modes: Sequence[dict[str, Any]] | None = None,
-    controls: Iterable[str] | None = None,
-) -> ResolvedCameraConfig:
-    """Resolve Picamera2 settings against advertised modes and controls."""
-    resolved_resolution = select_best_resolution(
-        sensor_modes=sensor_modes,
-        requested_width=request.width,
-        requested_height=request.height,
-    )
-    available_controls = {str(name) for name in (controls or [])}
-
-    return ResolvedCameraConfig(
-        requested_backend=request.backend,
-        backend="picamera2",
-        camera_index=request.camera_index,
-        requested_resolution=(request.width, request.height),
-        resolved_resolution=resolved_resolution,
-        autofocus_mode=request.autofocus_mode,
-        exposure=request.exposure,
-        brightness=request.brightness,
-        capture_delay_seconds=request.capture_delay_seconds,
-        control_support=CameraControlSupport(
-            autofocus=_supports_any_control(
-                available_controls,
-                {"AfMode", "LensPosition"},
-                default_if_unknown=True,
-            ),
-            exposure=_supports_any_control(
-                available_controls,
-                {"AeEnable", "ExposureTime"},
-                default_if_unknown=True,
-            ),
-            brightness=_supports_any_control(
-                available_controls,
-                {"Brightness"},
-                default_if_unknown=True,
-            ),
-        ),
-    )
-
-
 def resolve_opencv_config(request: CameraControlRequest) -> ResolvedCameraConfig:
     """Resolve OpenCV settings and document best-effort control support."""
     warnings: list[str] = []
@@ -218,32 +171,6 @@ def resolve_opencv_config(request: CameraControlRequest) -> ResolvedCameraConfig
         ),
         warnings=warnings,
     )
-
-
-def select_best_resolution(
-    sensor_modes: Sequence[dict[str, Any]] | None,
-    requested_width: int,
-    requested_height: int,
-) -> tuple[int, int]:
-    """Choose the closest supported still resolution for a Picamera2 camera."""
-    candidates = _extract_mode_sizes(sensor_modes)
-    if not candidates:
-        return (requested_width, requested_height)
-
-    target_pixels = requested_width * requested_height
-
-    def sort_key(size: tuple[int, int]) -> tuple[int, int, int]:
-        width, height = size
-        pixels = width * height
-        return (
-            abs(pixels - target_pixels),
-            abs(width - requested_width) + abs(height - requested_height),
-            -pixels,
-        )
-
-    return sorted(candidates, key=sort_key)[0]
-
-
 def read_image_resolution(image_path: str | Path) -> tuple[int, int] | None:
     """Read the saved image resolution from disk."""
     path = Path(image_path)
@@ -255,55 +182,3 @@ def read_image_resolution(image_path: str | Path) -> tuple[int, int] | None:
             return image.size
     except OSError:
         return None
-
-
-def _extract_mode_sizes(
-    sensor_modes: Sequence[dict[str, Any]] | None,
-) -> list[tuple[int, int]]:
-    """Pull unique WxH sensor mode sizes from Picamera2 metadata."""
-    if not sensor_modes:
-        return []
-
-    sizes: list[tuple[int, int]] = []
-    for mode in sensor_modes:
-        if not isinstance(mode, dict):
-            continue
-        size = mode.get("size")
-        if _is_valid_size(size):
-            normalized = (int(size[0]), int(size[1]))
-            if normalized not in sizes:
-                sizes.append(normalized)
-            continue
-
-        format_value = mode.get("format")
-        if isinstance(format_value, dict):
-            maybe_size = format_value.get("size")
-            if _is_valid_size(maybe_size):
-                normalized = (int(maybe_size[0]), int(maybe_size[1]))
-                if normalized not in sizes:
-                    sizes.append(normalized)
-    return sizes
-
-
-def _is_valid_size(value: Any) -> bool:
-    """Return True when a value looks like a width/height pair."""
-    if not isinstance(value, (list, tuple)) or len(value) != 2:
-        return False
-    try:
-        width = int(value[0])
-        height = int(value[1])
-    except (TypeError, ValueError):
-        return False
-    return width > 0 and height > 0
-
-
-def _supports_any_control(
-    available_controls: set[str],
-    wanted_controls: set[str],
-    default_if_unknown: bool,
-) -> bool:
-    """Return True when controls are available or unknown."""
-    if not available_controls:
-        return default_if_unknown
-    return any(control in available_controls for control in wanted_controls)
-

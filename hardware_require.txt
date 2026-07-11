@@ -6,8 +6,6 @@ Required:
 - Official Raspberry Pi USB-C power supply (recommended 5V/5A)
 - microSD card (recommended 32GB or larger)
 - Camera:
-  - Raspberry Pi autofocus camera such as Camera Module 3, or
-  - Arducam autofocus CSI camera such as the 64MP model, or
   - USB webcam
 - 2.5 inch HDMI touchscreen or other attached display when using kiosk mode
 - Internet connection (Wi-Fi or Ethernet)
@@ -17,7 +15,6 @@ Recommended for setup and testing:
 - HDMI monitor or small HDMI display
 - HDMI cable / micro HDMI cable for Raspberry Pi 5
 - USB keyboard and mouse for first setup
-- Camera ribbon cable if using a CSI camera
 - Raspberry Pi case with heatsink or cooling fan
 
 Required for GPIO button trigger (Phase 6):

@@ -74,7 +74,7 @@ Phase 8 adds a typed device configuration layer, hardware-aware camera control r
 - `pipeline/runner.py` centralizes capture, preprocess, analyze, and latest-result saving so CLI, Flask, and GPIO behavior stay aligned.
 - `system/offline_retry.py` stores retryable AI failures on disk and replays them later from the processed image copy when connectivity returns.
 - `config/settings.py` loads `config/device.yaml` and applies environment overrides so hardware values are no longer hardcoded across entrypoints.
-- `hardware/camera_config.py` resolves autofocus-capable Picamera2 modes, best-fit still resolutions, and best-effort OpenCV controls.
+- `hardware/camera_config.py` validates the USB camera request and documents best-effort OpenCV control handling.
 - `hardware/device_check.py` runs standalone diagnostics for camera, display, internet, OpenAI API reachability, and GPIO readiness.
 - `ai/modes.py` and `ai/context.py` now separate mode metadata from hidden OpenAI request instructions so the device can switch between professional assistant behaviors cleanly.
 - `app.py` persists selected mode and current screen in `data/ui_state.json`, tracks recent successful answers in `data/result_history.json`, and renders screen-specific sections from `templates/index.html`.

@@ -1,4 +1,4 @@
-"""Camera capture backends for Raspberry Pi CSI cameras and USB webcams."""
+"""USB webcam capture backend for the Raspberry Pi AI Vision Desk Assistant."""
 
 from __future__ import annotations
 
@@ -12,15 +12,9 @@ from hardware.camera_config import (
     build_camera_request,
     read_image_resolution,
     resolve_opencv_config,
-    resolve_picamera2_config,
 )
 
-VALID_BACKENDS = ("auto", "picamera2", "opencv")
-PICAMERA2_INSTALL_HINT = (
-    "Picamera2 is not available. On Raspberry Pi OS, install it with: "
-    "sudo apt install -y python3-picamera2 and create the virtual environment with: "
-    "python3 -m venv --system-site-packages .venv"
-)
+VALID_BACKENDS = ("opencv",)
 OPENCV_INSTALL_HINT = (
     "OpenCV is not available. On Raspberry Pi OS, install it with: "
     "sudo apt install -y python3-opencv and create the virtual environment with: "
@@ -53,7 +47,7 @@ def capture_image(
     brightness: float | None = None,
     capture_delay_seconds: float | None = None,
 ) -> CaptureResult:
-    """Capture an image using Picamera2 or OpenCV and save it to disk."""
+    """Capture an image using OpenCV and save it to disk."""
     try:
         request = build_camera_request(
             backend=backend,
@@ -71,45 +65,15 @@ def capture_image(
     destination = Path(output_path)
     normalized_backend = request.backend
 
-    if normalized_backend == "auto":
-        picamera_error_message = ""
-        _prepare_output_path(destination)
-        try:
-            _status("Trying Picamera2 backend first...")
-            temporary_output = _build_temporary_output_path(destination)
-            result = _capture_with_picamera2(temporary_output, request)
-            _validate_output_file(result.output_path)
-            _finalize_output_file(result.output_path, destination)
-            return _finalize_capture_result(result, destination)
-        except CameraCaptureError as picamera_error:
-            picamera_error_message = str(picamera_error)
-            _status(f"Picamera2 failed: {picamera_error}")
-            _status("Falling back to OpenCV backend...")
-            _cleanup_temporary_file(locals().get("temporary_output"))
-
-        _prepare_output_path(destination)
-        try:
-            temporary_output = _build_temporary_output_path(destination)
-            result = _capture_with_opencv(temporary_output, request)
-            _validate_output_file(result.output_path)
-            _finalize_output_file(result.output_path, destination)
-            return _finalize_capture_result(result, destination)
-        except CameraCaptureError as opencv_error:
-            _cleanup_temporary_file(locals().get("temporary_output"))
-            raise CameraCaptureError(
-                "Automatic camera capture failed. "
-                f"Picamera2 error: {picamera_error_message} "
-                f"OpenCV error: {opencv_error}"
-            ) from opencv_error
-
     _prepare_output_path(destination)
     temporary_output = _build_temporary_output_path(destination)
 
     try:
-        if normalized_backend == "picamera2":
-            result = _capture_with_picamera2(temporary_output, request)
-        else:
-            result = _capture_with_opencv(temporary_output, request)
+        if normalized_backend != "opencv":
+            raise CameraCaptureError(
+                f"Unsupported camera backend '{normalized_backend}'. Only 'opencv' is available."
+            )
+        result = _capture_with_opencv(temporary_output, request)
 
         _validate_output_file(result.output_path)
         _finalize_output_file(result.output_path, destination)
@@ -134,66 +98,6 @@ def _prepare_output_path(output_path: Path) -> None:
         raise CameraCaptureError(
             f"Could not prepare output path '{output_path}'. {exc}"
         ) from exc
-
-
-def _capture_with_picamera2(output_path: Path, request) -> CaptureResult:
-    """Capture a still image using the Raspberry Pi Picamera2 stack."""
-    try:
-        from picamera2 import Picamera2
-    except ImportError as exc:
-        raise CameraCaptureError(PICAMERA2_INSTALL_HINT) from exc
-
-    picam2 = None
-    try:
-        picam2 = Picamera2(camera_num=request.camera_index)
-        sensor_modes = getattr(picam2, "sensor_modes", None)
-        camera_controls = getattr(picam2, "camera_controls", {})
-        control_names = camera_controls.keys() if isinstance(camera_controls, dict) else ()
-        resolved_config = resolve_picamera2_config(
-            request=request,
-            sensor_modes=sensor_modes,
-            controls=control_names,
-        )
-        resolved_width, resolved_height = resolved_config.resolved_resolution
-        _status(
-            f"Capturing image with Picamera2 at {resolved_width}x{resolved_height}..."
-        )
-        configuration = picam2.create_still_configuration(
-            main={"size": (resolved_width, resolved_height)},
-            buffer_count=2,
-        )
-        picam2.configure(configuration)
-        picam2.start()
-        warnings = list(resolved_config.warnings)
-        warnings.extend(_apply_picamera2_controls(picam2, resolved_config))
-        if request.capture_delay_seconds > 0:
-            time.sleep(request.capture_delay_seconds)
-        if resolved_config.autofocus_mode == "auto":
-            warnings.extend(_run_picamera2_autofocus_cycle(picam2))
-        picam2.capture_file(str(output_path))
-    except Exception as exc:
-        raise CameraCaptureError(
-            "Picamera2 could not capture an image. Make sure the CSI camera is connected correctly. "
-            f"Original error: {exc}"
-        ) from exc
-    finally:
-        if picam2 is not None:
-            try:
-                picam2.stop()
-            except Exception:
-                pass
-            try:
-                picam2.close()
-            except Exception:
-                pass
-
-    return CaptureResult(
-        output_path=output_path,
-        backend_used="picamera2",
-        resolution=read_image_resolution(output_path) or resolved_config.resolved_resolution,
-        warnings=tuple(warnings),
-    )
-
 
 def _capture_with_opencv(output_path: Path, request) -> CaptureResult:
     """Capture an image using OpenCV VideoCapture for USB webcams."""
@@ -333,68 +237,6 @@ def _finalize_capture_result(result: CaptureResult, destination: Path) -> Captur
         resolution=resolution,
         warnings=result.warnings,
     )
-
-
-def _apply_picamera2_controls(picam2, resolved_config) -> list[str]:
-    """Apply supported Picamera2 controls without failing capture on partial support."""
-    warnings: list[str] = []
-    try:
-        from libcamera import controls
-    except ImportError:
-        controls = None
-
-    autofocus_controls = {
-        "continuous": getattr(getattr(controls, "AfModeEnum", None), "Continuous", None),
-        "auto": getattr(getattr(controls, "AfModeEnum", None), "Auto", None),
-        "off": getattr(getattr(controls, "AfModeEnum", None), "Manual", None),
-    }
-
-    control_payload: dict[str, object] = {}
-    if resolved_config.control_support.autofocus and controls is not None:
-        autofocus_value = autofocus_controls.get(resolved_config.autofocus_mode)
-        if autofocus_value is not None:
-            control_payload["AfMode"] = autofocus_value
-    elif resolved_config.autofocus_mode != "off":
-        warnings.append("Autofocus controls are not available for this Picamera2 camera.")
-
-    if resolved_config.control_support.exposure:
-        if resolved_config.exposure == "auto":
-            control_payload["AeEnable"] = True
-        else:
-            control_payload["AeEnable"] = False
-            control_payload["ExposureTime"] = int(resolved_config.exposure)
-    elif resolved_config.exposure != "auto":
-        warnings.append("Manual exposure is not available for this Picamera2 camera.")
-
-    if resolved_config.control_support.brightness:
-        control_payload["Brightness"] = float(resolved_config.brightness)
-    elif resolved_config.brightness != 0.0:
-        warnings.append("Brightness control is not available for this Picamera2 camera.")
-
-    if control_payload:
-        try:
-            picam2.set_controls(control_payload)
-        except Exception as exc:
-            warnings.append(f"Some camera controls could not be applied: {exc}")
-    return warnings
-
-
-def _run_picamera2_autofocus_cycle(picam2) -> list[str]:
-    """Run a one-shot autofocus cycle when supported."""
-    if not hasattr(picam2, "autofocus_cycle"):
-        return ["Picamera2 autofocus cycle is not available in this environment."]
-
-    try:
-        picam2.autofocus_cycle(wait=True)
-    except TypeError:
-        try:
-            picam2.autofocus_cycle()
-        except Exception as exc:
-            return [f"Picamera2 autofocus cycle failed: {exc}"]
-        time.sleep(0.5)
-    except Exception as exc:
-        return [f"Picamera2 autofocus cycle failed: {exc}"]
-    return []
 
 
 def _apply_opencv_controls(camera, resolved_config, cv2_module) -> list[str]:

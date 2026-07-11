@@ -45,9 +45,8 @@ Validated on July 10, 2026:
 
 ## Features
 
-- Capture high-resolution images from a Raspberry Pi CSI camera with Picamera2
-- Support autofocus, exposure, brightness, and capture-delay controls on supported camera backends
-- Fall back to OpenCV `VideoCapture` for USB webcams
+- Capture high-resolution images from a USB webcam through OpenCV `VideoCapture`
+- Support autofocus, exposure, brightness, and capture-delay controls on the USB/OpenCV camera path
 - Apply safe OpenCV preprocessing before AI analysis
 - Optimize distant monitor/document photos with screen detection, perspective correction, and text enhancement
 - Analyze images with multiple AI modes using the OpenAI Python SDK
@@ -71,8 +70,7 @@ Validated on July 10, 2026:
 ## Hardware Used
 
 - Raspberry Pi 5 8GB
-- Autofocus camera such as Raspberry Pi Camera Module 3 or Arducam 64MP
-- Optional USB webcam
+- USB webcam
 - 2.5 inch HDMI touchscreen or other small HDMI display
 - Six momentary push buttons wired with BCM numbering: 1 capture button plus 5 mode buttons
 - Case, heatsink, or active cooling for sustained capture workloads
@@ -84,7 +82,6 @@ Validated on July 10, 2026:
 - Flask
 - OpenCV
 - OpenAI Python SDK
-- Picamera2
 - gpiozero
 - python-dotenv
 - systemd
@@ -125,16 +122,16 @@ raspberry-pi-ai-vision-assistant/
 
 ### Raspberry Pi OS Packages
 
-Install the camera and OpenCV system packages first:
+Install the required camera and browser packages first:
 
 ```bash
 sudo apt update
-sudo apt install -y python3-picamera2 python3-opencv chromium-browser
+sudo apt install -y python3-opencv chromium-browser
 ```
 
 ### Virtual Environment
 
-Create the virtual environment with system site packages so APT-installed `picamera2` and `cv2` are available:
+Create the virtual environment with system site packages so APT-installed `cv2` is available:
 
 ```bash
 python3 -m venv --system-site-packages .venv
@@ -146,7 +143,6 @@ pip install -r requirements.txt
 ### Verify Key Imports
 
 ```bash
-python -c "from picamera2 import Picamera2; print('Picamera2 OK')"
 python -c "import cv2; print('OpenCV OK:', cv2.__version__)"
 python -c "import flask, openai, gpiozero; print('Python packages OK')"
 ```
@@ -181,7 +177,7 @@ GPIO_BUTTON_HOLD_SECONDS=1.2
 ENABLE_GPIO_LED=0
 GPIO_LED_PIN=27
 GPIO_LED_ACTIVE_HIGH=1
-VISION_CAMERA_BACKEND=auto
+VISION_CAMERA_BACKEND=opencv
 VISION_CAMERA_INDEX=0
 VISION_CAPTURE_WIDTH=4608
 VISION_CAPTURE_HEIGHT=2592
@@ -232,7 +228,7 @@ Default camera, display, button, AI, vision, and startup settings:
 
 ```yaml
 camera:
-  backend: auto
+  backend: opencv
   index: 0
   resolution:
     width: 4608
@@ -330,20 +326,9 @@ python test_ai_vision.py --image test_images/document.jpg --mode document_reader
 
 ## Phase 2: Camera Capture
 
-Try Picamera2 first, then fall back to OpenCV if needed:
+Capture from the supported USB webcam backend:
 
 ```bash
-python test_camera_capture.py --backend auto
-```
-
-Force the Raspberry Pi CSI camera backend:
-
-```bash
-python test_camera_capture.py --backend picamera2
-```
-
-Force a USB webcam:
-
 ```bash
 python test_camera_capture.py --backend opencv --camera-index 0
 ```
@@ -351,13 +336,13 @@ python test_camera_capture.py --backend opencv --camera-index 0
 High-resolution autofocus example:
 
 ```bash
-python test_camera_capture.py --backend picamera2 --width 4608 --height 2592 --autofocus-mode continuous
+python test_camera_capture.py --backend opencv --camera-index 0 --width 4608 --height 2592 --autofocus-mode continuous
 ```
 
 Manual exposure example:
 
 ```bash
-python test_camera_capture.py --backend picamera2 --exposure 12000 --brightness 0.1 --capture-delay 1.5
+python test_camera_capture.py --backend opencv --camera-index 0 --exposure 12000 --brightness 0.1 --capture-delay 1.5
 ```
 
 Captured output:
@@ -400,7 +385,6 @@ Other useful examples:
 python main.py --mode document_reader
 python main.py --mode meeting_assistant
 python main.py --mode engineering_mode
-python main.py --mode document_reader --backend picamera2
 python main.py --mode general_vision --backend opencv --camera-index 0
 python main.py --mode document_reader --grayscale
 ```
@@ -523,7 +507,6 @@ The default mode is `document_reader`. You can override it:
 python test_gpio_button.py --mode document_reader
 python test_gpio_button.py --mode math_solver
 python test_gpio_button.py --mode engineering_mode
-python test_gpio_button.py --mode general_vision --backend picamera2
 python test_gpio_button.py --mode meeting_assistant --backend opencv --camera-index 0
 ```
 
@@ -715,11 +698,6 @@ Phase 15 improvements:
 - Retry after a moment if rate limit or quota is the issue
 - When `OFFLINE_RETRY_ENABLED=1`, transient connection/time-out/server failures are automatically queued for background retry instead of being discarded immediately
 
-### Picamera2 Not Available
-
-- Run `sudo apt install -y python3-picamera2`
-- Recreate the venv with `python3 -m venv --system-site-packages .venv`
-
 ### OpenCV Not Available
 
 - Run `sudo apt install -y python3-opencv`
@@ -727,14 +705,12 @@ Phase 15 improvements:
 
 ### Camera Capture Failure
 
-- Check CSI camera cable seating
 - Check USB webcam connection
 - Run `python check_hardware.py`
 - Close other apps that may be using the camera
 
 ### Autofocus Or Exposure Controls Not Applying
 
-- Confirm you are using a Picamera2-supported autofocus camera
 - Some OpenCV webcam drivers ignore autofocus, exposure, or brightness requests
 - Review any non-fatal warnings printed by `test_camera_capture.py` or `main.py`
 

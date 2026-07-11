@@ -30,7 +30,7 @@ class LivePreviewServiceTests(unittest.TestCase):
             patch("camera.live_preview._encode_preview_frame", return_value=b"frame"),
         ):
             service = LivePreviewService(
-                backend="auto",
+                backend="opencv",
                 camera_index=0,
                 width=640,
                 height=480,
@@ -77,7 +77,7 @@ class LivePreviewServiceTests(unittest.TestCase):
             patch("camera.live_preview._encode_preview_frame", return_value=b"frame"),
         ):
             service = LivePreviewService(
-                backend="auto",
+                backend="opencv",
                 camera_index=0,
                 width=640,
                 height=480,
@@ -124,7 +124,7 @@ class LivePreviewServiceTests(unittest.TestCase):
             patch("camera.live_preview._encode_preview_frame", return_value=b"frame"),
         ):
             service = LivePreviewService(
-                backend="auto",
+                backend="opencv",
                 camera_index=0,
                 width=640,
                 height=480,
@@ -178,7 +178,7 @@ class _ImmediateFrameSource:
 def _build_request() -> CameraControlRequest:
     """Return a deterministic preview request without loading device settings."""
     return CameraControlRequest(
-        backend="auto",
+        backend="opencv",
         camera_index=0,
         width=640,
         height=480,
