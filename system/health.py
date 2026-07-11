@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 import subprocess
@@ -14,6 +13,7 @@ from typing import Any, Callable
 
 from config import DeviceSettings, load_device_settings
 from hardware.device_check import check_camera, check_internet_connection
+from system.storage import atomic_write_json
 
 DEFAULT_HEALTH_STATUS_PATH = Path("data/health_status.json")
 CPU_TEMPERATURE_PATH = Path("/sys/class/thermal/thermal_zone0/temp")
@@ -58,24 +58,7 @@ def write_health_snapshot(
     output_path: str | Path = DEFAULT_HEALTH_STATUS_PATH,
 ) -> Path:
     """Atomically persist the latest health snapshot to disk."""
-    destination = Path(output_path)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    temporary_path = destination.with_name(f".{destination.name}.tmp")
-
-    try:
-        temporary_path.write_text(
-            json.dumps(snapshot, ensure_ascii=True, indent=2) + "\n",
-            encoding="utf-8",
-        )
-        temporary_path.replace(destination)
-    except OSError:
-        try:
-            temporary_path.unlink(missing_ok=True)
-        except OSError:
-            pass
-        raise
-
-    return destination
+    return atomic_write_json(output_path, snapshot, ensure_ascii=True, indent=2)
 
 
 class HealthMonitor:

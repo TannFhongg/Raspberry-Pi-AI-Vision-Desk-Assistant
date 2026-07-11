@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -eu
 
-APP_URL="${STARTUP_URL:-http://localhost:5000}"
+APP_URL="${STARTUP_URL:-http://127.0.0.1:5000}"
 WAIT_TIMEOUT_SECONDS="${KIOSK_WAIT_TIMEOUT_SECONDS:-60}"
 
 if command -v chromium >/dev/null 2>&1; then

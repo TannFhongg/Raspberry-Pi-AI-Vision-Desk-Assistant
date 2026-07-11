@@ -37,7 +37,7 @@ class CaptureResult:
 
 
 def capture_image(
-    output_path: str = "static/captured.jpg",
+    output_path: str = "data/private/current/captured.jpg",
     backend: str | None = None,
     camera_index: int | None = None,
     width: int | None = None,

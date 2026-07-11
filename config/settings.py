@@ -17,6 +17,9 @@ VALID_SCREEN_OPTIMIZATIONS = ("auto", "on", "off")
 VALID_DISPLAY_ORIENTATIONS = ("landscape", "portrait", "auto")
 VALID_STARTUP_BEHAVIORS = ("kiosk", "service_only", "manual")
 VALID_LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
+DEFAULT_APP_HOST = "127.0.0.1"
+DEFAULT_APP_PORT = 5000
+DEFAULT_FLASK_DEBUG = False
 DEFAULT_BUTTON_DEBOUNCE_SECONDS = 0.15
 DEFAULT_BUTTON_HOLD_SECONDS = 1.2
 DEFAULT_LED_ENABLED = False
@@ -31,6 +34,19 @@ DEFAULT_CAMERA_PROBE_INTERVAL_SECONDS = 300.0
 DEFAULT_OPENAI_TIMEOUT_SECONDS = 30.0
 DEFAULT_OPENAI_RETRY_ATTEMPTS = 3
 DEFAULT_OPENAI_RETRY_BACKOFF_SECONDS = 2.0
+DEFAULT_STORE_IMAGES = False
+DEFAULT_TEXT_HISTORY_MAX_ITEMS = 100
+DEFAULT_TEXT_HISTORY_RETENTION_DAYS = 30
+DEFAULT_RETRY_MEDIA_RETENTION_HOURS = 24.0
+DEFAULT_PURGE_ON_STARTUP = True
+DEFAULT_OFFLINE_RETRY_ENABLED = True
+DEFAULT_OFFLINE_RETRY_MAX_ITEMS = 10
+DEFAULT_OFFLINE_RETRY_MAX_ATTEMPTS = 3
+DEFAULT_OFFLINE_RETRY_INITIAL_DELAY_SECONDS = 30.0
+DEFAULT_OFFLINE_RETRY_MAX_DELAY_SECONDS = 900.0
+DEFAULT_OFFLINE_RETRY_POLL_INTERVAL_SECONDS = 5.0
+DEFAULT_OFFLINE_RETRY_MIN_FREE_MB = 128
+DEFAULT_OFFLINE_RETRY_MAX_STORAGE_MB = 512
 
 
 class SettingsError(Exception):
@@ -94,6 +110,15 @@ class LEDSettings:
 
 
 @dataclass(slots=True)
+class AppSettings:
+    """Flask runtime defaults for the local kiosk app."""
+
+    host: str
+    port: int
+    debug: bool
+
+
+@dataclass(slots=True)
 class AISettings:
     """AI-related runtime defaults."""
 
@@ -131,6 +156,31 @@ class ReliabilitySettings:
 
 
 @dataclass(slots=True)
+class RetentionSettings:
+    """Runtime data-retention policy for user content."""
+
+    store_images: bool
+    text_history_max_items: int
+    text_history_retention_days: int
+    retry_media_retention_hours: float
+    purge_on_startup: bool
+
+
+@dataclass(slots=True)
+class OfflineRetrySettings:
+    """Runtime controls for deferred retry behavior."""
+
+    enabled: bool
+    max_items: int
+    max_attempts: int
+    initial_delay_seconds: float
+    max_delay_seconds: float
+    poll_interval_seconds: float
+    min_free_mb: int
+    max_storage_mb: int
+
+
+@dataclass(slots=True)
 class DeviceSettings:
     """Top-level typed settings for the standalone device."""
 
@@ -138,10 +188,13 @@ class DeviceSettings:
     display: DisplaySettings
     button: ButtonSettings
     led: LEDSettings
+    app: AppSettings
     ai: AISettings
     vision: VisionSettings
     startup: StartupSettings
     reliability: ReliabilitySettings
+    retention: RetentionSettings
+    offline_retry: OfflineRetrySettings
     config_path: Path
 
 
@@ -163,12 +216,15 @@ def load_device_settings(
     display = merged.get("display", {})
     button = merged.get("button", {})
     led = merged.get("led", {})
+    app = merged.get("app", {})
     ai = merged.get("ai", {})
     vision = merged.get("vision", {})
     startup = merged.get("startup", {})
     reliability = merged.get("reliability", {})
+    retention = merged.get("retention", {})
+    offline_retry = merged.get("offline_retry", {})
 
-    return DeviceSettings(
+    settings = DeviceSettings(
         camera=CameraSettings(
             backend=_parse_choice(
                 camera.get("backend"),
@@ -278,6 +334,11 @@ def load_device_settings(
                 "led.active_high",
             ),
         ),
+        app=AppSettings(
+            host=_parse_text(app.get("host", DEFAULT_APP_HOST), "app.host"),
+            port=_parse_int(app.get("port", DEFAULT_APP_PORT), "app.port", minimum=1),
+            debug=_parse_bool(app.get("debug", DEFAULT_FLASK_DEBUG), "app.debug"),
+        ),
         ai=AISettings(
             default_mode=_parse_mode(ai.get("default_mode"), "ai.default_mode"),
         ),
@@ -359,8 +420,94 @@ def load_device_settings(
                 minimum=0.0,
             ),
         ),
+        retention=RetentionSettings(
+            store_images=_parse_bool(
+                retention.get("store_images", DEFAULT_STORE_IMAGES),
+                "retention.store_images",
+            ),
+            text_history_max_items=_parse_int(
+                retention.get("text_history_max_items", DEFAULT_TEXT_HISTORY_MAX_ITEMS),
+                "retention.text_history_max_items",
+                minimum=1,
+            ),
+            text_history_retention_days=_parse_int(
+                retention.get(
+                    "text_history_retention_days",
+                    DEFAULT_TEXT_HISTORY_RETENTION_DAYS,
+                ),
+                "retention.text_history_retention_days",
+                minimum=1,
+            ),
+            retry_media_retention_hours=_parse_float(
+                retention.get(
+                    "retry_media_retention_hours",
+                    DEFAULT_RETRY_MEDIA_RETENTION_HOURS,
+                ),
+                "retention.retry_media_retention_hours",
+                minimum=0.1,
+            ),
+            purge_on_startup=_parse_bool(
+                retention.get("purge_on_startup", DEFAULT_PURGE_ON_STARTUP),
+                "retention.purge_on_startup",
+            ),
+        ),
+        offline_retry=OfflineRetrySettings(
+            enabled=_parse_bool(
+                offline_retry.get("enabled", DEFAULT_OFFLINE_RETRY_ENABLED),
+                "offline_retry.enabled",
+            ),
+            max_items=_parse_int(
+                offline_retry.get("max_items", DEFAULT_OFFLINE_RETRY_MAX_ITEMS),
+                "offline_retry.max_items",
+                minimum=1,
+            ),
+            max_attempts=_parse_int(
+                offline_retry.get("max_attempts", DEFAULT_OFFLINE_RETRY_MAX_ATTEMPTS),
+                "offline_retry.max_attempts",
+                minimum=1,
+            ),
+            initial_delay_seconds=_parse_float(
+                offline_retry.get(
+                    "initial_delay_seconds",
+                    DEFAULT_OFFLINE_RETRY_INITIAL_DELAY_SECONDS,
+                ),
+                "offline_retry.initial_delay_seconds",
+                minimum=1.0,
+            ),
+            max_delay_seconds=_parse_float(
+                offline_retry.get(
+                    "max_delay_seconds",
+                    DEFAULT_OFFLINE_RETRY_MAX_DELAY_SECONDS,
+                ),
+                "offline_retry.max_delay_seconds",
+                minimum=1.0,
+            ),
+            poll_interval_seconds=_parse_float(
+                offline_retry.get(
+                    "poll_interval_seconds",
+                    DEFAULT_OFFLINE_RETRY_POLL_INTERVAL_SECONDS,
+                ),
+                "offline_retry.poll_interval_seconds",
+                minimum=1.0,
+            ),
+            min_free_mb=_parse_int(
+                offline_retry.get("min_free_mb", DEFAULT_OFFLINE_RETRY_MIN_FREE_MB),
+                "offline_retry.min_free_mb",
+                minimum=1,
+            ),
+            max_storage_mb=_parse_int(
+                offline_retry.get(
+                    "max_storage_mb",
+                    DEFAULT_OFFLINE_RETRY_MAX_STORAGE_MB,
+                ),
+                "offline_retry.max_storage_mb",
+                minimum=1,
+            ),
+        ),
         config_path=resolved_path,
     )
+    _validate_pin_assignments(settings)
+    return settings
 
 
 def _read_yaml(config_path: Path) -> dict[str, Any]:
@@ -394,10 +541,13 @@ def _apply_environment_overrides(
     merged["display"] = dict(raw_data.get("display", {}))
     merged["button"] = dict(raw_data.get("button", {}))
     merged["led"] = dict(raw_data.get("led", {}))
+    merged["app"] = dict(raw_data.get("app", {}))
     merged["ai"] = dict(raw_data.get("ai", {}))
     merged["vision"] = dict(raw_data.get("vision", {}))
     merged["startup"] = dict(raw_data.get("startup", {}))
     merged["reliability"] = dict(raw_data.get("reliability", {}))
+    merged["retention"] = dict(raw_data.get("retention", {}))
+    merged["offline_retry"] = dict(raw_data.get("offline_retry", {}))
 
     camera = merged["camera"]
     camera_resolution = dict(camera.get("resolution", {}))
@@ -470,6 +620,10 @@ def _apply_environment_overrides(
     _set_if_present(merged["led"], "pin", env, "GPIO_LED_PIN")
     _set_if_present(merged["led"], "active_high", env, "GPIO_LED_ACTIVE_HIGH")
 
+    _set_if_present(merged["app"], "host", env, "APP_HOST")
+    _set_if_present(merged["app"], "port", env, "APP_PORT")
+    _set_if_present(merged["app"], "debug", env, "FLASK_DEBUG")
+
     _set_if_present(merged["ai"], "default_mode", env, "AI_DEFAULT_MODE")
     _set_if_present(
         merged["vision"],
@@ -523,6 +677,70 @@ def _apply_environment_overrides(
         "openai_retry_backoff_seconds",
         env,
         "RELIABILITY_OPENAI_RETRY_BACKOFF_SECONDS",
+    )
+    _set_if_present(merged["retention"], "store_images", env, "STORE_IMAGES")
+    _set_if_present(
+        merged["retention"],
+        "text_history_max_items",
+        env,
+        "TEXT_HISTORY_MAX_ITEMS",
+    )
+    _set_if_present(
+        merged["retention"],
+        "text_history_retention_days",
+        env,
+        "TEXT_HISTORY_RETENTION_DAYS",
+    )
+    _set_if_present(
+        merged["retention"],
+        "retry_media_retention_hours",
+        env,
+        "RETRY_MEDIA_RETENTION_HOURS",
+    )
+    _set_if_present(merged["retention"], "purge_on_startup", env, "PURGE_ON_STARTUP")
+    _set_if_present(merged["offline_retry"], "enabled", env, "OFFLINE_RETRY_ENABLED")
+    _set_if_present(
+        merged["offline_retry"],
+        "max_items",
+        env,
+        "OFFLINE_RETRY_MAX_ITEMS",
+        "OFFLINE_RETRY_MAX_ENTRIES",
+    )
+    _set_if_present(
+        merged["offline_retry"],
+        "max_attempts",
+        env,
+        "OFFLINE_RETRY_MAX_ATTEMPTS",
+    )
+    _set_if_present(
+        merged["offline_retry"],
+        "initial_delay_seconds",
+        env,
+        "OFFLINE_RETRY_INITIAL_DELAY_SECONDS",
+    )
+    _set_if_present(
+        merged["offline_retry"],
+        "max_delay_seconds",
+        env,
+        "OFFLINE_RETRY_MAX_DELAY_SECONDS",
+    )
+    _set_if_present(
+        merged["offline_retry"],
+        "poll_interval_seconds",
+        env,
+        "OFFLINE_RETRY_POLL_INTERVAL_SECONDS",
+    )
+    _set_if_present(
+        merged["offline_retry"],
+        "min_free_mb",
+        env,
+        "OFFLINE_RETRY_MIN_FREE_MB",
+    )
+    _set_if_present(
+        merged["offline_retry"],
+        "max_storage_mb",
+        env,
+        "OFFLINE_RETRY_MAX_STORAGE_MB",
     )
     return merged
 
@@ -682,3 +900,29 @@ def _parse_exposure(value: Any) -> str | int:
     if parsed_int <= 0:
         raise SettingsError("camera.exposure must be 'auto' or a positive integer.")
     return parsed_int
+
+
+def _validate_pin_assignments(settings: DeviceSettings) -> None:
+    """Reject duplicate GPIO pin assignments across buttons and LED."""
+    pins: list[tuple[str, int]] = [("button.pin", settings.button.pin)]
+    optional_pins = {
+        "button.mode_button_1_pin": settings.button.mode_button_1_pin,
+        "button.mode_button_2_pin": settings.button.mode_button_2_pin,
+        "button.mode_button_3_pin": settings.button.mode_button_3_pin,
+        "button.mode_button_4_pin": settings.button.mode_button_4_pin,
+        "button.mode_button_5_pin": settings.button.mode_button_5_pin,
+        "button.back_button_pin": settings.button.back_button_pin,
+    }
+    for label, pin in optional_pins.items():
+        if pin is not None:
+            pins.append((label, pin))
+    if settings.led.enabled:
+        pins.append(("led.pin", settings.led.pin))
+
+    seen: dict[int, str] = {}
+    for label, pin in pins:
+        if pin in seen:
+            raise SettingsError(
+                f"GPIO pin conflict: '{label}' duplicates '{seen[pin]}' on pin {pin}."
+            )
+        seen[pin] = label

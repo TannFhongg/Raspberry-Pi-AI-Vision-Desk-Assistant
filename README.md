@@ -25,12 +25,11 @@ Validated on July 10, 2026:
 - The physical capture path triggered from `GPIO17` now works end-to-end after fixing the live-preview-to-capture camera handoff race that previously surfaced as `Camera disconnected`
 - The compact answer screen was refined for readability by reducing the response font size by 35 percent so longer OCR and AI outputs fit better on the device display
 - The live preview now streams over MJPEG for smoother on-device framing instead of browser-side image polling
-- Successful analyses are now available again through `Recent Results`, backed by RAM cache plus persisted history on disk
-- Recent results now render as a thumbnail gallery in RAM so old scans can be reopened with faster visual recognition
-- The result screen can now re-analyze the same saved image in a different assistant mode without taking another photo
-- The main result view now gives more room to `Answer` by removing the on-screen GPIO re-analyze hint and tightening the header and health bar
-- Transient network or OpenAI failures are now saved into an offline retry queue and retried automatically when service connectivity returns
-- Automated regression coverage is currently green: `python -m pytest` -> `105 passed`
+- Successful analyses are now available again through `Recent Results`, now retained as text-only history with bounded cleanup
+- Working captures and processed images now stay inside `data/private/` and are purged after successful jobs by default
+- Transient network or OpenAI failures are now saved into a private offline retry queue and retried automatically when service connectivity returns
+- The default deployment profile is now local-only kiosk mode on `127.0.0.1:5000`
+- Automated regression coverage is currently green in the local test suite
 
 ## Portfolio Value
 
@@ -56,14 +55,14 @@ Validated on July 10, 2026:
 - Stream a smoother live preview over MJPEG while framing the subject before capture
 - Show a compact health bar with overall system, CPU temperature, RAM usage, network, and camera status
 - Keep recent successful results available for nearly instant re-open without recapturing
-- Show thumbnail previews for recent saved scans directly inside the history gallery
-- Re-analyze the same already-captured image under a different AI mode without touching the camera again
+- Keep history text-only by default so answer recall does not require retaining user images on disk
 - Queue retryable OpenAI or network failures offline and retry them automatically in the background
+- Store working media in private runtime directories with startup purge and bounded retention
 - Use 5 dedicated GPIO mode buttons plus 1 capture button to trigger the same capture flow
 - Use a production-style hardware state machine with short-press capture, long-press clear, physical mode selection, and optional LED feedback
 - Load device defaults from `config/device.yaml` with environment variable and CLI overrides
 - Run `python check_hardware.py` to verify camera, display, internet, OpenAI, and GPIO readiness
-- Boot straight into the touchscreen UI with Chromium kiosk mode on Raspberry Pi OS Bookworm
+- Boot straight into a local-only touchscreen UI with Chromium kiosk mode on Raspberry Pi OS Bookworm
 - Save the latest readable pipeline result to `data/latest_result.txt`
 - Persist the current UI mode and screen state in `data/ui_state.json`
 
@@ -192,8 +191,11 @@ UI_SCREEN_WIDTH=480
 UI_SCREEN_HEIGHT=320
 UI_DISPLAY_ORIENTATION=landscape
 AI_DEFAULT_MODE=document_reader
+APP_HOST=127.0.0.1
+APP_PORT=5000
+FLASK_DEBUG=0
 STARTUP_BEHAVIOR=kiosk
-STARTUP_URL=http://localhost:5000
+STARTUP_URL=http://127.0.0.1:5000
 RELIABILITY_LOG_LEVEL=INFO
 RELIABILITY_LOG_MAX_BYTES=1048576
 RELIABILITY_LOG_BACKUP_COUNT=5
@@ -211,9 +213,19 @@ UI_TOUCH_TARGET=68
 UI_PROCESSING_REFRESH_MS=1200
 UI_IDLE_REFRESH_MS=2500
 LIVE_PREVIEW_FRAME_INTERVAL_MS=80
+STORE_IMAGES=0
+TEXT_HISTORY_MAX_ITEMS=100
+TEXT_HISTORY_RETENTION_DAYS=30
+RETRY_MEDIA_RETENTION_HOURS=24
+PURGE_ON_STARTUP=1
 OFFLINE_RETRY_ENABLED=1
 OFFLINE_RETRY_POLL_INTERVAL_SECONDS=30
-OFFLINE_RETRY_MAX_ENTRIES=24
+OFFLINE_RETRY_MAX_ITEMS=10
+OFFLINE_RETRY_MAX_ATTEMPTS=3
+OFFLINE_RETRY_INITIAL_DELAY_SECONDS=30
+OFFLINE_RETRY_MAX_DELAY_SECONDS=900
+OFFLINE_RETRY_MIN_FREE_MB=128
+OFFLINE_RETRY_MAX_STORAGE_MB=512
 ```
 
 ## Device Configuration
@@ -263,6 +275,11 @@ led:
   pin: 27
   active_high: true
 
+app:
+  host: 127.0.0.1
+  port: 5000
+  debug: false
+
 ai:
   default_mode: document_reader
 
@@ -271,7 +288,7 @@ vision:
 
 startup:
   behavior: kiosk
-  url: http://localhost:5000
+  url: http://127.0.0.1:5000
 
 reliability:
   log_level: INFO
@@ -283,6 +300,23 @@ reliability:
   openai_timeout_seconds: 30.0
   openai_retry_attempts: 3
   openai_retry_backoff_seconds: 2.0
+
+retention:
+  store_images: false
+  text_history_max_items: 100
+  text_history_retention_days: 30
+  retry_media_retention_hours: 24
+  purge_on_startup: true
+
+offline_retry:
+  enabled: true
+  max_items: 10
+  max_attempts: 3
+  initial_delay_seconds: 30
+  max_delay_seconds: 900
+  poll_interval_seconds: 30
+  min_free_mb: 128
+  max_storage_mb: 512
 ```
 
 Runtime reliability artifacts:
@@ -290,10 +324,11 @@ Runtime reliability artifacts:
 - `logs/app.log`: rotating general runtime log
 - `logs/error.log`: rotating error-only log
 - `data/health_status.json`: latest system health snapshot
-- `data/result_history.json`: persisted recent successful assistant results
-- `data/result_history_assets/`: saved source and processed images used for RAM thumbnails and instant re-analysis
-- `data/offline_retry_queue.json`: persisted retry queue metadata for transient AI failures
-- `data/offline_retry/`: copied processed images waiting for automatic retry
+- `data/result_history.json`: persisted text-only assistant history
+- `data/private/current/`: temporary working capture and preprocess files for the active job
+- `data/private/retry_queue.json`: persisted retry queue metadata for transient AI failures
+- `data/private/retry/`: private processed images waiting for automatic retry
+- `data/private/quarantine/`: malformed or unsafe retained artifacts moved aside during purge/recovery
 
 Default GPIO wiring uses BCM numbering:
 
@@ -348,7 +383,7 @@ python test_camera_capture.py --backend opencv --camera-index 0 --exposure 12000
 Captured output:
 
 ```text
-static/captured.jpg
+data/private/current/captured.jpg
 ```
 
 ## Phase 3: Preprocessing
@@ -368,7 +403,7 @@ python test_preprocess.py --grayscale
 Processed output:
 
 ```text
-static/processed.jpg
+data/private/current/processed.jpg
 ```
 
 ## Phase 4: Full Terminal Pipeline
@@ -394,7 +429,7 @@ python main.py --mode document_reader --grayscale
 You can reuse a saved test image instead of capturing a new one:
 
 ```bash
-cp test_images/math_problem.jpg static/captured.jpg
+cp test_images/math_problem.jpg data/private/current/captured.jpg
 python main.py --mode math_solver --skip-capture
 ```
 
@@ -407,7 +442,7 @@ python main.py --mode document_reader --skip-capture --screen-optimization on
 python main.py --mode document_reader --skip-capture --screen-optimization off
 ```
 
-When `--skip-capture` is used, `main.py` loads `static/captured.jpg`, preprocesses it into `static/processed.jpg`, and sends the processed image to OpenAI Vision. With `SCREEN_OPTIMIZATION=auto`, the advanced screen/document path is enabled by default for `document_reader`, `math_solver`, and `meeting_assistant`.
+When `--skip-capture` is used, `main.py` loads `data/private/current/captured.jpg`, preprocesses it into `data/private/current/processed.jpg`, and sends the processed image to OpenAI Vision. With `SCREEN_OPTIMIZATION=auto`, the advanced screen/document path is enabled by default for `document_reader`, `math_solver`, and `meeting_assistant`.
 
 ## Phase 5: Flask Touchscreen UI
 
@@ -424,7 +459,7 @@ The current default device profile uses a `480x320` landscape touchscreen.
 For production Pi hardware, the current setup targets this default boot behavior:
 
 ```text
-Power on -> systemd starts Flask -> Chromium opens http://localhost:5000 in kiosk mode
+Power on -> systemd starts Flask on 127.0.0.1:5000 -> Chromium opens the local kiosk UI
 ```
 
 Screen flow:
@@ -433,8 +468,8 @@ Screen flow:
 - `home` with a selected mode: live MJPEG camera preview, selected mode header, `Click Button to Capture`, health pills, and `Change Mode`
 - `processing`: auto-refreshing progress screen with simplified centered status and a `Thinking...` state during AI analysis
 - `result`: readable answer screen with a large scrollable answer box, `Capture Again`, and optional `Recent Results`
-- `history`: saved recent results list with thumbnail previews for reopening previous successful scans
-- `history_detail`: full saved answer view for one historical scan, plus same-image re-analysis actions
+- `history`: saved recent results list with text-only summaries and retention metadata
+- `history_detail`: full saved answer view for one historical scan without stored thumbnails or re-analysis actions
 - `error`: classified `Camera error`, `Network error`, `API error`, or generic error screen with retry actions
 
 Tapping `Capture` starts the full background capture -> preprocess -> analyze workflow for the currently selected mode.
@@ -460,23 +495,13 @@ Landscape touchscreen example:
 UI_SCREEN_WIDTH=480 UI_SCREEN_HEIGHT=320 UI_DISPLAY_ORIENTATION=landscape python app.py
 ```
 
-You can also use Flask directly:
+You can still override the bind address for diagnostics:
 
 ```bash
 flask run --host=0.0.0.0 --port=5000
 ```
 
-Open it from another device on the same network:
-
-```text
-http://<raspberry-pi-ip>:5000
-```
-
-Find the Pi IP address with:
-
-```bash
-hostname -I
-```
+This is not the supported pilot profile and logs a prominent security warning.
 
 ## Phase 6: GPIO Button Trigger
 
@@ -575,7 +600,7 @@ UI_SCREEN_WIDTH=480 UI_SCREEN_HEIGHT=320 UI_DISPLAY_ORIENTATION=landscape python
 Chromium kiosk launch:
 
 ```bash
-chromium-browser --kiosk http://localhost:5000
+chromium-browser --kiosk http://127.0.0.1:5000
 ```
 
 ## Phase 11: Production Hardware Button And LED
@@ -668,7 +693,7 @@ python check_hardware.py
 journalctl -u ai-vision-assistant.service -f
 ```
 
-## Phase 15: Live Preview, Recent Results, And Offline Retry
+## Phase 15: Live Preview, Recent Results, Offline Retry, And Privacy Hardening
 
 Phase 15 pushes the assistant closer to a resilient product workflow instead of a demo-only happy path.
 
@@ -677,12 +702,12 @@ Phase 15 improvements:
 - live camera preview now streams through `/camera/live-stream.mjpg` instead of client-side JPEG polling
 - recent successful answers are cached in memory and persisted to `data/result_history.json`
 - the touchscreen can reopen recent saved answers nearly instantly through `Recent Results`
-- retryable OpenAI failures such as network loss, timeout, rate limiting, or `5xx` responses are stored in `data/offline_retry_queue.json`
-- a background retry worker replays queued analyses automatically from copied processed images in `data/offline_retry/`
+- retryable OpenAI failures such as network loss, timeout, rate limiting, or `5xx` responses are stored in `data/private/retry_queue.json`
+- a background retry worker replays queued analyses automatically from copied processed images in `data/private/retry/`
 - queued failures appear to the user as `Queued for retry` instead of only showing a hard error
-- recent-result cards now include RAM-backed thumbnails for faster visual browsing
-- saved images can still be re-run under another mode without recapture, but the main result screen now stays answer-first by hiding the touch `Analyze Same Image As` panel, removing the GPIO hint text, and tightening the header and health pills
-- when the embedded GPIO listener is active, those same saved-image re-analysis flows can also be triggered from the physical mode buttons, and the physical back button exits to the ready screen
+- recent-result cards are now text-only by default so historical answers can be kept without retaining user images
+- successful jobs purge their private working images immediately after the answer is saved
+- delete-all-data is available from the local UI and clears text history, retry data, private temp media, and quarantined leftovers
 
 ## Troubleshooting
 
@@ -717,7 +742,7 @@ Phase 15 improvements:
 ### No Image Available
 
 - Run a capture step first
-- Confirm `static/captured.jpg` exists
+- Confirm `data/private/current/captured.jpg` exists
 
 ### Touch UI Layout Does Not Fit The Screen
 
@@ -816,13 +841,13 @@ For fullscreen kiosk startup on Raspberry Pi OS Bookworm with `labwc`:
 chmod +x deployment/kiosk-launch.sh
 ```
 
-4. Reboot the Pi and confirm Chromium opens `http://localhost:5000`
+4. Reboot the Pi and confirm Chromium opens `http://127.0.0.1:5000`
 
 Manual fallback commands:
 
 ```bash
 python app.py
-chromium-browser http://localhost:5000
+chromium-browser http://127.0.0.1:5000
 ```
 
 ## Portfolio Description
@@ -831,7 +856,7 @@ See [docs/upwork_project_description.md](docs/upwork_project_description.md).
 
 ## Future Improvements
 
-- Add result history instead of only the latest saved output
+- Add an authenticated admin or export workflow for retained text history
 - Add GPIO feedback LED or buzzer
 - Add optional live preview or captured-image confirmation screens
 - Move long-running analysis into a fuller background job model

@@ -48,7 +48,7 @@ class LoadDeviceSettingsTests(unittest.TestCase):
               screen_optimization: auto
             startup:
               behavior: kiosk
-              url: http://localhost:5000
+              url: http://127.0.0.1:5000
             reliability:
               log_level: INFO
               log_max_bytes: 1048576
@@ -128,7 +128,7 @@ class LoadDeviceSettingsTests(unittest.TestCase):
               screen_optimization: auto
             startup:
               behavior: kiosk
-              url: http://localhost:5000
+              url: http://127.0.0.1:5000
             reliability:
               log_level: INFO
               log_max_bytes: 1048576
@@ -163,7 +163,7 @@ class LoadDeviceSettingsTests(unittest.TestCase):
                 "GPIO_BUTTON_DEBOUNCE_SECONDS": "0.4",
                 "GPIO_BUTTON_HOLD_SECONDS": "1.8",
                 "ENABLE_GPIO_LED": "1",
-                "GPIO_LED_PIN": "23",
+                "GPIO_LED_PIN": "18",
                 "GPIO_LED_ACTIVE_HIGH": "0",
                 "AI_DEFAULT_MODE": "solve_problem",
                 "SCREEN_OPTIMIZATION": "on",
@@ -198,7 +198,7 @@ class LoadDeviceSettingsTests(unittest.TestCase):
         self.assertAlmostEqual(settings.button.debounce_seconds, 0.4)
         self.assertAlmostEqual(settings.button.hold_seconds, 1.8)
         self.assertTrue(settings.led.enabled)
-        self.assertEqual(settings.led.pin, 23)
+        self.assertEqual(settings.led.pin, 18)
         self.assertFalse(settings.led.active_high)
         self.assertEqual(settings.ai.default_mode, "math_solver")
         self.assertEqual(settings.vision.screen_optimization, "on")
@@ -242,7 +242,7 @@ class LoadDeviceSettingsTests(unittest.TestCase):
               screen_optimization: auto
             startup:
               behavior: kiosk
-              url: http://localhost:5000
+              url: http://127.0.0.1:5000
             reliability:
               log_level: INFO
               log_max_bytes: 1048576
@@ -288,7 +288,7 @@ class LoadDeviceSettingsTests(unittest.TestCase):
               screen_optimization: maybe
             startup:
               behavior: kiosk
-              url: http://localhost:5000
+              url: http://127.0.0.1:5000
             reliability:
               log_level: INFO
               log_max_bytes: 1048576
@@ -334,9 +334,141 @@ class LoadDeviceSettingsTests(unittest.TestCase):
               screen_optimization: auto
             startup:
               behavior: kiosk
-              url: http://localhost:5000
+              url: http://127.0.0.1:5000
             reliability:
               log_level: nope
+              log_max_bytes: 1048576
+              log_backup_count: 5
+              health_monitor_enabled: true
+              health_check_interval_seconds: 60.0
+              camera_probe_interval_seconds: 300.0
+              openai_timeout_seconds: 30.0
+              openai_retry_attempts: 3
+              openai_retry_backoff_seconds: 2.0
+            """
+        )
+
+        with self.assertRaises(SettingsError):
+            load_device_settings(config_path=config_path, env={})
+
+    def test_new_app_retention_and_retry_settings_load(self) -> None:
+        config_path = _write_temp_config(
+            """
+            camera:
+              backend: opencv
+              index: 0
+              resolution:
+                width: 4608
+                height: 2592
+              autofocus_mode: continuous
+              exposure: auto
+              brightness: 0.0
+              capture_delay_seconds: 1.0
+              grayscale: false
+              max_dimension: 1600
+            display:
+              size:
+                width: 480
+                height: 320
+              orientation: landscape
+            button:
+              enabled: true
+              pin: 17
+            app:
+              host: 127.0.0.1
+              port: 5000
+              debug: false
+            ai:
+              default_mode: document_reader
+            vision:
+              screen_optimization: auto
+            startup:
+              behavior: kiosk
+              url: http://127.0.0.1:5000
+            reliability:
+              log_level: INFO
+              log_max_bytes: 1048576
+              log_backup_count: 5
+              health_monitor_enabled: true
+              health_check_interval_seconds: 60.0
+              camera_probe_interval_seconds: 300.0
+              openai_timeout_seconds: 30.0
+              openai_retry_attempts: 3
+              openai_retry_backoff_seconds: 2.0
+            retention:
+              store_images: false
+              text_history_max_items: 100
+              text_history_retention_days: 30
+              retry_media_retention_hours: 24.0
+              purge_on_startup: true
+            offline_retry:
+              enabled: true
+              max_items: 10
+              max_attempts: 3
+              initial_delay_seconds: 30.0
+              max_delay_seconds: 900.0
+              poll_interval_seconds: 5.0
+              min_free_mb: 128
+              max_storage_mb: 512
+            """
+        )
+
+        settings = load_device_settings(config_path=config_path, env={})
+
+        self.assertEqual(settings.app.host, "127.0.0.1")
+        self.assertEqual(settings.app.port, 5000)
+        self.assertFalse(settings.app.debug)
+        self.assertFalse(settings.retention.store_images)
+        self.assertEqual(settings.retention.text_history_max_items, 100)
+        self.assertEqual(settings.retention.text_history_retention_days, 30)
+        self.assertAlmostEqual(settings.retention.retry_media_retention_hours, 24.0)
+        self.assertTrue(settings.retention.purge_on_startup)
+        self.assertTrue(settings.offline_retry.enabled)
+        self.assertEqual(settings.offline_retry.max_items, 10)
+        self.assertEqual(settings.offline_retry.max_attempts, 3)
+        self.assertAlmostEqual(settings.offline_retry.initial_delay_seconds, 30.0)
+        self.assertAlmostEqual(settings.offline_retry.max_delay_seconds, 900.0)
+        self.assertAlmostEqual(settings.offline_retry.poll_interval_seconds, 5.0)
+        self.assertEqual(settings.offline_retry.min_free_mb, 128)
+        self.assertEqual(settings.offline_retry.max_storage_mb, 512)
+
+    def test_duplicate_led_and_button_pins_raise_settings_error(self) -> None:
+        config_path = _write_temp_config(
+            """
+            camera:
+              backend: opencv
+              index: 0
+              resolution:
+                width: 4608
+                height: 2592
+              autofocus_mode: continuous
+              exposure: auto
+              brightness: 0.0
+              capture_delay_seconds: 1.0
+              grayscale: false
+              max_dimension: 1600
+            display:
+              size:
+                width: 480
+                height: 320
+              orientation: landscape
+            button:
+              enabled: true
+              pin: 17
+              mode_button_1_pin: 23
+            led:
+              enabled: true
+              pin: 23
+              active_high: true
+            ai:
+              default_mode: document_reader
+            vision:
+              screen_optimization: auto
+            startup:
+              behavior: kiosk
+              url: http://127.0.0.1:5000
+            reliability:
+              log_level: INFO
               log_max_bytes: 1048576
               log_backup_count: 5
               health_monitor_enabled: true

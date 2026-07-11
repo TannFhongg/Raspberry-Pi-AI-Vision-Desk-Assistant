@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from ai.modes import normalize_mode
+from system.storage import atomic_write_text
 
 
 class DeviceState(str, Enum):
@@ -152,7 +153,7 @@ def clear_latest_result_file(
         "Status: cleared",
         "Message: No result available",
     ]
-    result_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    atomic_write_text(result_path, "\n".join(lines) + "\n", encoding="utf-8")
     return result_path
 
 

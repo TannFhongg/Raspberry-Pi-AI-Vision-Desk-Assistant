@@ -67,6 +67,11 @@
                     <form method="post" action="{{ url_for('back') }}" class="secondary-action-form">
                         <button type="submit" class="secondary-action-link">Change Mode</button>
                     </form>
+                    <form method="post" action="{{ url_for('delete_all_data') }}" class="secondary-action-form delete-all-form" onsubmit="return confirmDeleteAll(this);">
+                        <input type="hidden" name="confirm" value="delete-all">
+                        <input type="hidden" name="confirm_stage" value="">
+                        <button type="submit" class="secondary-action-link">Delete All Data</button>
+                    </form>
                     <p class="capture-hint">Frame the subject, then capture.</p>
                 </div>
             </section>
@@ -77,9 +82,16 @@
                     <p class="header-subtitle">Press button to select the mode.</p>
                 </div>
                 {% if has_recent_results %}
-                <form action="{{ url_for('history') }}" class="header-action-form">
-                    <button type="submit" class="header-capture-link">Recent Results</button>
-                </form>
+                <div class="header-action-form">
+                    <form action="{{ url_for('history') }}" class="header-action-form">
+                        <button type="submit" class="header-capture-link">Recent Results</button>
+                    </form>
+                    <form method="post" action="{{ url_for('delete_all_data') }}" class="header-action-form delete-all-form" onsubmit="return confirmDeleteAll(this);">
+                        <input type="hidden" name="confirm" value="delete-all">
+                        <input type="hidden" name="confirm_stage" value="">
+                        <button type="submit" class="secondary-action-link">Delete All Data</button>
+                    </form>
+                </div>
                 {% endif %}
             </header>
             <div class="system-health-bar" aria-label="Device health" data-health-bar>
@@ -213,11 +225,6 @@
                     {% if recent_results %}
                     {% for entry in recent_results %}
                     <a class="history-card" href="{{ url_for('history_detail', entry_id=entry.id) }}" role="listitem">
-                        {% if entry.has_thumbnail %}
-                        <span class="history-card-thumb" aria-hidden="true">
-                            <img src="{{ entry.thumbnail_data_url }}" alt="" class="history-card-thumb-image">
-                        </span>
-                        {% endif %}
                         <span class="history-card-body">
                         <span class="history-card-head">
                             <span class="history-card-title">{{ entry.mode_label }}</span>
@@ -227,6 +234,8 @@
                         <span class="history-card-meta">
                             {% if entry.camera_backend_used %}{{ entry.camera_backend_used|upper }}{% endif %}
                             {% if entry.camera_resolution %} · {{ entry.camera_resolution[0] }}x{{ entry.camera_resolution[1] }}{% endif %}
+                            {% if entry.model_used %} · {{ entry.model_used }}{% endif %}
+                            {% if entry.retry_status %} · {{ entry.retry_status }}{% endif %}
                         </span>
                         </span>
                     </a>
@@ -237,11 +246,6 @@
                 </div>
                 {% elif screen == "history_detail" and history_entry %}
                 <div class="answer-content-wrap answer-content-wrap-full">
-                    {% if history_entry.has_thumbnail %}
-                    <div class="history-detail-preview">
-                        <img src="{{ history_entry.thumbnail_data_url }}" alt="{{ history_entry.mode_label }} preview" class="history-detail-preview-image">
-                    </div>
-                    {% endif %}
                     <div class="history-detail-meta">
                         <span class="history-detail-chip">{{ history_entry.created_at }}</span>
                         {% if history_entry.camera_backend_used %}
@@ -250,23 +254,25 @@
                         {% if history_entry.camera_resolution %}
                         <span class="history-detail-chip">{{ history_entry.camera_resolution[0] }}x{{ history_entry.camera_resolution[1] }}</span>
                         {% endif %}
+                        {% if history_entry.model_used %}
+                        <span class="history-detail-chip">{{ history_entry.model_used }}</span>
+                        {% endif %}
+                        {% if history_entry.duration_seconds is not none %}
+                        <span class="history-detail-chip">{{ "%.1f"|format(history_entry.duration_seconds) }}s</span>
+                        {% endif %}
+                        {% if history_entry.retry_status %}
+                        <span class="history-detail-chip">{{ history_entry.retry_status }}</span>
+                        {% endif %}
                     </div>
-                    {% if reanalyze_entry and reanalyze_mode_options %}
-                    <div class="reanalyze-panel">
-                        <p class="reanalyze-label">Analyze Same Image As</p>
-                        <div class="reanalyze-grid">
-                            {% for mode_option in reanalyze_mode_options %}
-                            <form method="post" action="{{ url_for('reanalyze') }}" class="reanalyze-form">
-                                <input type="hidden" name="entry_id" value="{{ reanalyze_entry.id }}">
-                                <input type="hidden" name="mode" value="{{ mode_option.id }}">
-                                <button type="submit" class="reanalyze-button">{{ mode_option.name }}</button>
-                            </form>
-                            {% endfor %}
-                        </div>
-                    </div>
-                    {% endif %}
                     <div class="answer-area" tabindex="0">
                         <div class="answer-copy">{{ answer_html }}</div>
+                    </div>
+                    <div class="answer-toolbar">
+                        <form method="post" action="{{ url_for('delete_all_data') }}" class="secondary-action-form delete-all-form" onsubmit="return confirmDeleteAll(this);">
+                            <input type="hidden" name="confirm" value="delete-all">
+                            <input type="hidden" name="confirm_stage" value="">
+                            <button type="submit" class="secondary-action-link">Delete All Data</button>
+                        </form>
                     </div>
                 </div>
                 {% elif screen == "result" %}
@@ -280,6 +286,11 @@
                             <button type="submit" class="secondary-action-link">Recent Results</button>
                         </form>
                         {% endif %}
+                        <form method="post" action="{{ url_for('delete_all_data') }}" class="secondary-action-form delete-all-form" onsubmit="return confirmDeleteAll(this);">
+                            <input type="hidden" name="confirm" value="delete-all">
+                            <input type="hidden" name="confirm_stage" value="">
+                            <button type="submit" class="secondary-action-link">Delete All Data</button>
+                        </form>
                     </div>
                     <div class="answer-area" tabindex="0">
                         <div class="answer-copy">{{ answer_html }}</div>
@@ -306,6 +317,23 @@
             var healthPollMs = Number(root.dataset.healthPollMs || "0");
             var uiStateRequestInFlight = false;
             var healthRequestInFlight = false;
+
+            window.confirmDeleteAll = function (form) {
+                var stageField = form.querySelector('input[name="confirm_stage"]');
+                if (stageField) {
+                    stageField.value = "";
+                }
+                if (!window.confirm("Delete all local answers, retry data, and temporary images?")) {
+                    return false;
+                }
+                if (!window.confirm("This cannot be undone. Delete all local data now?")) {
+                    return false;
+                }
+                if (stageField) {
+                    stageField.value = "final";
+                }
+                return true;
+            };
 
             function setText(selector, text) {
                 var element = document.querySelector(selector);

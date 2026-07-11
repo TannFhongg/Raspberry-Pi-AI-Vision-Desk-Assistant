@@ -2,22 +2,18 @@
 
 from __future__ import annotations
 
-import base64
-import io
 import json
 import logging
 import os
 import re
-import shutil
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
 from flask import Flask, Response, jsonify, redirect, render_template, request, url_for
 from markupsafe import Markup, escape
-from PIL import Image
 
 from ai.modes import get_mode, normalize_mode
 from camera.live_preview import LivePreviewService
@@ -40,7 +36,11 @@ from system import (
     OfflineRetryQueue,
     OfflineRetryQueueError,
     OfflineRetryQueueFullError,
+    atomic_write_json,
     configure_logging,
+    quarantine_file,
+    safe_rmtree,
+    safe_unlink,
 )
 
 load_dotenv()
@@ -64,10 +64,14 @@ HEALTH_STATUS_PATH = Path("data/health_status.json")
 LATEST_RESULT_PATH = Path("data/latest_result.txt")
 RESULT_HISTORY_PATH = Path("data/result_history.json")
 RESULT_HISTORY_ASSET_DIR = Path("data/result_history_assets")
-CAPTURED_IMAGE_PATH = Path("static/captured.jpg")
-PROCESSED_IMAGE_PATH = Path("static/processed.jpg")
-OFFLINE_RETRY_QUEUE_PATH = Path("data/offline_retry_queue.json")
-OFFLINE_RETRY_STORAGE_PATH = Path("data/offline_retry")
+PRIVATE_DATA_PATH = Path("data/private")
+PRIVATE_CURRENT_PATH = PRIVATE_DATA_PATH / "current"
+PRIVATE_RETRY_PATH = PRIVATE_DATA_PATH / "retry"
+PRIVATE_QUARANTINE_PATH = PRIVATE_DATA_PATH / "quarantine"
+CAPTURED_IMAGE_PATH = PRIVATE_CURRENT_PATH / "captured.jpg"
+PROCESSED_IMAGE_PATH = PRIVATE_CURRENT_PATH / "processed.jpg"
+OFFLINE_RETRY_QUEUE_PATH = PRIVATE_DATA_PATH / "retry_queue.json"
+OFFLINE_RETRY_STORAGE_PATH = PRIVATE_RETRY_PATH
 VALID_SCREENS = {"home", "processing", "result", "error", "history", "history_detail"}
 MJPEG_BOUNDARY = "frame"
 UI_MODE_OPTIONS = (
@@ -118,7 +122,6 @@ PROGRESS_STEPS = [
     "Processing...",
     "Thinking...",
 ]
-HISTORY_THUMBNAIL_SIZE = (128, 96)
 
 STATE_LOCK = threading.Lock()
 RESULT_HISTORY_LOCK = threading.Lock()
@@ -192,6 +195,14 @@ BACK_BUTTON_PIN = SETTINGS.button.back_button_pin
 ENABLE_GPIO_LED = SETTINGS.led.enabled
 GPIO_LED_PIN = SETTINGS.led.pin
 GPIO_LED_ACTIVE_HIGH = SETTINGS.led.active_high
+APP_HOST = SETTINGS.app.host
+APP_PORT = SETTINGS.app.port
+FLASK_DEBUG = SETTINGS.app.debug
+STORE_IMAGES = SETTINGS.retention.store_images
+TEXT_HISTORY_RETENTION_DAYS = SETTINGS.retention.text_history_retention_days
+RETRY_MEDIA_RETENTION_HOURS = SETTINGS.retention.retry_media_retention_hours
+PURGE_ON_STARTUP = SETTINGS.retention.purge_on_startup
+OFFLINE_RETRY_ENABLED = SETTINGS.offline_retry.enabled
 UI_DEBUG = _read_bool_env("UI_DEBUG", False)
 
 UI_BASE_FONT_SIZE = _read_int_env("UI_BASE_FONT_SIZE", 20, minimum=16, maximum=42)
@@ -203,11 +214,6 @@ UI_DISPLAY_ORIENTATION = _read_orientation_env(
     "UI_DISPLAY_ORIENTATION",
     "landscape",
 )
-OFFLINE_RETRY_ENABLED = _read_bool_env("OFFLINE_RETRY_ENABLED", True)
-OFFLINE_RETRY_POLL_INTERVAL_SECONDS = float(
-    _read_int_env("OFFLINE_RETRY_POLL_INTERVAL_SECONDS", 30, minimum=5, maximum=3600)
-)
-OFFLINE_RETRY_MAX_ENTRIES = _read_int_env("OFFLINE_RETRY_MAX_ENTRIES", 24, minimum=1, maximum=200)
 LIVE_PREVIEW_FRAME_INTERVAL_MS = _read_int_env(
     "LIVE_PREVIEW_FRAME_INTERVAL_MS",
     80,
@@ -215,7 +221,7 @@ LIVE_PREVIEW_FRAME_INTERVAL_MS = _read_int_env(
     maximum=500,
 )
 UI_HEALTH_REFRESH_MS = _read_int_env("UI_HEALTH_REFRESH_MS", 5000, minimum=2000, maximum=60000)
-RESULT_HISTORY_LIMIT = _read_int_env("RESULT_HISTORY_LIMIT", 12, minimum=3, maximum=50)
+RESULT_HISTORY_LIMIT = SETTINGS.retention.text_history_max_items
 RAW_SCREEN_WIDTH = max(240, min(1920, SETTINGS.display.size.width))
 RAW_SCREEN_HEIGHT = max(240, min(1920, SETTINGS.display.size.height))
 if UI_DISPLAY_ORIENTATION == "landscape" and RAW_SCREEN_WIDTH < RAW_SCREEN_HEIGHT:
@@ -226,8 +232,8 @@ else:
     UI_SCREEN_WIDTH, UI_SCREEN_HEIGHT = RAW_SCREEN_WIDTH, RAW_SCREEN_HEIGHT
 UI_PROCESSING_REFRESH_MS = _read_int_env("UI_PROCESSING_REFRESH_MS", 800, minimum=400, maximum=5000)
 UI_IDLE_REFRESH_MS = _read_int_env("UI_IDLE_REFRESH_MS", 2500, minimum=1000, maximum=10000)
-DEFAULT_CAPTURE_MODE = "solve_problem"
-DEFAULT_CAPTURE_INTERNAL_MODE = UI_MODE_TO_INTERNAL_MODE[DEFAULT_CAPTURE_MODE]
+DEFAULT_CAPTURE_INTERNAL_MODE = SETTINGS.ai.default_mode
+DEFAULT_CAPTURE_MODE = INTERNAL_TO_UI_MODE.get(DEFAULT_CAPTURE_INTERNAL_MODE, "read_text")
 READY_DETAIL = "Press button to select the mode."
 MODE_SELECTED_DETAIL = "Selected mode ready. Press Button Main to capture."
 HARDWARE_IDLE_SCREENS = {"home", "result", "error"}
@@ -242,8 +248,20 @@ if OFFLINE_RETRY_ENABLED:
     OFFLINE_RETRY_QUEUE = OfflineRetryQueue(
         queue_path=OFFLINE_RETRY_QUEUE_PATH,
         storage_dir=OFFLINE_RETRY_STORAGE_PATH,
-        poll_interval_seconds=OFFLINE_RETRY_POLL_INTERVAL_SECONDS,
-        max_entries=OFFLINE_RETRY_MAX_ENTRIES,
+        poll_interval_seconds=SETTINGS.offline_retry.poll_interval_seconds,
+        max_entries=SETTINGS.offline_retry.max_items,
+        max_attempts=SETTINGS.offline_retry.max_attempts,
+        initial_delay_seconds=SETTINGS.offline_retry.initial_delay_seconds,
+        max_delay_seconds=SETTINGS.offline_retry.max_delay_seconds,
+        retention_hours=RETRY_MEDIA_RETENTION_HOURS,
+        min_free_bytes=SETTINGS.offline_retry.min_free_mb * 1024 * 1024,
+        max_storage_bytes=SETTINGS.offline_retry.max_storage_mb * 1024 * 1024,
+        quarantine_dir=PRIVATE_QUARANTINE_PATH,
+    )
+
+if APP_HOST == "0.0.0.0":
+    LOGGER.warning(
+        "Security warning: APP_HOST is set to 0.0.0.0. This pilot release is intended for local-only kiosk access."
     )
 
 LED_INDICATOR = LEDIndicator.create(
@@ -344,7 +362,7 @@ def retry():
 
 @app.post("/reanalyze")
 def reanalyze():
-    """Run AI analysis again on the same saved image without recapturing."""
+    """Keep the legacy reanalyze route but fail gracefully in text-only mode."""
     entry_id = request.form.get("entry_id", "")
     requested_mode = request.form.get("mode", "")
     _start_reanalyze_job(entry_id, requested_mode)
@@ -362,6 +380,21 @@ def back():
 def clear():
     """Clear the saved result/error and return to the ready screen."""
     _clear_and_reset_ui_state(clear_selected_mode=True)
+    return redirect(url_for("index"))
+
+
+@app.post("/data/delete-all")
+def delete_all_data():
+    """Delete retained local user data after an explicit confirmation."""
+    if request.form.get("confirm", "").strip().lower() != "delete-all":
+        LOGGER.warning("Delete-all request ignored because confirmation token was missing")
+        return redirect(url_for("index"))
+    if request.form.get("confirm_stage", "").strip().lower() != "final":
+        LOGGER.warning("Delete-all request ignored because second confirmation was missing")
+        return redirect(url_for("index"))
+
+    _delete_all_user_data()
+    LOGGER.info("All retained local user data was deleted from the device")
     return redirect(url_for("index"))
 
 
@@ -665,17 +698,30 @@ def _load_result_history() -> list[dict[str, Any]]:
         try:
             raw_entries = json.loads(RESULT_HISTORY_PATH.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
+            quarantine_file(
+                RESULT_HISTORY_PATH,
+                quarantine_dir=PRIVATE_QUARANTINE_PATH,
+                reason="invalid-history-json",
+            )
             RESULT_HISTORY_CACHE = []
             return []
 
         parsed_entries: list[dict[str, Any]] = []
-        if isinstance(raw_entries, list):
-            for raw_entry in raw_entries:
-                entry = _coerce_result_history_entry(raw_entry)
-                if entry is not None:
-                    parsed_entries.append(entry)
+        if not isinstance(raw_entries, list):
+            quarantine_file(
+                RESULT_HISTORY_PATH,
+                quarantine_dir=PRIVATE_QUARANTINE_PATH,
+                reason="invalid-history-shape",
+            )
+            RESULT_HISTORY_CACHE = []
+            return []
 
-        RESULT_HISTORY_CACHE = parsed_entries[:RESULT_HISTORY_LIMIT]
+        for raw_entry in raw_entries:
+            entry = _coerce_result_history_entry(raw_entry)
+            if entry is not None:
+                parsed_entries.append(entry)
+
+        RESULT_HISTORY_CACHE = _apply_history_retention(parsed_entries)
         return [entry.copy() for entry in RESULT_HISTORY_CACHE]
 
 
@@ -683,20 +729,20 @@ def _write_result_history(entries: list[dict[str, Any]]) -> None:
     """Persist recent result history and refresh the in-memory cache."""
     global RESULT_HISTORY_CACHE
 
-    normalized_entries = [
+    normalized_entries = _apply_history_retention([
         entry.copy() for entry in entries[:RESULT_HISTORY_LIMIT]
         if _coerce_result_history_entry(entry) is not None
-    ]
+    ])
     RESULT_HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
 
     with RESULT_HISTORY_LOCK:
         RESULT_HISTORY_CACHE = normalized_entries
-        RESULT_HISTORY_PATH.write_text(
-            json.dumps(normalized_entries, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
+        atomic_write_json(
+            RESULT_HISTORY_PATH,
+            normalized_entries,
+            ensure_ascii=False,
+            indent=2,
         )
-    _sync_result_history_assets(normalized_entries)
-    _prune_result_history_thumbnail_cache(normalized_entries)
 
 
 def _append_result_history(
@@ -713,23 +759,24 @@ def _append_result_history(
     history_entries = _load_result_history()
     created_at = _timestamp()
     entry_id = str(int(datetime.now().timestamp() * 1000))
-    source_image_path, processed_image_path = _copy_result_history_assets(result, entry_id)
     history_entry = {
         "id": entry_id,
         "created_at": created_at,
         "selected_mode": ui_mode,
         "selected_mode_internal": internal_mode,
         "mode_label": _history_mode_label(ui_mode, internal_mode),
+        "status": result.status,
         "answer": answer,
         "summary": _history_summary(answer),
         "camera_backend_used": result.camera_backend_used or "",
         "camera_resolution": list(result.camera_resolution) if result.camera_resolution else [],
-        "source_image_path": source_image_path,
-        "processed_image_path": processed_image_path,
+        "model_used": result.model_used or "",
+        "duration_seconds": result.duration_seconds,
+        "retry_status": result.retry_status or "",
+        "error_summary": result.error_summary or "",
     }
     history_entries.insert(0, history_entry)
     _write_result_history(history_entries)
-    _history_thumbnail_data_url(history_entry)
     return history_entry
 
 
@@ -776,12 +823,15 @@ def _coerce_result_history_entry(raw_entry: Any) -> dict[str, Any] | None:
         "selected_mode": selected_mode,
         "selected_mode_internal": selected_mode_internal,
         "mode_label": mode_label,
+        "status": str(raw_entry.get("status", "success")).strip() or "success",
         "answer": answer,
         "summary": summary,
         "camera_backend_used": str(raw_entry.get("camera_backend_used", "")),
         "camera_resolution": camera_resolution,
-        "source_image_path": str(raw_entry.get("source_image_path", "")).strip(),
-        "processed_image_path": str(raw_entry.get("processed_image_path", "")).strip(),
+        "model_used": str(raw_entry.get("model_used", "")).strip(),
+        "duration_seconds": _coerce_optional_float(raw_entry.get("duration_seconds")),
+        "retry_status": str(raw_entry.get("retry_status", "")).strip(),
+        "error_summary": str(raw_entry.get("error_summary", "")).strip(),
     }
 
 
@@ -802,104 +852,6 @@ def _history_summary(answer: str, max_chars: int = 160) -> str:
     return cleaned[: max_chars - 3].rstrip() + "..."
 
 
-def _history_asset_directory(entry_id: str) -> Path:
-    """Return the asset directory for a persisted history entry."""
-    return RESULT_HISTORY_ASSET_DIR / entry_id
-
-
-def _copy_result_history_assets(
-    result: PipelineResult,
-    entry_id: str,
-) -> tuple[str, str]:
-    """Persist the images needed for history thumbnails and future re-analysis."""
-    source_file = None
-    if result.captured_path is not None and Path(result.captured_path).is_file():
-        source_file = Path(result.captured_path)
-    elif result.processed_path is not None and Path(result.processed_path).is_file():
-        source_file = Path(result.processed_path)
-
-    processed_file = None
-    if result.processed_path is not None and Path(result.processed_path).is_file():
-        processed_file = Path(result.processed_path)
-
-    if source_file is None and processed_file is None:
-        return "", ""
-
-    asset_dir = _history_asset_directory(entry_id)
-    asset_dir.mkdir(parents=True, exist_ok=True)
-
-    stored_source_path = ""
-    if source_file is not None:
-        copied_source_path = asset_dir / f"source{source_file.suffix.lower() or '.jpg'}"
-        shutil.copy2(source_file, copied_source_path)
-        stored_source_path = str(copied_source_path)
-
-    stored_processed_path = ""
-    if processed_file is not None:
-        copied_processed_path = asset_dir / f"processed{processed_file.suffix.lower() or '.jpg'}"
-        shutil.copy2(processed_file, copied_processed_path)
-        source_metadata_path = _processed_metadata_path(processed_file)
-        if source_metadata_path.is_file():
-            shutil.copy2(source_metadata_path, _processed_metadata_path(copied_processed_path))
-        stored_processed_path = str(copied_processed_path)
-
-    return stored_source_path, stored_processed_path
-
-
-def _processed_metadata_path(image_path: str | Path) -> Path:
-    """Return the metadata sidecar path for a processed image file."""
-    file_path = Path(image_path)
-    return file_path.with_name(f"{file_path.name}.meta.json")
-
-
-def _sync_result_history_assets(entries: list[dict[str, Any]]) -> None:
-    """Delete orphaned stored images after the history list is rewritten."""
-    keep_ids = {str(entry.get("id", "")).strip() for entry in entries if str(entry.get("id", "")).strip()}
-    if not RESULT_HISTORY_ASSET_DIR.is_dir():
-        return
-
-    for asset_dir in RESULT_HISTORY_ASSET_DIR.iterdir():
-        if asset_dir.is_dir() and asset_dir.name not in keep_ids:
-            shutil.rmtree(asset_dir, ignore_errors=True)
-
-
-def _prune_result_history_thumbnail_cache(entries: list[dict[str, Any]]) -> None:
-    """Drop thumbnails from RAM when their history entries are no longer retained."""
-    keep_ids = {str(entry.get("id", "")).strip() for entry in entries if str(entry.get("id", "")).strip()}
-    with RESULT_HISTORY_THUMBNAIL_LOCK:
-        stale_ids = [entry_id for entry_id in RESULT_HISTORY_THUMBNAIL_CACHE if entry_id not in keep_ids]
-        for entry_id in stale_ids:
-            RESULT_HISTORY_THUMBNAIL_CACHE.pop(entry_id, None)
-
-
-def _history_entry_source_image_path(entry: dict[str, Any]) -> Path | None:
-    """Return the best visual source image for a history entry when it still exists."""
-    for key in ("source_image_path", "processed_image_path"):
-        raw_value = str(entry.get(key, "")).strip()
-        if not raw_value:
-            continue
-        candidate = Path(raw_value)
-        if candidate.is_file():
-            return candidate
-    return None
-
-
-def _history_entry_processed_image_path(entry: dict[str, Any]) -> Path | None:
-    """Return the stored processed image for a history entry when it exists."""
-    raw_value = str(entry.get("processed_image_path", "")).strip()
-    if not raw_value:
-        return None
-    candidate = Path(raw_value)
-    if candidate.is_file():
-        return candidate
-    return None
-
-
-def _result_history_entry_has_reanalyze_assets(entry: dict[str, Any]) -> bool:
-    """Return True when a saved history entry still has enough image data to re-analyze."""
-    return _history_entry_source_image_path(entry) is not None or _history_entry_processed_image_path(entry) is not None
-
-
 def _history_entry_camera_resolution(entry: dict[str, Any]) -> tuple[int, int] | None:
     """Return the saved capture resolution for a history entry when available."""
     raw_resolution = entry.get("camera_resolution", [])
@@ -908,51 +860,21 @@ def _history_entry_camera_resolution(entry: dict[str, Any]) -> tuple[int, int] |
         and len(raw_resolution) == 2
         and all(isinstance(value, (int, float)) for value in raw_resolution)
     ):
-        return (int(raw_resolution[0]), int(raw_resolution[1]))
+            return (int(raw_resolution[0]), int(raw_resolution[1]))
     return None
 
 
-def _history_thumbnail_data_url(entry: dict[str, Any]) -> str:
-    """Return a cached thumbnail data URL for the history gallery."""
-    entry_id = str(entry.get("id", "")).strip()
-    if not entry_id:
-        return ""
-
-    with RESULT_HISTORY_THUMBNAIL_LOCK:
-        cached = RESULT_HISTORY_THUMBNAIL_CACHE.get(entry_id)
-    if cached:
-        return cached
-
-    image_path = _history_entry_source_image_path(entry)
-    if image_path is None:
-        return ""
-
-    try:
-        with Image.open(image_path) as image:
-            preview_image = image.copy()
-            preview_image.thumbnail(HISTORY_THUMBNAIL_SIZE)
-            if preview_image.mode not in {"RGB", "L"}:
-                preview_image = preview_image.convert("RGB")
-            elif preview_image.mode == "L":
-                preview_image = preview_image.convert("RGB")
-
-            buffer = io.BytesIO()
-            preview_image.save(buffer, format="JPEG", quality=78)
-    except OSError:
-        return ""
-
-    data_url = "data:image/jpeg;base64," + base64.b64encode(buffer.getvalue()).decode("ascii")
-    with RESULT_HISTORY_THUMBNAIL_LOCK:
-        RESULT_HISTORY_THUMBNAIL_CACHE[entry_id] = data_url
-    return data_url
+def _result_history_entry_has_reanalyze_assets(entry: dict[str, Any]) -> bool:
+    """Return False while privacy-first text retention is enabled."""
+    return False
 
 
 def _decorate_result_history_entry(entry: dict[str, Any]) -> dict[str, Any]:
-    """Add non-persisted gallery fields used by the touchscreen templates."""
+    """Add non-persisted fields used by the touchscreen templates."""
     decorated_entry = entry.copy()
-    decorated_entry["thumbnail_data_url"] = _history_thumbnail_data_url(entry)
-    decorated_entry["has_thumbnail"] = bool(decorated_entry["thumbnail_data_url"])
-    decorated_entry["has_reanalyze_assets"] = _result_history_entry_has_reanalyze_assets(entry)
+    decorated_entry["has_thumbnail"] = False
+    decorated_entry["has_reanalyze_assets"] = False
+    decorated_entry["thumbnail_data_url"] = ""
     return decorated_entry
 
 
@@ -963,45 +885,43 @@ def _decorate_result_history_entries(entries: list[dict[str, Any]]) -> list[dict
 
 def _build_reanalyze_mode_options(current_mode: str) -> list[dict[str, str]]:
     """Return alternate UI modes that can reuse the same already-captured image."""
-    return [
-        mode_option
-        for mode_option in UI_MODE_OPTIONS
-        if mode_option["id"] != current_mode
-    ]
+    return []
+
+
+def _coerce_optional_float(value: Any) -> float | None:
+    """Return a float value when the history payload contains one."""
+    if value in {None, ""}:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _apply_history_retention(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Trim history entries by age and configured item count."""
+    retained: list[dict[str, Any]] = []
+    cutoff = datetime.now() - timedelta(days=TEXT_HISTORY_RETENTION_DAYS)
+    for entry in entries:
+        created_at = _parse_timestamp(str(entry.get("created_at", "")))
+        if created_at is not None and created_at < cutoff:
+            continue
+        retained.append(entry)
+        if len(retained) >= RESULT_HISTORY_LIMIT:
+            break
+    return retained
+
+
+def _parse_timestamp(value: str) -> datetime | None:
+    """Parse an ISO timestamp from persisted UI/history payloads."""
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
 
 
 def _resolve_active_reanalyze_entry(state: dict[str, Any] | None = None) -> dict[str, Any] | None:
     """Return the current result/history entry whose saved image can be re-analyzed."""
-    effective_state = _load_ui_state() if state is None else state
-    screen = str(effective_state.get("screen", ""))
-    if screen not in {"result", "history_detail"}:
-        return None
-
-    history_entry_id = str(effective_state.get("history_entry_id", "")).strip()
-    if history_entry_id:
-        entry = _get_result_history_entry(history_entry_id)
-        if entry is not None and _result_history_entry_has_reanalyze_assets(entry):
-            return entry
-
-    if screen != "result":
-        return None
-
-    selected_mode, selected_mode_internal = _resolve_mode_pair(
-        effective_state.get("selected_mode"),
-        effective_state.get("selected_mode_internal"),
-    )
-    answer_text = str(effective_state.get("answer", "")).strip()
-    if not answer_text:
-        return None
-
-    for entry in _load_result_history():
-        if (
-            str(entry.get("answer", "")).strip() == answer_text
-            and str(entry.get("selected_mode_internal", "")) == selected_mode_internal
-            and str(entry.get("selected_mode", "")) == selected_mode
-            and _result_history_entry_has_reanalyze_assets(entry)
-        ):
-            return entry
     return None
 
 
@@ -1058,13 +978,11 @@ def _build_template_context(
             selected_mode_label = str(
                 effective_history_entry.get("mode_label", selected_mode_label or "Saved Result")
             )
-            selected_mode_description = "Recent result stored in memory for quick review."
+            selected_mode_description = "Recent text-only result stored on device for quick review."
             display_status = "Saved Result"
 
-    reanalyze_entry = current_result_history_entry if screen == "result" else effective_history_entry
+    reanalyze_entry = None
     reanalyze_mode_options: list[dict[str, str]] = []
-    if reanalyze_entry is not None and reanalyze_entry.get("has_reanalyze_assets"):
-        reanalyze_mode_options = _build_reanalyze_mode_options(str(reanalyze_entry.get("selected_mode", selected_mode)))
 
     active_mode_definition = None
     if selected_mode_internal:
@@ -1157,49 +1075,18 @@ def _start_capture_job() -> bool:
 
 
 def _start_reanalyze_job(entry_id: str, requested_mode: str) -> bool:
-    """Start an analyze-only job that reuses a previously captured image."""
-    global RUNNING
-
-    source_entry = _get_result_history_entry(str(entry_id).strip())
-    if source_entry is None or not _result_history_entry_has_reanalyze_assets(source_entry):
-        LOGGER.warning("Re-analyze request ignored because entry is missing or has no image entry_id=%s", entry_id)
-        return False
-
-    selected_mode, selected_mode_internal = _resolve_mode_pair(
-        requested_mode,
-        fallback_to_default=True,
-    )
-
-    with RUN_LOCK:
-        if RUNNING:
-            LOGGER.info("Re-analyze request ignored because a job is already running entry_id=%s", entry_id)
-            return False
-        RUNNING = True
-
+    """Reject same-image re-analysis while text-only retention is active."""
     LOGGER.info(
-        "Background re-analyze job starting entry_id=%s ui_mode=%s internal_mode=%s",
+        "Re-analyze request ignored because text-only retention is enabled entry_id=%s requested_mode=%s",
         entry_id,
-        selected_mode,
-        selected_mode_internal,
+        requested_mode,
     )
-    _write_device_state(
-        DeviceState.PROCESSING,
-        selected_mode=selected_mode,
-        selected_mode_internal=selected_mode_internal,
-        history_entry_id=str(entry_id).strip(),
-        detail=PROGRESS_STEPS[1],
-        current_step=1,
-        status="Re-analyzing same image",
+    _record_error_state(
+        _load_ui_state().get("selected_mode", ""),
+        _load_ui_state().get("selected_mode_internal", ""),
+        "Saved image re-analysis is unavailable while text-only retention is enabled.",
     )
-
-    worker = threading.Thread(
-        target=_run_reanalyze_job,
-        args=(str(entry_id).strip(), selected_mode, selected_mode_internal),
-        daemon=True,
-        name="touch-reanalyze-worker",
-    )
-    worker.start()
-    return True
+    return False
 
 
 def _run_capture_job(selected_mode: str, selected_mode_internal: str) -> None:
@@ -1262,87 +1149,19 @@ def _run_capture_job(selected_mode: str, selected_mode_internal: str) -> None:
             f"Unexpected error: {exc}",
         )
     finally:
+        _cleanup_current_private_media()
         LIVE_PREVIEW.resume()
         with RUN_LOCK:
             RUNNING = False
 
 
 def _run_reanalyze_job(source_entry_id: str, selected_mode: str, selected_mode_internal: str) -> None:
-    """Reuse a saved image to run another AI mode without touching the camera."""
-    global RUNNING
-
-    try:
-        source_entry = _get_result_history_entry(source_entry_id)
-        if source_entry is None or not _result_history_entry_has_reanalyze_assets(source_entry):
-            raise PipelineError("The saved image is no longer available for re-analysis.")
-
-        source_image_path = _history_entry_source_image_path(source_entry)
-        processed_image_path = _history_entry_processed_image_path(source_entry)
-        result = run_analyze(
-            mode=selected_mode_internal,
-            captured_path=str(source_image_path) if source_image_path is not None else "",
-            processed_path=str(processed_image_path or source_image_path or ""),
-            grayscale=GRAYSCALE,
-            max_dimension=MAX_DIMENSION,
-            screen_optimization=SETTINGS.vision.screen_optimization,
-            status_callback=lambda message: _update_processing_state(
-                selected_mode,
-                selected_mode_internal,
-                message,
-            ),
-        )
-        result = PipelineResult(
-            captured_path=source_image_path,
-            processed_path=processed_image_path or result.processed_path,
-            answer=result.answer,
-            mode=selected_mode_internal,
-            camera_backend_used=str(source_entry.get("camera_backend_used", "")) or result.camera_backend_used,
-            camera_resolution=_history_entry_camera_resolution(source_entry) or result.camera_resolution,
-            status="success",
-            warnings=result.warnings,
-        )
-        save_latest_result(result, output_path=str(LATEST_RESULT_PATH))
-        history_entry = _append_result_history(result, selected_mode, selected_mode_internal)
-        _write_device_state(
-            DeviceState.DONE,
-            selected_mode=selected_mode,
-            selected_mode_internal=selected_mode_internal,
-            history_entry_id=history_entry["id"] if history_entry is not None else "",
-            detail="Done",
-            answer=result.answer or "",
-            current_step=len(PROGRESS_STEPS),
-            status="Answer Ready",
-        )
-        LOGGER.info(
-            "Background re-analyze job completed source_entry_id=%s ui_mode=%s internal_mode=%s",
-            source_entry_id,
-            selected_mode,
-            selected_mode_internal,
-        )
-    except (PipelineError, ValueError) as exc:
-        LOGGER.exception(
-            "Background re-analyze job failed source_entry_id=%s ui_mode=%s internal_mode=%s",
-            source_entry_id,
-            selected_mode,
-            selected_mode_internal,
-        )
-        if not _queue_retryable_pipeline_error(selected_mode, selected_mode_internal, exc):
-            _record_error_state(selected_mode, selected_mode_internal, str(exc))
-    except Exception as exc:
-        LOGGER.exception(
-            "Background re-analyze job crashed source_entry_id=%s ui_mode=%s internal_mode=%s",
-            source_entry_id,
-            selected_mode,
-            selected_mode_internal,
-        )
-        _record_error_state(
-            selected_mode,
-            selected_mode_internal,
-            f"Unexpected error: {exc}",
-        )
-    finally:
-        with RUN_LOCK:
-            RUNNING = False
+    """Keep the legacy worker path aligned with the text-only retention policy."""
+    _record_error_state(
+        selected_mode,
+        selected_mode_internal,
+        "Saved image re-analysis is unavailable while text-only retention is enabled.",
+    )
 
 
 def _update_processing_state(
@@ -1415,19 +1234,20 @@ def _queue_retryable_pipeline_error(
         entry = queue.enqueue(
             selected_mode=selected_mode,
             selected_mode_internal=selected_mode_internal,
-            captured_path=getattr(error, "captured_path", None),
             processed_path=processed_path,
             camera_backend_used=getattr(error, "camera_backend_used", None) or CAMERA_BACKEND,
             camera_resolution=getattr(error, "camera_resolution", None),
             error_message=str(error),
+            error_category=_humanize_error(str(error)).lower().replace(" ", "_"),
         )
-    except (OfflineRetryQueueFullError, OfflineRetryQueueError):
+    except (OfflineRetryQueueFullError, OfflineRetryQueueError) as exc:
         LOGGER.exception(
             "Offline retry queue could not store failed request ui_mode=%s internal_mode=%s",
             selected_mode,
             selected_mode_internal,
         )
-        return False
+        _record_error_state(selected_mode, selected_mode_internal, str(exc))
+        return True
 
     queue_position = queue.pending_count()
     friendly_error = _humanize_error(str(error))
@@ -1438,13 +1258,15 @@ def _queue_retryable_pipeline_error(
         "The assistant will retry this capture again when network/OpenAI is available."
     )
     queued_result = PipelineResult(
-        captured_path=Path(entry.captured_path) if entry.captured_path else None,
-        processed_path=Path(entry.processed_path),
+        captured_path=None,
+        processed_path=queue.resolve_processed_path(entry),
         answer=queued_message,
         mode=selected_mode_internal or DEFAULT_CAPTURE_INTERNAL_MODE,
         camera_backend_used=entry.camera_backend_used or CAMERA_BACKEND,
         camera_resolution=entry.camera_resolution,
         status="queued",
+        retry_status="queued",
+        error_summary=friendly_error,
     )
     save_latest_result(queued_result, output_path=str(LATEST_RESULT_PATH))
     _write_device_state(
@@ -1467,26 +1289,31 @@ def _queue_retryable_pipeline_error(
 
 def _analyze_offline_retry_entry(entry: OfflineRetryEntry) -> PipelineResult:
     """Re-run AI analysis for a previously captured image from the offline queue."""
-    captured_path = entry.captured_path or entry.processed_path
+    queue = OFFLINE_RETRY_QUEUE
+    if queue is None:
+        raise PipelineError("Offline retry queue is unavailable.")
+
+    processed_path = queue.resolve_processed_path(entry)
     result = run_analyze(
         mode=entry.selected_mode_internal,
-        captured_path=captured_path,
-        processed_path=entry.processed_path,
+        captured_path=str(processed_path),
+        processed_path=str(processed_path),
         grayscale=GRAYSCALE,
         max_dimension=MAX_DIMENSION,
         screen_optimization=SETTINGS.vision.screen_optimization,
     )
-    processed_file = Path(entry.processed_path)
-    captured_file = Path(entry.captured_path) if entry.captured_path else None
     return PipelineResult(
-        captured_path=captured_file if captured_file is not None and captured_file.is_file() else None,
-        processed_path=processed_file if processed_file.is_file() else result.processed_path,
+        captured_path=None,
+        processed_path=processed_path if processed_path.is_file() else result.processed_path,
         answer=result.answer,
         mode=entry.selected_mode_internal,
         camera_backend_used=entry.camera_backend_used or result.camera_backend_used,
         camera_resolution=entry.camera_resolution or result.camera_resolution,
         status="success",
         warnings=result.warnings,
+        model_used=result.model_used,
+        duration_seconds=result.duration_seconds,
+        retry_status="retry_successful",
     )
 
 
@@ -1655,6 +1482,64 @@ def _timestamp() -> str:
     return datetime.now().isoformat(timespec="seconds")
 
 
+def _processed_metadata_path(image_path: str | Path) -> Path:
+    """Return the metadata sidecar path for a processed image file."""
+    file_path = Path(image_path)
+    return file_path.with_name(f"{file_path.name}.meta.json")
+
+
+def _cleanup_current_private_media() -> None:
+    """Best-effort delete current captured and processed working files."""
+    safe_unlink(CAPTURED_IMAGE_PATH)
+    safe_unlink(PROCESSED_IMAGE_PATH)
+    safe_unlink(_processed_metadata_path(PROCESSED_IMAGE_PATH))
+    if PRIVATE_CURRENT_PATH.is_dir():
+        try:
+            next(PRIVATE_CURRENT_PATH.iterdir())
+        except StopIteration:
+            safe_rmtree(PRIVATE_CURRENT_PATH)
+        except OSError:
+            pass
+
+
+def _purge_runtime_artifacts(*, delete_all: bool = False) -> None:
+    """Purge orphaned private media and trim persisted text history."""
+    _cleanup_current_private_media()
+
+    if OFFLINE_RETRY_QUEUE is not None:
+        if delete_all:
+            OFFLINE_RETRY_QUEUE.clear()
+        else:
+            OFFLINE_RETRY_QUEUE.prune()
+
+    if delete_all:
+        safe_rmtree(PRIVATE_CURRENT_PATH)
+        safe_rmtree(PRIVATE_RETRY_PATH)
+        safe_unlink(RESULT_HISTORY_PATH)
+        safe_unlink(LATEST_RESULT_PATH)
+        safe_unlink(UI_STATE_PATH)
+        safe_rmtree(PRIVATE_QUARANTINE_PATH)
+        global RESULT_HISTORY_CACHE
+        RESULT_HISTORY_CACHE = None
+        return
+
+    history_entries = _load_result_history()
+    if history_entries or RESULT_HISTORY_PATH.is_file():
+        _write_result_history(history_entries)
+
+
+def _delete_all_user_data() -> None:
+    """Delete retained user-facing runtime data while keeping config and code intact."""
+    _purge_runtime_artifacts(delete_all=True)
+    _clear_and_reset_ui_state(clear_selected_mode=True)
+    _write_state(
+        {
+            "detail": "All local data deleted. Press button to select the mode.",
+            "status": "Ready",
+        }
+    )
+
+
 def _load_ui_state() -> dict[str, Any]:
     """Read the shared UI state file used by the touchscreen and button."""
     default_state = _default_ui_state()
@@ -1665,6 +1550,11 @@ def _load_ui_state() -> dict[str, Any]:
         try:
             raw_state = json.loads(UI_STATE_PATH.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
+            quarantine_file(
+                UI_STATE_PATH,
+                quarantine_dir=PRIVATE_QUARANTINE_PATH,
+                reason="invalid-ui-state",
+            )
             return default_state
 
     selected_mode, selected_mode_internal = _resolve_mode_pair(
@@ -1734,9 +1624,12 @@ def _write_state(updates: dict[str, Any]) -> None:
 
     UI_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
     with STATE_LOCK:
-        UI_STATE_PATH.write_text(
-            json.dumps(next_state, ensure_ascii=False, indent=2),
-            encoding="utf-8",
+        atomic_write_json(
+            UI_STATE_PATH,
+            next_state,
+            ensure_ascii=False,
+            indent=2,
+            trailing_newline=False,
         )
     _apply_led_state(device_state)
 
@@ -1864,18 +1757,6 @@ def _select_mode_from_hardware(mode: str) -> bool:
         LOGGER.info("Ignoring physical mode selection while device is busy mode=%s", mode)
         return False
 
-    state = _load_ui_state()
-    reanalyze_entry = _resolve_active_reanalyze_entry(state)
-    if reanalyze_entry is not None:
-        started = _start_reanalyze_job(str(reanalyze_entry.get("id", "")), mode)
-        if started:
-            LOGGER.info(
-                "Physical mode button started same-image re-analyze entry_id=%s mode=%s",
-                reanalyze_entry.get("id", ""),
-                mode,
-            )
-            return True
-
     _set_selected_mode(mode)
     LOGGER.info("Physical mode selected mode=%s", mode)
     return True
@@ -1963,10 +1844,14 @@ def _ensure_offline_retry_started() -> None:
         LOGGER.info(
             "Offline retry queue started pending=%s poll_interval_seconds=%s",
             queue.pending_count(),
-            OFFLINE_RETRY_POLL_INTERVAL_SECONDS,
+            SETTINGS.offline_retry.poll_interval_seconds,
         )
 
 
+PRIVATE_DATA_PATH.mkdir(parents=True, exist_ok=True)
+PRIVATE_QUARANTINE_PATH.mkdir(parents=True, exist_ok=True)
+if PURGE_ON_STARTUP:
+    _purge_runtime_artifacts(delete_all=False)
 _bootstrap_ui_state()
 _initialize_led_indicator()
 _ensure_gpio_button_listener_started()
@@ -1976,4 +1861,4 @@ LOGGER.info("Flask app startup complete")
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    app.run(host=APP_HOST, port=APP_PORT, debug=FLASK_DEBUG)

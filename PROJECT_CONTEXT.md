@@ -34,7 +34,7 @@ Shared core:
 - `vision/perspective.py`: quadrilateral ordering, scaling, and four-point perspective correction
 - `vision/enhance_text.py`: denoise, brightness correction, CLAHE contrast, and text sharpening
 - `ai/openai_client.py`: OpenAI Responses API wrapper for image analysis with friendly app errors
-- `system/offline_retry.py`: durable retry queue that stores retryable OpenAI failures and replays them later from saved processed images
+- `system/offline_retry.py`: durable retry queue that stores retryable OpenAI failures and replays them later from private saved processed images
 - `ai/modes.py`: canonical assistant mode registry, alias handling, and UI metadata
 - `ai/context.py`: hidden backend context builder for mode-specific OpenAI instructions
 - `ai/prompts.py`: compatibility shim for older mode/prompt imports
@@ -42,22 +42,22 @@ Shared core:
 - `hardware/button.py`: canonical gpiozero-based short-press capture and long-press clear controller with debounce and duplicate-trigger protection
 - `hardware/led.py`: optional single-color GPIO LED indicator that mirrors the shared device lifecycle
 - `gpio/button.py`: compatibility wrapper that re-exports the new hardware button controller
-- `templates/index.html`: screen-based template for the current landscape touch UI, including live preview, recent results, and queued-retry messaging
+- `templates/index.html`: screen-based template for the current landscape touch UI, including live preview, text-only recent results, delete-all-data controls, and queued-retry messaging
 - `static/style.css`: kiosk styles optimized for `480x320` landscape, with health pills, live preview emphasis, scrollable answer content, and classified error screens
 
 Runtime artifacts:
 
-- `static/captured.jpg`: latest camera capture
-- `static/processed.jpg`: latest preprocessed image
-- `static/processed.jpg.meta.json`: preprocessing sidecar metadata used for freshness checks
+- `data/private/current/captured.jpg`: latest temporary camera capture for the active job
+- `data/private/current/processed.jpg`: latest temporary preprocessed image for the active job
+- `data/private/current/processed.jpg.meta.json`: preprocessing sidecar metadata used for freshness checks
 - `debug/`: latest advanced screen/document debug images
 - `data/latest_result.txt`: latest readable pipeline result from Flask or standalone GPIO runs
 - `data/ui_state.json`: saved UI mode, current screen, `device_state`, status text, and answer/error state
-- `data/result_history.json`: saved recent successful assistant results
-- `data/result_history_assets/`: stored source and processed images used for history thumbnails and same-image re-analysis
+- `data/result_history.json`: saved recent successful assistant results as text-only history
 - `data/health_status.json`: latest background health snapshot for CPU, RAM, network, and camera status
-- `data/offline_retry_queue.json`: persisted metadata for retryable queued AI failures
-- `data/offline_retry/`: copied processed images waiting for automatic background retry
+- `data/private/retry_queue.json`: persisted metadata for retryable queued AI failures
+- `data/private/retry/`: copied processed images waiting for automatic background retry
+- `data/private/quarantine/`: malformed or legacy runtime artifacts moved aside during startup/job purge
 
 ## Supported AI Modes
 
@@ -86,11 +86,11 @@ Current touchscreen flow:
 - `home` without a selected mode: mode list, direct `Capture` button, and health bar
 - `home` with a selected mode: live MJPEG preview, current mode header, health pills, and capture CTA
 - `processing`: background capture job status with auto-refresh, simplified centered messaging, and a `Thinking...` state during AI-heavy steps
-- `result`: large scrollable answer screen with `Capture Again` and optional `Recent Results`
-- `result`: answer-first screen that now keeps the full answer area visible instead of showing the touch `Analyze Same Image As` panel or the GPIO helper line
+- `result`: large scrollable answer screen with `Capture Again`, `Recent Results`, and delete-all-data actions
+- `result`: answer-first screen that keeps the full answer area visible instead of showing legacy re-analysis UI or GPIO helper copy
 - `error`: classified camera/network/API/generic error screen with the same touch-friendly action row
-- `history`: recent saved answers list with RAM-backed thumbnail previews
-- `history_detail`: full saved answer view for a single previous scan, plus same-image re-analysis actions
+- `history`: recent saved answers list with text-only summaries and retention metadata
+- `history_detail`: full saved answer view for a single previous scan without thumbnails or image reuse actions
 
 Interaction notes:
 
@@ -99,12 +99,11 @@ Interaction notes:
 - `/clear` resets the UI to `READY` and clears `data/latest_result.txt`
 - `/retry` re-runs the same shared capture workflow for the currently selected mode
 - `/camera/live-stream.mjpg` serves the current live preview as an MJPEG stream
-- `/reanalyze` starts an analyze-only job that reuses a saved image from the current result or history detail flow
-- touch re-analysis actions are kept on `history_detail`, while the active `result` screen leaves that space for the answer box and uses a tighter header/health stack
+- `/reanalyze` remains as a compatibility route but now returns a friendly text-only-retention error instead of reusing saved media
 - when the GPIO listener is started inside Flask, short press triggers capture/analyze and long press clears the visible result or error
-- when a result or history-detail screen has a saved image available, the physical mode buttons can trigger same-image re-analysis and the physical back button exits to the ready screen
 - the `home`, `result`, and `error` screens auto-refresh while the embedded GPIO listener is active so hardware-triggered state changes appear without manual reload
 - retryable OpenAI failures are queued on disk instead of being discarded immediately when the processed image is available
+- the local UI exposes a two-step `Delete All Data` action that clears retained text history, retry data, and private runtime media
 
 ## Setup Notes
 
@@ -162,7 +161,20 @@ UI_IDLE_REFRESH_MS=2500
 LIVE_PREVIEW_FRAME_INTERVAL_MS=80
 OFFLINE_RETRY_ENABLED=1
 OFFLINE_RETRY_POLL_INTERVAL_SECONDS=30
-OFFLINE_RETRY_MAX_ENTRIES=24
+APP_HOST=127.0.0.1
+APP_PORT=5000
+FLASK_DEBUG=0
+STORE_IMAGES=0
+TEXT_HISTORY_MAX_ITEMS=100
+TEXT_HISTORY_RETENTION_DAYS=30
+RETRY_MEDIA_RETENTION_HOURS=24
+PURGE_ON_STARTUP=1
+OFFLINE_RETRY_MAX_ITEMS=10
+OFFLINE_RETRY_MAX_ATTEMPTS=3
+OFFLINE_RETRY_INITIAL_DELAY_SECONDS=30
+OFFLINE_RETRY_MAX_DELAY_SECONDS=900
+OFFLINE_RETRY_MIN_FREE_MB=128
+OFFLINE_RETRY_MAX_STORAGE_MB=512
 ```
 
 Security note: keep `.env` out of git and keep `.env.example` limited to placeholders only.

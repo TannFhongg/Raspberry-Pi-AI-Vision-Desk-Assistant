@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -18,19 +19,23 @@ class OfflineRetryQueueTests(unittest.TestCase):
         self.queue = OfflineRetryQueue(
             queue_path=self.temp_dir / "queue.json",
             storage_dir=self.temp_dir / "entries",
-            poll_interval_seconds=10.0,
+            poll_interval_seconds=1.0,
             max_entries=4,
+            max_attempts=3,
+            initial_delay_seconds=1.0,
+            max_delay_seconds=60.0,
+            retention_hours=24.0,
+            min_free_bytes=1,
+            max_storage_bytes=10 * 1024 * 1024,
+            quarantine_dir=self.temp_dir / "quarantine",
         )
-        self.captured_path = self.temp_dir / "captured.jpg"
         self.processed_path = self.temp_dir / "processed.jpg"
-        self.captured_path.write_bytes(b"captured")
         self.processed_path.write_bytes(b"processed")
 
-    def test_enqueue_persists_copied_files_and_process_once_succeeds(self) -> None:
+    def test_enqueue_persists_private_processed_file_and_process_once_succeeds(self) -> None:
         entry = self.queue.enqueue(
             selected_mode="read_text",
             selected_mode_internal="document_reader",
-            captured_path=self.captured_path,
             processed_path=self.processed_path,
             camera_backend_used="opencv",
             camera_resolution=(1920, 1080),
@@ -38,20 +43,22 @@ class OfflineRetryQueueTests(unittest.TestCase):
         )
 
         self.assertEqual(self.queue.pending_count(), 1)
-        self.assertTrue(Path(entry.processed_path).is_file())
-        self.assertTrue(Path(entry.captured_path).is_file())
+        self.assertFalse(Path(entry.processed_filename).is_absolute())
+        self.assertTrue(self.queue.resolve_processed_path(entry).is_file())
 
         callback_results: list[PipelineResult] = []
+        _mark_entry_ready(self.queue.queue_path, entry.id)
 
         processed = self.queue.process_once(
             analyze_func=lambda queued_entry: PipelineResult(
-                captured_path=Path(queued_entry.captured_path),
-                processed_path=Path(queued_entry.processed_path),
+                captured_path=None,
+                processed_path=self.queue.resolve_processed_path(queued_entry),
                 answer="Recovered answer",
                 mode=queued_entry.selected_mode_internal,
                 camera_backend_used=queued_entry.camera_backend_used,
                 camera_resolution=queued_entry.camera_resolution,
                 status="success",
+                retry_status="retry_successful",
             ),
             success_callback=lambda _entry, result: callback_results.append(result),
         )
@@ -70,6 +77,7 @@ class OfflineRetryQueueTests(unittest.TestCase):
             error_message="network down",
         )
         failure_events: list[tuple[str, bool]] = []
+        _mark_entry_ready(self.queue.queue_path, entry.id)
 
         processed = self.queue.process_once(
             analyze_func=lambda _queued_entry: _raise_pipeline_error(
@@ -87,6 +95,7 @@ class OfflineRetryQueueTests(unittest.TestCase):
         self.assertEqual(len(queued_entries), 1)
         self.assertEqual(queued_entries[0].attempt_count, 1)
         self.assertEqual(queued_entries[0].last_error, "network still down")
+        self.assertEqual(queued_entries[0].status, "pending")
         self.assertNotEqual(queued_entries[0].next_attempt_at, queued_entries[0].created_at)
 
     def test_process_once_drops_nonretryable_failures(self) -> None:
@@ -97,6 +106,7 @@ class OfflineRetryQueueTests(unittest.TestCase):
             error_message="network down",
         )
         failure_events: list[tuple[str, bool]] = []
+        _mark_entry_ready(self.queue.queue_path, entry.id)
 
         processed = self.queue.process_once(
             analyze_func=lambda _queued_entry: _raise_pipeline_error(
@@ -112,6 +122,15 @@ class OfflineRetryQueueTests(unittest.TestCase):
         self.assertEqual(failure_events, [(entry.id, False)])
         self.assertEqual(self.queue.pending_count(), 0)
         self.assertFalse((self.temp_dir / "entries" / entry.id).exists())
+
+
+def _mark_entry_ready(queue_path: Path, entry_id: str) -> None:
+    """Force a queued retry entry to become immediately runnable."""
+    payload = json.loads(queue_path.read_text(encoding="utf-8"))
+    for entry in payload:
+        if entry.get("id") == entry_id:
+            entry["next_attempt_at"] = "2000-01-01T00:00:00"
+    queue_path.write_text(json.dumps(payload, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
 
 
 def _raise_pipeline_error(error: PipelineError):

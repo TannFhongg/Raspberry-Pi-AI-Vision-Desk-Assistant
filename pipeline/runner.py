@@ -6,15 +6,17 @@ from dataclasses import dataclass
 from datetime import datetime
 import logging
 from pathlib import Path
+import time
 from typing import Callable
 
 from ai.prompts import normalize_mode
 from config import load_device_settings
 from camera import CameraCaptureError, capture_image
+from system.storage import atomic_write_text
 from vision import ImagePreprocessError, preprocess_image, preprocess_output_matches
 
-DEFAULT_CAPTURED_PATH = Path("static/captured.jpg")
-DEFAULT_PROCESSED_PATH = Path("static/processed.jpg")
+DEFAULT_CAPTURED_PATH = Path("data/private/current/captured.jpg")
+DEFAULT_PROCESSED_PATH = Path("data/private/current/processed.jpg")
 DEFAULT_RESULT_PATH = Path("data/latest_result.txt")
 TEXT_HEAVY_MODES = frozenset({"document_reader", "math_solver", "meeting_assistant"})
 VALID_SCREEN_OPTIMIZATIONS = ("auto", "on", "off")
@@ -79,6 +81,10 @@ class PipelineResult:
     camera_resolution: tuple[int, int] | None
     status: str
     warnings: tuple[str, ...] = ()
+    model_used: str | None = None
+    duration_seconds: float | None = None
+    retry_status: str = ""
+    error_summary: str = ""
 
 
 def file_exists(path: str | Path) -> bool:
@@ -356,10 +362,12 @@ def run_analyze(
             final_processed_path,
         )
         _emit_status(status_callback, "Sending image to OpenAI Vision...")
+        request_started = time.monotonic()
         answer = client.analyze_image(
             image_path=str(final_processed_path),
             mode=canonical_mode,
         )
+        request_duration_seconds = time.monotonic() - request_started
     except VisionClientError as exc:
         LOGGER.error("AI analysis failed: %s", exc, exc_info=True)
         raise PipelineError(
@@ -385,6 +393,8 @@ def run_analyze(
         camera_resolution=None,
         status="success",
         warnings=preprocess_warnings,
+        model_used=getattr(client, "last_model_used", None),
+        duration_seconds=round(request_duration_seconds, 3),
     )
 
 
@@ -487,6 +497,8 @@ def save_latest_result(
         f"Timestamp: {timestamp}",
         f"Mode: {display_mode}",
         f"Status: {result.status}",
+        f"Model: {result.model_used or 'n/a'}",
+        f"Duration seconds: {result.duration_seconds if result.duration_seconds is not None else 'n/a'}",
         f"Camera backend: {result.camera_backend_used or 'n/a'}",
         f"Camera resolution: {_format_resolution(result.camera_resolution)}",
         f"Captured image: {result.captured_path or 'n/a'}",
@@ -506,7 +518,7 @@ def save_latest_result(
     else:
         lines.append(f"Error: {result.answer or 'Unknown error'}")
 
-    result_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    atomic_write_text(result_path, "\n".join(lines) + "\n", encoding="utf-8")
     LOGGER.info("Saved latest pipeline result to %s with status=%s", result_path, result.status)
     return result_path
 

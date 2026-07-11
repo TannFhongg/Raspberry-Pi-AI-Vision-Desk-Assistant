@@ -92,6 +92,7 @@ class OpenAIVisionClient:
             timeout=self.timeout_seconds,
             max_retries=0,
         )
+        self.last_model_used = self.default_model
 
     def analyze_image(
         self,
@@ -112,6 +113,7 @@ class OpenAIVisionClient:
         mime_type = self._get_mime_type(image_file)
         data_url = self._build_data_url(image_file, mime_type)
         selected_model = model or self.default_model
+        self.last_model_used = selected_model
         selected_mode = get_mode(canonical_mode)
         LOGGER.info(
             "OpenAI request started mode=%s model=%s image=%s",

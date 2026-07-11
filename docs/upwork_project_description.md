@@ -13,6 +13,6 @@ This project demonstrates practical skills in:
 - OpenAI API integration
 - Flask touchscreen UI, kiosk UX, and small-screen state management
 - Live MJPEG preview and camera-lifecycle coordination
-- Reliability engineering with health monitoring, recent-result recall, RAM thumbnail gallery, same-image re-analysis, and offline retry queue handling
+- Reliability engineering with health monitoring, text-only recent-result recall, private media retention, and offline retry queue handling
 - GPIO hardware interaction
 - Deployment, demo packaging, and portfolio presentation
