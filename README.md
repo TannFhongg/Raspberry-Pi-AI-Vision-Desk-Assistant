@@ -12,9 +12,10 @@ Camera capture -> OpenCV preprocess / screen optimization -> OpenAI Vision -> CL
 
 - End-to-end capture, preprocess, analyze, and result display flows are implemented across CLI, Flask, and GPIO entrypoints.
 - The committed device baseline is now a local-only kiosk profile on `127.0.0.1:5000` with a `480x320` landscape UI.
+- A mandatory first-boot setup wizard now blocks the normal kiosk flow until Wi-Fi, `OPENAI_API_KEY`, camera diagnostics, and GPIO verification have been reviewed.
 - The current default hardware profile uses `1920x1080` still capture, a lighter `640x360` live preview, text-only result history, private runtime media, and a background offline retry queue.
 - Physical controls support one capture button, five mode buttons, an optional back button, and an optional single-color status LED.
-- Automated validation on 2026-07-11: `python -m pytest -q` completed with `105 passed, 16 subtests passed`.
+- Automated validation on 2026-07-11: `python -m pytest -q` completed with `121 passed, 16 subtests passed`.
 - Latest documented on-device validation on 2026-07-10: the `Read Text` flow captured a Raspberry Pi 27W USB-C power supply box, returned structured OCR-style output, and confirmed the fixed live-preview-to-capture handoff on the GPIO-triggered path.
 
 ## Milestone Snapshot
@@ -24,19 +25,22 @@ Camera capture -> OpenCV preprocess / screen optimization -> OpenAI Vision -> CL
 - Phase 8-9: device diagnostics and long-distance screen/document optimization are implemented.
 - Phase 10-11: production-oriented `480x320` landscape UI, live preview, and the shared hardware state machine are implemented.
 - Phase 13-15: assistant mode registry, reliability/logging/health monitoring, recent results, offline retry, and privacy hardening are implemented.
+- Phase 16: first-boot setup gating, YAML-backed setup metadata, `.env` key upsert, Wi-Fi onboarding via `nmcli`, and setup-specific GPIO verification are implemented.
 
 ## What Works Today
 
 - `main.py` runs the full camera -> preprocess -> OpenAI workflow from the terminal.
-- `app.py` exposes a touchscreen-first Flask UI with `home`, `processing`, `result`, `error`, `history`, and `history_detail` screens.
+- `app.py` exposes a touchscreen-first Flask UI with `setup`, `home`, `processing`, `result`, `error`, `history`, and `history_detail` screens.
 - `test_gpio_button.py` and the embedded Flask GPIO listener both trigger the same shared capture pipeline.
 - Live framing is available through `/camera/live-stream.mjpg`, with `/camera/live-frame.jpg` kept as a diagnostic and compatibility endpoint.
 - Compact device-health data is available through `/api/health`, and the UI state is exposed through `/api/ui-state`.
+- Setup state is exposed through `/api/setup-state`, and the local UI can reopen the wizard later from `/admin/setup`.
 - Recent successful results are stored as text-only history in `data/result_history.json`.
 - Retryable OpenAI failures can be queued in `data/private/retry_queue.json` and replayed automatically from copied processed images in `data/private/retry/`.
 - Private working images are isolated under `data/private/current/` and are purged after successful jobs by default.
 - The local UI exposes a two-step `Delete All Data` action that clears text history, queued retry media, temp media, and quarantined leftovers.
 - Rotating logs and background health snapshots are written to `logs/` and `data/health_status.json`.
+- `OPENAI_API_KEY` persistence is handled by atomic `.env` updates, while `config/device.yaml` stores only non-secret setup status and Wi-Fi metadata.
 
 ## Project Structure
 
@@ -75,12 +79,12 @@ Key directories:
 - `ai/`: canonical assistant modes, hidden per-mode context, and the OpenAI client wrapper
 - `camera/`: USB webcam capture and live preview services
 - `config/`: typed settings loader plus the committed `config/device.yaml` baseline
-- `hardware/`: button, LED, camera request, device-state, and diagnostics helpers
+- `hardware/`: button, LED, camera request, setup GPIO verifier, device-state, and diagnostics helpers
 - `pipeline/`: shared capture, preprocess, analyze, and result-writing orchestration
-- `system/`: logging, storage helpers, health monitor, and offline retry queue
+- `system/`: logging, storage helpers, first-boot setup helpers, health monitor, and offline retry queue
 - `templates/` and `static/`: the kiosk-oriented Flask UI
 - `vision/`: preprocessing, screen detection, perspective correction, and text enhancement
-- `tests/`: regression coverage for settings, UI behavior, reliability, live preview, GPIO, and pipeline logic
+- `tests/`: regression coverage for settings, first-boot setup, UI behavior, reliability, live preview, GPIO, and pipeline logic
 
 ## Setup
 
@@ -104,15 +108,35 @@ pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
+### First boot flow
+
+On a new device, start the Flask app and open the local UI:
+
+```bash
+python app.py
+```
+
+The app now redirects unfinished devices into `/setup` automatically. The V1 setup wizard:
+
+- scans and connects Wi-Fi through `nmcli`
+- saves `OPENAI_API_KEY` into local `.env`
+- runs a lightweight camera diagnostic while showing the live preview
+- verifies the configured GPIO buttons once each
+- finishes with warning acknowledgment and then restarts the Flask process
+
+V1 keeps the locale fixed to English. Wi-Fi passwords are applied to the OS through NetworkManager and are not stored in `config/device.yaml`.
+
 ### Minimum `.env`
 
-Copy `.env.example` to `.env` and set at least:
+Copy `.env.example` to `.env` if you want to pre-seed values before first boot. At minimum:
 
 ```env
 OPENAI_API_KEY=your_openai_api_key_here
 OPENAI_MODEL=gpt-5.4-mini
 FLASK_SECRET_KEY=change_this_for_local_flask_sessions
 ```
+
+If `.env` does not already contain a real `OPENAI_API_KEY`, the first-boot wizard will ask for one and save it atomically while preserving unrelated keys and comments.
 
 Most runtime defaults now come from [config/device.yaml](config/device.yaml). Runtime precedence is:
 
@@ -171,6 +195,25 @@ ai:
 vision:
   screen_optimization: auto
 
+startup:
+  behavior: kiosk
+  url: http://127.0.0.1:5000
+
+setup:
+  completed: true
+  completed_at: "2026-07-11T00:00:00"
+  version: 1
+
+network:
+  wifi:
+    ssid: ""
+    connection_name: ""
+    auto_connect: true
+    managed_by: nmcli
+
+localization:
+  locale: en
+
 offline_retry:
   enabled: true
   max_items: 10
@@ -188,6 +231,7 @@ Useful override knobs:
 - `ENABLE_GPIO_BUTTON`, `CAPTURE_BUTTON_PIN`, `MODE_BUTTON_1_PIN` through `MODE_BUTTON_5_PIN`, `BACK_BUTTON_PIN`
 - `ENABLE_GPIO_LED`, `GPIO_LED_PIN`, `GPIO_LED_ACTIVE_HIGH`
 - `SCREEN_OPTIMIZATION`
+- `DEVICE_CONFIG_PATH`
 - `STORE_IMAGES`, `TEXT_HISTORY_MAX_ITEMS`, `PURGE_ON_STARTUP`
 - `OFFLINE_RETRY_ENABLED`, `OFFLINE_RETRY_POLL_INTERVAL_SECONDS`
 
@@ -297,7 +341,13 @@ python check_hardware.py
 
 ## Web and Hardware Flow
 
-The current shared device state machine is:
+The first-boot gate now sits in front of the normal device state machine:
+
+```text
+SETUP_REQUIRED -> setup wizard -> restart -> READY -> MODE_SELECTED -> CAPTURING -> PROCESSING -> DONE | ERROR
+```
+
+Once setup is complete, the current shared device state machine is:
 
 ```text
 READY -> MODE_SELECTED -> CAPTURING -> PROCESSING -> DONE | ERROR
@@ -305,6 +355,7 @@ READY -> MODE_SELECTED -> CAPTURING -> PROCESSING -> DONE | ERROR
 
 Current UI behavior:
 
+- `setup`: mandatory first-boot wizard for Wi-Fi, API key, camera check, GPIO verification, warning review, and restart
 - `home` without a selected mode: shows the five touch modes, a direct `Capture` action, and the health pills
 - `home` with a selected mode: shows the live preview, selected mode header, `Click Button to Capture`, and `Change Mode`
 - `processing`: auto-refreshing progress view with `Capturing...`, `Processing...`, and `Thinking...`
@@ -314,6 +365,10 @@ Current UI behavior:
 
 Route notes:
 
+- `/setup`: mandatory first-boot wizard screen
+- `/api/setup-state`: persisted setup progress for the setup UI
+- `/setup/wifi/scan`, `/setup/wifi/connect`, `/setup/openai-key`, `/setup/camera/test`, `/setup/gpio/test/start`, `/setup/gpio/test/stop`, `/setup/finish`: setup workflow endpoints
+- `/admin/setup`: local wizard re-entry after the device has already been configured
 - `/capture`, `/capture-analyze`, and `/analyze` currently all start the same background `run_capture_analyze` workflow
 - `/camera/live-stream.mjpg` is the default browser preview path
 - `/camera/live-frame.jpg` is kept for diagnostics and stream-fallback compatibility
@@ -343,6 +398,7 @@ User-facing and runtime artifacts:
 
 - `data/latest_result.txt`: latest readable result summary
 - `data/ui_state.json`: persisted UI mode, screen, and device state
+- `data/setup_state.json`: persisted partial first-boot wizard progress
 - `data/result_history.json`: text-only recent result history
 - `data/health_status.json`: latest background health snapshot
 - `data/private/current/`: per-job working capture and processed files
@@ -350,11 +406,14 @@ User-facing and runtime artifacts:
 - `data/private/retry/`: copied processed images waiting for background retry
 - `data/private/quarantine/`: malformed or unsafe artifacts moved aside during recovery
 - `logs/app.log` and `logs/error.log`: rotating runtime logs
+- `.env`: the only persisted app-side storage for `OPENAI_API_KEY`
+- `config/device.yaml`: committed hardware defaults plus non-secret setup completion and Wi-Fi metadata
 
 Reliability behavior:
 
 - OpenAI requests use explicit timeout, retry-count, and exponential-backoff settings.
 - Health monitoring writes periodic snapshots for CPU, memory, network, and camera status.
+- The normal GPIO listener, health monitor, and offline retry worker stay disabled until first-boot setup is completed.
 - Camera probes are deferred while live preview, capture, or processing is active.
 - Successful jobs purge private working media by default.
 - Retryable OpenAI failures are queued instead of being lost immediately when the processed image is available.
@@ -390,8 +449,15 @@ For fullscreen kiosk startup on Raspberry Pi OS Bookworm with `labwc`:
 
 ### Missing `OPENAI_API_KEY`
 
-- Add the key to `.env`
+- Complete the `/setup` wizard or reopen it from `/admin/setup`
+- Add the key to `.env` manually only if you are bypassing the wizard for local development
 - Restart `python app.py` or rerun the CLI command
+
+### Wi-Fi setup fails in the wizard
+
+- Confirm NetworkManager and `nmcli` are installed and available on the device
+- Verify the SSID and password, especially for hidden networks entered manually
+- Check whether the OS can connect outside the app with `nmcli device wifi list`
 
 ### OpenCV import or camera failure
 
@@ -421,6 +487,8 @@ For fullscreen kiosk startup on Raspberry Pi OS Bookworm with `labwc`:
 
 - Same-image reanalysis is intentionally unavailable while result history remains text-only.
 - The offline retry queue does not yet have a dedicated management screen.
+- `/admin/setup` is intentionally unprotected in V1 and is meant only for trusted local device access.
+- The V1 setup wizard keeps locale fixed to English and does not yet expose language selection.
 - Final button feel, live-preview smoothness, and LED timing still need more validation on the exact target Raspberry Pi hardware.
 - The current UI is tuned first for a `480x320` landscape touchscreen and may need further work for other display sizes.
 - OpenAI analysis still requires internet access and a valid API key.
