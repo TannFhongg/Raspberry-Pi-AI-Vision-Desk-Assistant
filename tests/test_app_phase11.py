@@ -302,6 +302,11 @@ class PrivacyFirstAppTests(unittest.TestCase):
         self.assertEqual(app_module.APP_HOST, "127.0.0.1")
         self.assertFalse(app_module.FLASK_DEBUG)
 
+    def test_health_monitor_busy_treats_active_preview_as_busy(self) -> None:
+        self.live_preview.active = True
+
+        self.assertTrue(app_module._health_monitor_busy())
+
 
 class _FakeLivePreview:
     """Small live-preview double used by the Flask screen tests."""
@@ -309,6 +314,7 @@ class _FakeLivePreview:
     def __init__(self) -> None:
         self.frame_bytes = b"jpeg-data"
         self.resume_calls = 0
+        self.active = False
 
     def get_jpeg_frame(self, timeout_seconds: float = 1.0) -> bytes:
         return self.frame_bytes
@@ -321,6 +327,9 @@ class _FakeLivePreview:
 
     def resume(self) -> None:
         self.resume_calls += 1
+
+    def is_camera_active(self) -> bool:
+        return self.active
 
 
 class _FakeLEDIndicator:

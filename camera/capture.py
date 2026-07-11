@@ -6,6 +6,7 @@ import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
+import sys
 
 from hardware.camera_config import (
     CameraConfigError,
@@ -112,17 +113,20 @@ def _capture_with_opencv(output_path: Path, request) -> CaptureResult:
     try:
         resolved_config = resolve_opencv_config(request)
         requested_width, requested_height = resolved_config.resolved_resolution
-        _status(
-            f"Capturing image with OpenCV camera index {request.camera_index} at {requested_width}x{requested_height}..."
+        camera, open_backend_label = _open_opencv_camera(
+            request.camera_index,
+            cv2,
+            error_cls=CameraCaptureError,
         )
-        camera = cv2.VideoCapture(request.camera_index)
-        if not camera.isOpened():
-            raise CameraCaptureError(
-                f"OpenCV could not open camera index {request.camera_index}. "
-                "Make sure a USB webcam is connected and not being used by another app."
-            )
+        _status(
+            "Capturing image with OpenCV camera index "
+            f"{request.camera_index} at {requested_width}x{requested_height} "
+            f"using {open_backend_label}..."
+        )
 
         warnings = list(resolved_config.warnings)
+        if open_backend_label != "default":
+            warnings.append(f"OpenCV camera opened through the {open_backend_label} backend.")
         camera.set(cv2.CAP_PROP_FRAME_WIDTH, float(requested_width))
         camera.set(cv2.CAP_PROP_FRAME_HEIGHT, float(requested_height))
         warnings.extend(_apply_opencv_controls(camera, resolved_config, cv2))
@@ -273,3 +277,47 @@ def _apply_opencv_controls(camera, resolved_config, cv2_module) -> list[str]:
         warnings.append("OpenCV brightness control was ignored by the camera driver.")
 
     return warnings
+
+
+def _open_opencv_camera(camera_index: int, cv2_module, *, error_cls=CameraCaptureError):
+    """Open a camera with Linux-friendly backend fallback and helpful errors."""
+    attempt_errors: list[str] = []
+
+    for api_preference, label in _preferred_opencv_api_preferences(cv2_module):
+        camera = None
+        try:
+            if api_preference is None:
+                camera = cv2_module.VideoCapture(camera_index)
+            else:
+                camera = cv2_module.VideoCapture(camera_index, api_preference)
+        except Exception as exc:
+            attempt_errors.append(f"{label}: {exc}")
+            continue
+
+        if camera is not None and camera.isOpened():
+            return camera, label
+
+        attempt_errors.append(f"{label}: could not open camera index {camera_index}")
+        if camera is not None:
+            try:
+                camera.release()
+            except Exception:
+                pass
+
+    attempt_summary = "; ".join(attempt_errors) if attempt_errors else "no backend attempts were available"
+    raise error_cls(
+        f"OpenCV could not open camera index {camera_index}. "
+        "Make sure a USB webcam is connected and not being used by another app. "
+        f"Tried backends: {attempt_summary}."
+    )
+
+
+def _preferred_opencv_api_preferences(cv2_module) -> list[tuple[int | None, str]]:
+    """Return the ordered OpenCV API preferences for camera access on this platform."""
+    candidates: list[tuple[int | None, str]] = []
+    if sys.platform.startswith("linux"):
+        v4l2_api = getattr(cv2_module, "CAP_V4L2", None)
+        if v4l2_api is not None:
+            candidates.append((v4l2_api, "V4L2"))
+    candidates.append((None, "default"))
+    return candidates

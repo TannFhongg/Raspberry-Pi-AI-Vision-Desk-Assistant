@@ -1811,7 +1811,14 @@ def _initialize_led_indicator() -> None:
 
 def _health_monitor_busy() -> bool:
     """Return True when the device should defer intrusive health checks."""
-    return _is_running() or is_busy_device_state(_get_device_state())
+    preview_active = False
+    preview_service = LIVE_PREVIEW
+    if hasattr(preview_service, "is_camera_active"):
+        try:
+            preview_active = bool(preview_service.is_camera_active())
+        except Exception:
+            preview_active = False
+    return _is_running() or is_busy_device_state(_get_device_state()) or preview_active
 
 
 def _ensure_health_monitor_started() -> None:

@@ -14,6 +14,7 @@ from PIL import Image, ImageDraw
 from camera.capture import (
     OPENCV_INSTALL_HINT,
     _apply_opencv_controls,
+    _open_opencv_camera,
 )
 from hardware.camera_config import (
     build_camera_request,
@@ -169,6 +170,11 @@ class LivePreviewService:
         with self._condition:
             self._paused = False
             self._condition.notify_all()
+
+    def is_camera_active(self) -> bool:
+        """Return True when the preview worker currently owns the camera."""
+        with self._condition:
+            return self._source_active and not self._paused
 
     def close(self) -> None:
         """Stop the background preview thread."""
@@ -361,12 +367,11 @@ class _OpenCVFrameSource(_BaseFrameSource):
             raise LivePreviewError(OPENCV_INSTALL_HINT) from exc
 
         self._cv2 = cv2
-        self._camera = cv2.VideoCapture(request.camera_index)
-        if not self._camera.isOpened():
-            self.close()
-            raise LivePreviewError(
-                f"OpenCV could not open camera index {request.camera_index}."
-            )
+        self._camera, self._backend_label = _open_opencv_camera(
+            request.camera_index,
+            cv2,
+            error_cls=LivePreviewError,
+        )
 
         resolved_config = resolve_opencv_config(request)
         self._camera.set(cv2.CAP_PROP_FRAME_WIDTH, float(request.width))

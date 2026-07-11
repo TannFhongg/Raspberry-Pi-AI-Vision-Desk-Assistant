@@ -15,6 +15,8 @@ from config import DeviceSettings, load_device_settings
 
 DEFAULT_SOCKET_TIMEOUT_SECONDS = 5.0
 DEFAULT_INTERNET_HOST = ("1.1.1.1", 53)
+DEFAULT_CAMERA_PROBE_MAX_WIDTH = 1280
+DEFAULT_CAMERA_PROBE_MAX_HEIGHT = 720
 
 
 @dataclass(slots=True)
@@ -72,6 +74,7 @@ def run_device_checks(
 
 def check_camera(settings: DeviceSettings) -> HardwareCheckResult:
     """Verify that the configured camera backend can capture a still image."""
+    probe_width, probe_height = _build_camera_probe_resolution(settings)
     try:
         with tempfile.NamedTemporaryFile(
             suffix=".jpg",
@@ -84,12 +87,12 @@ def check_camera(settings: DeviceSettings) -> HardwareCheckResult:
             output_path=str(temp_path),
             backend=settings.camera.backend,
             camera_index=settings.camera.index,
-            width=settings.camera.resolution.width,
-            height=settings.camera.resolution.height,
+            width=probe_width,
+            height=probe_height,
             autofocus_mode=settings.camera.autofocus_mode,
             exposure=settings.camera.exposure,
             brightness=settings.camera.brightness,
-            capture_delay_seconds=settings.camera.capture_delay_seconds,
+            capture_delay_seconds=0.0,
         )
     except CameraCaptureError as exc:
         return HardwareCheckResult(
@@ -117,6 +120,20 @@ def check_camera(settings: DeviceSettings) -> HardwareCheckResult:
         status="pass",
         message=message,
     )
+
+
+def _build_camera_probe_resolution(settings: DeviceSettings) -> tuple[int, int]:
+    """Use a lightweight probe resolution so health checks do not stress the camera path."""
+    width = max(1, int(settings.camera.resolution.width))
+    height = max(1, int(settings.camera.resolution.height))
+    scale = min(
+        1.0,
+        DEFAULT_CAMERA_PROBE_MAX_WIDTH / float(width),
+        DEFAULT_CAMERA_PROBE_MAX_HEIGHT / float(height),
+    )
+    probe_width = max(1, int(round(width * scale)))
+    probe_height = max(1, int(round(height * scale)))
+    return (probe_width, probe_height)
 
 
 def check_display(settings: DeviceSettings) -> HardwareCheckResult:
