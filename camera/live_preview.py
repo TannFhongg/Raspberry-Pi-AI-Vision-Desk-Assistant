@@ -14,6 +14,7 @@ from PIL import Image, ImageDraw
 from camera.capture import (
     OPENCV_INSTALL_HINT,
     _apply_opencv_controls,
+    _apply_opencv_stream_preferences,
     _open_opencv_camera,
 )
 from hardware.camera_config import (
@@ -23,6 +24,7 @@ from hardware.camera_config import (
 
 LOGGER = logging.getLogger(__name__)
 DEFAULT_PLACEHOLDER_SIZE = (960, 540)
+DEFAULT_PREVIEW_STREAM_RESOLUTION = (640, 480)
 
 
 class LivePreviewError(Exception):
@@ -299,15 +301,11 @@ class LivePreviewService:
 
 
 def _build_preview_resolution(width: int, height: int) -> tuple[int, int]:
-    """Scale the configured capture size down to a lightweight preview size."""
-    longest_side = max(width, height)
-    if longest_side <= DEFAULT_PLACEHOLDER_SIZE[0]:
+    """Return a webcam-friendly preview size that avoids odd USB camera modes."""
+    max_width, max_height = DEFAULT_PREVIEW_STREAM_RESOLUTION
+    if width <= max_width and height <= max_height:
         return (width, height)
-
-    scale = DEFAULT_PLACEHOLDER_SIZE[0] / float(longest_side)
-    preview_width = max(1, int(round(width * scale)))
-    preview_height = max(1, int(round(height * scale)))
-    return (preview_width, preview_height)
+    return DEFAULT_PREVIEW_STREAM_RESOLUTION
 
 
 def _open_frame_source(request) -> "_BaseFrameSource":
@@ -374,11 +372,12 @@ class _OpenCVFrameSource(_BaseFrameSource):
         )
 
         resolved_config = resolve_opencv_config(request)
+        _apply_opencv_stream_preferences(self._camera, cv2)
         self._camera.set(cv2.CAP_PROP_FRAME_WIDTH, float(request.width))
         self._camera.set(cv2.CAP_PROP_FRAME_HEIGHT, float(request.height))
         _apply_opencv_controls(self._camera, resolved_config, cv2)
 
-        for _ in range(3):
+        for _ in range(2):
             self._camera.read()
             time.sleep(0.05)
 

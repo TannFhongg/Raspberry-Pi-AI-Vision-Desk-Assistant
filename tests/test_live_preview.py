@@ -6,7 +6,7 @@ import threading
 import unittest
 from unittest.mock import patch
 
-from camera.live_preview import LivePreviewService
+from camera.live_preview import DEFAULT_PREVIEW_STREAM_RESOLUTION, LivePreviewService, _build_preview_resolution
 from hardware.camera_config import CameraControlRequest
 
 
@@ -141,6 +141,9 @@ class LivePreviewServiceTests(unittest.TestCase):
             finally:
                 source.allow_read_to_finish.set()
                 service.close()
+
+    def test_build_preview_resolution_prefers_webcam_safe_default_for_large_inputs(self) -> None:
+        self.assertEqual(_build_preview_resolution(1920, 1080), DEFAULT_PREVIEW_STREAM_RESOLUTION)
 
 
 class _BlockingFrameSource:

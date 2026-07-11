@@ -127,6 +127,7 @@ def _capture_with_opencv(output_path: Path, request) -> CaptureResult:
         warnings = list(resolved_config.warnings)
         if open_backend_label != "default":
             warnings.append(f"OpenCV camera opened through the {open_backend_label} backend.")
+        warnings.extend(_apply_opencv_stream_preferences(camera, cv2))
         camera.set(cv2.CAP_PROP_FRAME_WIDTH, float(requested_width))
         camera.set(cv2.CAP_PROP_FRAME_HEIGHT, float(requested_height))
         warnings.extend(_apply_opencv_controls(camera, resolved_config, cv2))
@@ -275,6 +276,33 @@ def _apply_opencv_controls(camera, resolved_config, cv2_module) -> list[str]:
             warnings.append("OpenCV brightness control is unavailable in this build.")
     elif not camera.set(brightness_prop, float(resolved_config.brightness)):
         warnings.append("OpenCV brightness control was ignored by the camera driver.")
+
+    return warnings
+
+
+def _apply_opencv_stream_preferences(camera, cv2_module) -> list[str]:
+    """Apply best-effort stream settings that are friendlier to USB webcams on Linux."""
+    warnings: list[str] = []
+
+    try:
+        mjpg_fourcc = cv2_module.VideoWriter_fourcc(*"MJPG")
+    except Exception:
+        mjpg_fourcc = None
+
+    fourcc_prop = getattr(cv2_module, "CAP_PROP_FOURCC", None)
+    if mjpg_fourcc is not None and fourcc_prop is not None:
+        try:
+            if not camera.set(fourcc_prop, float(mjpg_fourcc)):
+                warnings.append("OpenCV MJPG stream preference was ignored by the camera driver.")
+        except Exception:
+            warnings.append("OpenCV MJPG stream preference could not be applied.")
+
+    buffer_prop = getattr(cv2_module, "CAP_PROP_BUFFERSIZE", None)
+    if buffer_prop is not None:
+        try:
+            camera.set(buffer_prop, 1.0)
+        except Exception:
+            pass
 
     return warnings
 
