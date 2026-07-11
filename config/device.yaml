@@ -2,8 +2,8 @@ camera:
   backend: opencv
   index: 0
   resolution:
-    width: 4608
-    height: 2592
+    width: 1920
+    height: 1080
   autofocus_mode: continuous
   exposure: auto
   brightness: 0.0
