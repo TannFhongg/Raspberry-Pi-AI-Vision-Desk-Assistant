@@ -30,7 +30,14 @@ from hardware import (
     is_busy_device_state,
     screen_for_device_state,
 )
-from pipeline import PipelineError, PipelineResult, run_analyze, run_capture_analyze, save_latest_result
+from pipeline import (
+    PipelineError,
+    PipelineResult,
+    build_capture_session_paths,
+    run_analyze,
+    run_capture_analyze,
+    save_latest_result,
+)
 from system import (
     HealthMonitor,
     OfflineRetryEntry,
@@ -1194,12 +1201,20 @@ def _run_capture_job(selected_mode: str, selected_mode_internal: str) -> None:
     global RUNNING
 
     try:
+        captured_path, processed_path = build_capture_session_paths(PRIVATE_CURRENT_PATH)
+        LOGGER.info(
+            "Capture job using working files captured=%s processed=%s",
+            captured_path,
+            processed_path,
+        )
         result = run_capture_analyze(
             mode=selected_mode_internal,
             backend=CAMERA_BACKEND,
             camera_index=CAMERA_INDEX,
             width=CAPTURE_WIDTH,
             height=CAPTURE_HEIGHT,
+            captured_path=str(captured_path),
+            processed_path=str(processed_path),
             grayscale=GRAYSCALE,
             max_dimension=MAX_DIMENSION,
             autofocus_mode=CAMERA_AUTOFOCUS_MODE,
@@ -1590,10 +1605,12 @@ def _processed_metadata_path(image_path: str | Path) -> Path:
 
 def _cleanup_current_private_media() -> None:
     """Best-effort delete current captured and processed working files."""
-    safe_unlink(CAPTURED_IMAGE_PATH)
-    safe_unlink(PROCESSED_IMAGE_PATH)
-    safe_unlink(_processed_metadata_path(PROCESSED_IMAGE_PATH))
     if PRIVATE_CURRENT_PATH.is_dir():
+        for entry in list(PRIVATE_CURRENT_PATH.iterdir()):
+            if entry.is_dir():
+                safe_rmtree(entry)
+            else:
+                safe_unlink(entry)
         try:
             next(PRIVATE_CURRENT_PATH.iterdir())
         except StopIteration:

@@ -8,6 +8,7 @@ import logging
 from pathlib import Path
 import time
 from typing import Callable
+from uuid import uuid4
 
 from ai.prompts import normalize_mode
 from config import load_device_settings
@@ -98,6 +99,18 @@ def file_mtime(path: str | Path) -> float | None:
     if not file_path.is_file():
         return None
     return file_path.stat().st_mtime
+
+
+def build_capture_session_paths(
+    directory: str | Path = DEFAULT_CAPTURED_PATH.parent,
+) -> tuple[Path, Path]:
+    """Return unique captured/processed paths for one capture job."""
+    base_dir = Path(directory)
+    session_id = f"{datetime.now().strftime('%Y%m%d-%H%M%S-%f')}-{uuid4().hex[:8]}"
+    return (
+        base_dir / f"captured-{session_id}.jpg",
+        base_dir / f"processed-{session_id}.jpg",
+    )
 
 
 def is_processed_fresh(

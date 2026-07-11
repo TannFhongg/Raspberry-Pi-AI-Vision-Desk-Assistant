@@ -203,6 +203,30 @@ class PrivacyFirstAppTests(unittest.TestCase):
         self.assertNotIn("source_image_path", history_entries[0])
         self.assertNotIn("processed_image_path", history_entries[0])
 
+    def test_capture_job_uses_unique_private_working_paths(self) -> None:
+        successful_result = PipelineResult(
+            captured_path=None,
+            processed_path=None,
+            answer="Fresh answer",
+            mode="document_reader",
+            camera_backend_used="opencv",
+            camera_resolution=(1920, 1080),
+            status="success",
+        )
+
+        with patch("app.run_capture_analyze", return_value=successful_result) as run_capture_analyze:
+            app_module._run_capture_job("read_text", "document_reader")
+
+        called_kwargs = run_capture_analyze.call_args.kwargs
+        captured_path = Path(called_kwargs["captured_path"])
+        processed_path = Path(called_kwargs["processed_path"])
+        self.assertEqual(captured_path.parent, self.current_dir)
+        self.assertEqual(processed_path.parent, self.current_dir)
+        self.assertTrue(captured_path.name.startswith("captured-"))
+        self.assertTrue(processed_path.name.startswith("processed-"))
+        self.assertNotEqual(captured_path.name, "captured.jpg")
+        self.assertNotEqual(processed_path.name, "processed.jpg")
+
     def test_retryable_failure_queues_processed_media_and_cleans_working_files(self) -> None:
         self.captured_path.write_bytes(b"captured")
         self.processed_path.write_bytes(b"processed")

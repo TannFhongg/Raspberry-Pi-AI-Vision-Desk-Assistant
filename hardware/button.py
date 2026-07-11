@@ -16,7 +16,13 @@ from hardware.status import (
     coerce_device_state,
     is_busy_device_state,
 )
-from pipeline import PipelineError, PipelineResult, run_capture_analyze, save_latest_result
+from pipeline import (
+    PipelineError,
+    PipelineResult,
+    build_capture_session_paths,
+    run_capture_analyze,
+    save_latest_result,
+)
 
 ButtonFactory = Callable[..., Any]
 LOGGER = logging.getLogger(__name__)
@@ -374,12 +380,15 @@ class GPIOButtonTrigger:
         LOGGER.info("Managed GPIO pipeline started pin=%s mode=%s", self.pin, self.mode)
         try:
             self._set_managed_state(DeviceState.CAPTURING)
+            captured_path, processed_path = build_capture_session_paths()
             result = run_capture_analyze(
                 mode=self.mode,
                 backend=self.backend,
                 camera_index=self.camera_index,
                 width=self.width,
                 height=self.height,
+                captured_path=str(captured_path),
+                processed_path=str(processed_path),
                 grayscale=self.grayscale,
                 max_dimension=self.max_dimension,
                 autofocus_mode=self.autofocus_mode,

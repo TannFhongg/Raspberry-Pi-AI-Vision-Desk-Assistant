@@ -1,6 +1,7 @@
 """Shared pipeline orchestration for terminal, Flask, and GPIO entrypoints."""
 
 from pipeline.runner import (
+    build_capture_session_paths,
     PipelineError,
     PipelineResult,
     file_exists,
@@ -18,6 +19,7 @@ from pipeline.runner import (
 __all__ = [
     "PipelineError",
     "PipelineResult",
+    "build_capture_session_paths",
     "file_exists",
     "file_mtime",
     "is_processed_fresh",

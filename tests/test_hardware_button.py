@@ -5,10 +5,12 @@ from __future__ import annotations
 import threading
 import time
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from hardware.button import GPIOButtonTrigger
 from hardware.status import DeviceState
+from pipeline.runner import PipelineResult
 
 
 class GPIOButtonTriggerTests(unittest.TestCase):
@@ -176,6 +178,35 @@ class GPIOButtonTriggerTests(unittest.TestCase):
 
         self.assertTrue(second_call.wait(1))
         self.assertEqual(calls["count"], 2)
+
+    def test_managed_pipeline_uses_unique_private_working_paths(self) -> None:
+        trigger = _build_trigger(
+            trigger_action=None,
+            clear_action=lambda: True,
+            get_device_state=lambda: DeviceState.READY,
+        )
+        successful_result = PipelineResult(
+            captured_path=None,
+            processed_path=None,
+            answer="Fresh answer",
+            mode="document_reader",
+            camera_backend_used="opencv",
+            camera_resolution=(1920, 1080),
+            status="success",
+        )
+
+        with patch("hardware.button.run_capture_analyze", return_value=successful_result) as run_capture_analyze, patch(
+            "hardware.button.save_latest_result"
+        ):
+            trigger._run_managed_pipeline()
+
+        called_kwargs = run_capture_analyze.call_args.kwargs
+        captured_path = Path(called_kwargs["captured_path"])
+        processed_path = Path(called_kwargs["processed_path"])
+        self.assertEqual(captured_path.parent, Path("data/private/current"))
+        self.assertEqual(processed_path.parent, Path("data/private/current"))
+        self.assertTrue(captured_path.name.startswith("captured-"))
+        self.assertTrue(processed_path.name.startswith("processed-"))
 
 
 def _build_trigger(

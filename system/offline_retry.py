@@ -562,12 +562,12 @@ def _sha256_file(path: Path) -> str:
 
 
 def _now_iso() -> str:
-    """Return a second-precision ISO timestamp for queue metadata."""
-    return datetime.now().replace(microsecond=0).isoformat()
+    """Return a millisecond-precision ISO timestamp for queue metadata."""
+    return datetime.now().isoformat(timespec="milliseconds")
 
 
 def _future_iso(delay_seconds: float) -> str:
     """Return a future ISO timestamp offset by the given delay."""
-    return (datetime.now() + timedelta(seconds=max(0.0, delay_seconds))).replace(
-        microsecond=0
-    ).isoformat()
+    return (
+        datetime.now() + timedelta(seconds=max(0.0, delay_seconds))
+    ).isoformat(timespec="milliseconds")
