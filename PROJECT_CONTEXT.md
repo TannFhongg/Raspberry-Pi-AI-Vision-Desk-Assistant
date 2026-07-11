@@ -102,10 +102,10 @@ The Flask app now stores state in local JSON files instead of relying on large F
 
 Current screens:
 
-- `home` without a selected mode: mode picker, direct `Capture` button, and health pills
-- `home` with a selected mode: live preview, selected mode label, and `Change Mode`
+- `home` without a selected mode: VisionDesk dashboard, mode picker cards, clock, and health pills
+- `home` with a selected mode: the same dashboard layout with the chosen mode card highlighted
 - `processing`: auto-refreshing progress screen with `Capturing...`, `Processing...`, and `Thinking...`
-- `result`: answer-first layout with `Capture Again`, `Recent Results`, and delete-all-data actions
+- `result`: two-panel answer layout with status, current mode, processed preview, answer text, and capture/back actions
 - `error`: short classified failure state with retry actions
 - `history`: text-only recent result list
 - `history_detail`: full text view for one saved result
@@ -132,7 +132,7 @@ The committed baseline in `config/device.yaml` currently uses:
 
 - Camera still capture: `1920x1080`
 - Live preview: `640x360`, `30 FPS`, `force_mjpeg: true`
-- Display: `480x320` landscape
+- Display: `1200x800` landscape
 - Main capture button: GPIO17
 - Mode buttons: GPIO5, GPIO6, GPIO13, GPIO19, GPIO26
 - Back button: GPIO22
@@ -149,6 +149,7 @@ Important generated files and directories:
 - `data/latest_result.txt`: latest readable result summary
 - `data/ui_state.json`: current kiosk state and selected mode
 - `data/result_history.json`: text-only recent results
+- `data/ui-previews/`: local-only active result preview for the current answer screen
 - `data/health_status.json`: latest health snapshot
 - `data/private/current/`: unique per-job working captures and processed images
 - `data/private/retry_queue.json`: persisted retry queue metadata
@@ -226,7 +227,7 @@ Latest documented real-device behavior from 2026-07-10:
 - Same-image reanalysis is intentionally unavailable while result history remains text-only.
 - The offline retry queue has no dedicated queue-management screen yet.
 - More validation is still needed on the exact target Raspberry Pi hardware for button feel, LED timing, and preview smoothness.
-- The current UI is tuned first for a `480x320` landscape display.
+- The current UI is tuned first for a `1200x800` landscape display.
 - OpenAI analysis still requires network access and a valid API key.
 
 ## Development Guardrails

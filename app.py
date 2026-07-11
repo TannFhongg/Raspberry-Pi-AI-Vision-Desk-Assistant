@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import sys
 import threading
 import time
@@ -84,6 +85,8 @@ HEALTH_STATUS_PATH = Path("data/health_status.json")
 LATEST_RESULT_PATH = Path("data/latest_result.txt")
 RESULT_HISTORY_PATH = Path("data/result_history.json")
 RESULT_HISTORY_ASSET_DIR = Path("data/result_history_assets")
+UI_PREVIEW_DIR = Path("data/ui-previews")
+LATEST_RESULT_PREVIEW_PATH = UI_PREVIEW_DIR / "latest-result.jpg"
 PRIVATE_DATA_PATH = Path("data/private")
 PRIVATE_CURRENT_PATH = PRIVATE_DATA_PATH / "current"
 PRIVATE_RETRY_PATH = PRIVATE_DATA_PATH / "retry"
@@ -93,7 +96,7 @@ CAPTURED_IMAGE_PATH = PRIVATE_CURRENT_PATH / "captured.jpg"
 PROCESSED_IMAGE_PATH = PRIVATE_CURRENT_PATH / "processed.jpg"
 OFFLINE_RETRY_QUEUE_PATH = PRIVATE_DATA_PATH / "retry_queue.json"
 OFFLINE_RETRY_STORAGE_PATH = PRIVATE_RETRY_PATH
-VALID_SCREENS = {"home", "processing", "result", "error", "history", "history_detail", "setup"}
+VALID_SCREENS = {"home", "camera", "processing", "result", "error", "history", "history_detail", "setup"}
 MJPEG_BOUNDARY = "frame"
 SETUP_STEPS = ("wifi", "openai", "camera", "gpio", "finish")
 SETUP_GPIO_LABELS = {
@@ -110,31 +113,36 @@ UI_MODE_OPTIONS = (
     {
         "id": "read_text",
         "name": "Read Text",
-        "description": "Read the visible text clearly and quickly.",
+        "description": "Hear printed text clearly",
+        "button_label": "BUTTON 1",
         "internal_mode": "document_reader",
     },
     {
         "id": "summarize_document",
         "name": "Summarize Document",
-        "description": "Summarize documents, notes, and text-heavy pages.",
+        "description": "Get the key points quickly",
+        "button_label": "BUTTON 2",
         "internal_mode": "document_reader",
     },
     {
         "id": "analyze_image",
         "name": "Analyze Image",
-        "description": "Describe what the camera sees and explain the important parts.",
+        "description": "Understand what you see",
+        "button_label": "BUTTON 3",
         "internal_mode": "general_vision",
     },
     {
         "id": "professional_assistant",
         "name": "Professional Assistant",
-        "description": "Give quick professional help for work, meetings, and presentations.",
+        "description": "Write, plan, and organize",
+        "button_label": "BUTTON 4",
         "internal_mode": "general_vision",
     },
     {
         "id": "solve_problem",
         "name": "Solve Problem",
-        "description": "Solve visible questions, tasks, calculations, and problems.",
+        "description": "Work through questions step by step",
+        "button_label": "BUTTON 5",
         "internal_mode": "math_solver",
     },
 )
@@ -567,6 +575,8 @@ LIVE_PREVIEW_FRAME_INTERVAL_MS = _read_int_env(
     maximum=500,
 )
 UI_HEALTH_REFRESH_MS = _read_int_env("UI_HEALTH_REFRESH_MS", 5000, minimum=2000, maximum=60000)
+UI_CPU_WARNING_C = 70.0
+UI_MEMORY_WARNING_PERCENT = 80.0
 RESULT_HISTORY_LIMIT = SETTINGS.retention.text_history_max_items
 RAW_SCREEN_WIDTH = max(240, min(1920, SETTINGS.display.size.width))
 RAW_SCREEN_HEIGHT = max(240, min(1920, SETTINGS.display.size.height))
@@ -582,7 +592,7 @@ DEFAULT_CAPTURE_INTERNAL_MODE = SETTINGS.ai.default_mode
 DEFAULT_CAPTURE_MODE = INTERNAL_TO_UI_MODE.get(DEFAULT_CAPTURE_INTERNAL_MODE, "read_text")
 READY_DETAIL = "Press button to select the mode."
 MODE_SELECTED_DETAIL = "Selected mode ready. Press Button Main to capture."
-HARDWARE_IDLE_SCREENS = {"home", "result", "error"}
+HARDWARE_IDLE_SCREENS = {"home", "camera", "result", "error"}
 MODE_BUTTON_PINS = {
     "read_text": MODE_BUTTON_1_PIN,
     "summarize_document": MODE_BUTTON_2_PIN,
@@ -668,6 +678,19 @@ def index():
     return render_template("index.html", **_build_template_context())
 
 
+@app.get("/camera")
+def camera_screen():
+    """Render the selected-mode camera screen or fall back to the current device screen."""
+    state = _load_ui_state()
+    selected_mode, _selected_mode_internal = _resolve_mode_pair(
+        state.get("selected_mode"),
+        state.get("selected_mode_internal"),
+    )
+    if not selected_mode and str(state.get("screen", "home")).strip().lower() == "home":
+        return redirect(url_for("index"))
+    return render_template("index.html", **_build_template_context())
+
+
 @app.get("/setup")
 def setup():
     """Render the first-boot setup wizard."""
@@ -724,6 +747,27 @@ def live_preview_stream():
     )
 
 
+@app.get("/result-preview/latest.jpg")
+def latest_result_preview():
+    """Return the latest processed result preview for the active answer screen."""
+    if not LATEST_RESULT_PREVIEW_PATH.is_file():
+        return Response(status=404)
+
+    try:
+        image_bytes = LATEST_RESULT_PREVIEW_PATH.read_bytes()
+    except OSError:
+        return Response(status=404)
+
+    return Response(
+        image_bytes,
+        mimetype="image/jpeg",
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+        },
+    )
+
+
 @app.get("/api/ui-state")
 def ui_state_api():
     """Return the current UI state for smooth in-browser synchronization."""
@@ -750,7 +794,7 @@ def select_mode():
 
     requested_mode = request.form.get("mode", "")
     _set_selected_mode(requested_mode)
-    return redirect(url_for("index"))
+    return redirect(url_for("camera_screen"))
 
 
 @app.post("/capture")
@@ -1307,14 +1351,26 @@ def _build_live_preview_refresh_ms() -> int:
     return max(400, int(max(CAPTURE_DELAY_SECONDS, 0.0) * 1000) + 200)
 
 
+def _resolve_render_screen(raw_screen: Any, selected_mode: str) -> str:
+    """Return the user-facing screen for the current device state and selection."""
+    screen = str(raw_screen).strip().lower()
+    if screen not in VALID_SCREENS:
+        screen = "home"
+    if screen == "camera" and not selected_mode:
+        return "home"
+    if screen in {"home", "camera"} and selected_mode:
+        return "camera"
+    return screen
+
+
 def _build_ui_state_api_payload() -> dict[str, Any]:
     """Return a public JSON-safe view of the current UI state."""
     state = _load_ui_state()
-    screen = state["screen"] if state["screen"] in VALID_SCREENS else "home"
     selected_mode, selected_mode_internal = _resolve_mode_pair(
         state.get("selected_mode"),
         state.get("selected_mode_internal"),
     )
+    screen = _resolve_render_screen(state.get("screen", "home"), selected_mode)
     display_status = state["status"]
     if screen == "processing":
         display_status = state["detail"] or "Processing..."
@@ -1345,13 +1401,146 @@ def _build_ui_state_api_payload() -> dict[str, Any]:
     }
 
 
-def _build_health_summary() -> dict[str, Any]:
+def _live_preview_runtime_status() -> tuple[bool, str]:
+    """Return whether the preview has recent frames plus the latest preview error."""
+    preview_service = LIVE_PREVIEW
+    has_recent_frame = False
+    latest_error = ""
+
+    if hasattr(preview_service, "has_recent_frame"):
+        try:
+            has_recent_frame = bool(preview_service.has_recent_frame())
+        except Exception:
+            has_recent_frame = False
+
+    if hasattr(preview_service, "latest_error_message"):
+        try:
+            latest_error = str(preview_service.latest_error_message() or "")
+        except Exception:
+            latest_error = ""
+
+    return has_recent_frame, latest_error
+
+
+def _build_camera_preview_summary(*, render_screen: str | None = None) -> dict[str, Any]:
+    """Return the preview placeholder or error message for the camera screen."""
+    has_recent_frame, latest_error = _live_preview_runtime_status()
+    if has_recent_frame:
+        return {
+            "status": "pass",
+            "screen_state": "PREVIEW_READY",
+            "title": "",
+            "message": "",
+            "show_placeholder": False,
+        }
+
+    if latest_error:
+        return {
+            "status": "fail",
+            "screen_state": "ERROR",
+            "title": "Camera unavailable",
+            "message": latest_error,
+            "show_placeholder": True,
+        }
+
+    if _is_live_preview_screen(render_screen):
+        return {
+            "status": "unknown",
+            "screen_state": "PREVIEW_LOADING",
+            "title": "Preview Image Here",
+            "message": "Live preview is starting.",
+            "show_placeholder": True,
+        }
+
+    return {
+        "status": "unknown",
+        "screen_state": "READY",
+        "title": "Preview Image Here",
+        "message": "Select a mode to open the live preview.",
+        "show_placeholder": True,
+    }
+
+
+def _build_camera_analysis_summary(*, render_screen: str | None = None) -> dict[str, dict[str, str]]:
+    """Return frontend-friendly camera-analysis status pills using current real signals."""
+    has_recent_frame, latest_error = _live_preview_runtime_status()
+    preview_visible = _is_live_preview_screen(render_screen)
+
+    if latest_error:
+        return {
+            "autofocus": {
+                "status": "fail",
+                "label": "ERROR",
+                "message": latest_error,
+            },
+            "lighting": {
+                "status": "unknown",
+                "label": "UNAVAILABLE",
+                "message": "Lighting analysis is unavailable while the camera preview is failing.",
+            },
+            "sharpness": {
+                "status": "unknown",
+                "label": "UNAVAILABLE",
+                "message": "Sharpness analysis is unavailable while the camera preview is failing.",
+            },
+        }
+
+    if has_recent_frame and CAMERA_AUTOFOCUS_MODE != "off":
+        autofocus_status = "pass"
+        autofocus_label = "READY"
+        autofocus_message = "Autofocus is enabled and the preview is receiving live frames."
+    elif CAMERA_AUTOFOCUS_MODE == "off":
+        autofocus_status = "unknown"
+        autofocus_label = "UNAVAILABLE"
+        autofocus_message = "Autofocus is disabled in the current camera configuration."
+    elif preview_visible:
+        autofocus_status = "unknown"
+        autofocus_label = "UNAVAILABLE"
+        autofocus_message = "Autofocus status will update after the live preview receives frames."
+    else:
+        autofocus_status = "unknown"
+        autofocus_label = "UNAVAILABLE"
+        autofocus_message = "Autofocus status becomes available on the camera screen."
+
+    metric_message = (
+        "Real camera-quality metrics are not exposed by the current backend yet."
+        if has_recent_frame
+        else "Real camera-quality metrics will appear here once backend analysis is available."
+    )
+    return {
+        "autofocus": {
+            "status": autofocus_status,
+            "label": autofocus_label,
+            "message": autofocus_message,
+        },
+        "lighting": {
+            "status": "unknown",
+            "label": "UNKNOWN",
+            "message": metric_message,
+        },
+        "sharpness": {
+            "status": "unknown",
+            "label": "UNKNOWN",
+            "message": metric_message,
+        },
+    }
+
+
+def _build_health_summary(*, render_screen: str | None = None) -> dict[str, Any]:
     """Return compact health labels for the small-screen device UI."""
+    if render_screen is None:
+        state = _load_ui_state()
+        selected_mode, _selected_mode_internal = _resolve_mode_pair(
+            state.get("selected_mode"),
+            state.get("selected_mode_internal"),
+        )
+        render_screen = _resolve_render_screen(state.get("screen", "home"), selected_mode)
+
     snapshot = _load_health_snapshot()
     cpu_chip = _build_cpu_health_chip(snapshot)
     memory_chip = _build_memory_health_chip(snapshot)
     network_chip = _build_component_health_chip(snapshot, "network", prefix="NET")
-    camera_chip = _build_camera_health_chip(snapshot)
+    camera_chip = _build_camera_health_chip(snapshot, render_screen=render_screen)
     overall_status = _resolve_ui_health_overall_status(
         cpu_chip,
         memory_chip,
@@ -1366,6 +1555,8 @@ def _build_health_summary() -> dict[str, Any]:
         "memory": memory_chip,
         "network": network_chip,
         "camera": camera_chip,
+        "camera_preview": _build_camera_preview_summary(render_screen=render_screen),
+        "camera_analysis": _build_camera_analysis_summary(render_screen=render_screen),
     }
 
 
@@ -1394,11 +1585,13 @@ def _build_overall_health_chip(
     """Return the overall device-health chip."""
     label_lookup = {
         "pass": "System OK",
+        "warning": "System Watch",
         "fail": "Check Device",
         "unknown": "Health Pending",
     }
     message_lookup = {
         "pass": "All monitored device checks are passing.",
+        "warning": "One or more monitored device checks are nearing their warning threshold.",
         "fail": "One or more monitored device checks need attention.",
         "unknown": "Waiting for a complete health snapshot.",
     }
@@ -1425,6 +1618,8 @@ def _build_cpu_health_chip(snapshot: dict[str, Any] | None) -> dict[str, str]:
     cpu = snapshot["cpu"]
     status = _normalize_component_health_status(cpu.get("status"))
     temperature_c = cpu.get("temperature_c")
+    if status == "pass" and isinstance(temperature_c, (int, float)) and float(temperature_c) >= UI_CPU_WARNING_C:
+        status = "warning"
     label = "CPU --"
     if isinstance(temperature_c, (int, float)):
         label = f"CPU {float(temperature_c):.1f}C"
@@ -1447,6 +1642,8 @@ def _build_memory_health_chip(snapshot: dict[str, Any] | None) -> dict[str, str]
     memory = snapshot["memory"]
     status = _normalize_component_health_status(memory.get("status"))
     used_percent = memory.get("used_percent")
+    if status == "pass" and isinstance(used_percent, (int, float)) and float(used_percent) >= UI_MEMORY_WARNING_PERCENT:
+        status = "warning"
     label = "RAM --"
     if isinstance(used_percent, (int, float)):
         label = f"RAM {float(used_percent):.1f}%"
@@ -1475,6 +1672,7 @@ def _build_component_health_chip(
     status = _normalize_component_health_status(component.get("status"))
     suffix_lookup = {
         "pass": "OK",
+        "warning": "WARN",
         "fail": "FAIL",
         "unknown": "WAIT",
     }
@@ -1485,23 +1683,13 @@ def _build_component_health_chip(
     }
 
 
-def _build_camera_health_chip(snapshot: dict[str, Any] | None) -> dict[str, str]:
+def _build_camera_health_chip(
+    snapshot: dict[str, Any] | None,
+    *,
+    render_screen: str | None = None,
+) -> dict[str, str]:
     """Return camera health with live-preview-aware status overrides."""
-    preview_service = LIVE_PREVIEW
-    has_recent_frame = False
-    latest_error = ""
-
-    if hasattr(preview_service, "has_recent_frame"):
-        try:
-            has_recent_frame = bool(preview_service.has_recent_frame())
-        except Exception:
-            has_recent_frame = False
-
-    if hasattr(preview_service, "latest_error_message"):
-        try:
-            latest_error = str(preview_service.latest_error_message() or "")
-        except Exception:
-            latest_error = ""
+    has_recent_frame, latest_error = _live_preview_runtime_status()
 
     if has_recent_frame:
         return {
@@ -1514,7 +1702,7 @@ def _build_camera_health_chip(snapshot: dict[str, Any] | None) -> dict[str, str]
     if component["status"] != "unknown":
         return component
 
-    if _is_live_preview_screen():
+    if _is_live_preview_screen(render_screen):
         return {
             "status": "unknown",
             "label": "CAM LIVE",
@@ -1536,16 +1724,20 @@ def _resolve_ui_health_overall_status(*chips: dict[str, str]) -> str:
     statuses = [str(chip.get("status", "unknown")).lower() for chip in chips]
     if any(status == "fail" for status in statuses):
         return "fail"
+    if any(status == "warning" for status in statuses):
+        return "warning"
     if statuses and all(status == "pass" for status in statuses):
         return "pass"
     return "unknown"
 
 
 def _normalize_component_health_status(value: Any) -> str:
-    """Normalize component health statuses into pass/fail/unknown."""
+    """Normalize component health statuses into pass/warning/fail/unknown."""
     normalized = str(value or "").strip().lower()
     if normalized == "pass":
         return "pass"
+    if normalized in {"warning", "warn"}:
+        return "warning"
     if normalized == "fail":
         return "fail"
     return "unknown"
@@ -1810,14 +2002,11 @@ def _build_template_context(
 ) -> dict[str, Any]:
     """Build the render context for the current screen."""
     state = _load_ui_state()
-    screen = screen_override or state["screen"]
-    if screen not in VALID_SCREENS:
-        screen = "home"
-
     selected_mode, selected_mode_internal = _resolve_mode_pair(
         state.get("selected_mode"),
         state.get("selected_mode_internal"),
     )
+    screen = _resolve_render_screen(screen_override or state["screen"], selected_mode)
     selected_mode_definition = UI_MODE_BY_ID.get(selected_mode)
     selected_mode_label = (
         selected_mode_definition["name"] if selected_mode_definition else "No mode selected"
@@ -1871,10 +2060,17 @@ def _build_template_context(
     ui_state_api_url = url_for("ui_state_api")
     ui_state_updated_at = state["updated_at"]
     auto_refresh_ms = _get_auto_refresh_ms(screen)
+    has_result_preview = LATEST_RESULT_PREVIEW_PATH.is_file()
+    result_preview_url = (
+        f"{url_for('latest_result_preview')}?v={ui_state_updated_at}"
+        if has_result_preview
+        else ""
+    )
     if screen == "setup" and setup_state is not None:
         ui_state_api_url = url_for("setup_state_api")
         ui_state_updated_at = setup_state["updated_at"]
         auto_refresh_ms = 1500 if setup_state["gpio"].get("active") else None
+    health_summary = _build_health_summary(render_screen=screen)
 
     return {
         "screen": screen,
@@ -1905,9 +2101,13 @@ def _build_template_context(
         "auto_refresh_ms": auto_refresh_ms,
         "ui_state_api_url": ui_state_api_url,
         "ui_state_updated_at": ui_state_updated_at,
+        "has_result_preview": has_result_preview,
+        "result_preview_url": result_preview_url,
         "health_api_url": url_for("health_status_api"),
         "health_refresh_ms": UI_HEALTH_REFRESH_MS,
-        "health_summary": _build_health_summary(),
+        "health_summary": health_summary,
+        "camera_preview": health_summary["camera_preview"],
+        "camera_analysis": health_summary["camera_analysis"],
         "setup_state": setup_state,
         "setup_warnings": setup_warnings,
         "setup_has_warnings": bool(setup_warnings),
@@ -2019,6 +2219,7 @@ def _run_capture_job(selected_mode: str, selected_mode_internal: str) -> None:
         )
         save_latest_result(result, output_path=str(LATEST_RESULT_PATH))
         history_entry = _append_result_history(result, selected_mode, selected_mode_internal)
+        _sync_latest_result_preview(result.processed_path or result.captured_path)
         _write_device_state(
             DeviceState.DONE,
             selected_mode=selected_mode,
@@ -2393,6 +2594,34 @@ def _processed_metadata_path(image_path: str | Path) -> Path:
     return file_path.with_name(f"{file_path.name}.meta.json")
 
 
+def _clear_latest_result_preview() -> None:
+    """Remove the active answer-screen preview image when present."""
+    safe_unlink(LATEST_RESULT_PREVIEW_PATH)
+    try:
+        next(UI_PREVIEW_DIR.iterdir())
+    except StopIteration:
+        safe_rmtree(UI_PREVIEW_DIR)
+    except OSError:
+        pass
+
+
+def _sync_latest_result_preview(image_path: str | Path | None) -> None:
+    """Copy the newest processed image into a UI-safe preview location."""
+    _clear_latest_result_preview()
+    if image_path is None:
+        return
+
+    source = Path(image_path)
+    if not source.is_file():
+        return
+
+    UI_PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        shutil.copy2(source, LATEST_RESULT_PREVIEW_PATH)
+    except OSError:
+        safe_unlink(LATEST_RESULT_PREVIEW_PATH)
+
+
 def _cleanup_current_private_media() -> None:
     """Best-effort delete current captured and processed working files."""
     if PRIVATE_CURRENT_PATH.is_dir():
@@ -2412,6 +2641,7 @@ def _cleanup_current_private_media() -> None:
 def _purge_runtime_artifacts(*, delete_all: bool = False) -> None:
     """Purge orphaned private media and trim persisted text history."""
     _cleanup_current_private_media()
+    _clear_latest_result_preview()
 
     if OFFLINE_RETRY_QUEUE is not None:
         if delete_all:
@@ -2577,6 +2807,8 @@ def _reset_ui_state(
             LATEST_RESULT_PATH,
             mode=selected_mode_internal or selected_mode,
         )
+    if clear_saved_result or clear_selected_mode:
+        _clear_latest_result_preview()
     _write_state(_build_idle_state_payload(selected_mode, selected_mode_internal))
 
 
@@ -2631,6 +2863,7 @@ def _device_state_for_screen(screen: str) -> DeviceState:
     """Infer a lifecycle state from an older persisted screen value."""
     return {
         "home": DeviceState.READY,
+        "camera": DeviceState.MODE_SELECTED,
         "processing": DeviceState.PROCESSING,
         "result": DeviceState.DONE,
         "error": DeviceState.ERROR,
@@ -2729,12 +2962,16 @@ def _health_monitor_busy() -> bool:
     return _is_running() or is_busy_device_state(_get_device_state()) or preview_active
 
 
-def _is_live_preview_screen() -> bool:
-    """Return True when the home screen is showing the live preview panel."""
-    state = _load_ui_state()
-    screen = str(state.get("screen", "")).strip().lower()
-    selected_mode = str(state.get("selected_mode", "")).strip()
-    return screen == "home" and bool(selected_mode)
+def _is_live_preview_screen(render_screen: str | None = None) -> bool:
+    """Return True when the current screen visibly shows the live preview panel."""
+    if render_screen is None:
+        state = _load_ui_state()
+        selected_mode, _selected_mode_internal = _resolve_mode_pair(
+            state.get("selected_mode"),
+            state.get("selected_mode_internal"),
+        )
+        render_screen = _resolve_render_screen(state.get("screen", "home"), selected_mode)
+    return str(render_screen).strip().lower() in {"setup", "camera"}
 
 
 def _ensure_health_monitor_started() -> None:

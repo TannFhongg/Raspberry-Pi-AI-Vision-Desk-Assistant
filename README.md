@@ -11,7 +11,7 @@ Camera capture -> OpenCV preprocess / screen optimization -> OpenAI Vision -> CL
 ## Current Status
 
 - End-to-end capture, preprocess, analyze, and result display flows are implemented across CLI, Flask, and GPIO entrypoints.
-- The committed device baseline is now a local-only kiosk profile on `127.0.0.1:5000` with a `480x320` landscape UI.
+- The committed device baseline is now a local-only kiosk profile on `127.0.0.1:5000` with a `1200x800` landscape UI.
 - A mandatory first-boot setup wizard now blocks the normal kiosk flow until Wi-Fi, `OPENAI_API_KEY`, camera diagnostics, and GPIO verification have been reviewed.
 - The current default hardware profile uses `1920x1080` still capture, a lighter `640x360` live preview, text-only result history, private runtime media, and a background offline retry queue.
 - Physical controls support one capture button, five mode buttons, an optional back button, and an optional single-color status LED.
@@ -23,7 +23,7 @@ Camera capture -> OpenCV preprocess / screen optimization -> OpenAI Vision -> CL
 - Phase 1-4: OpenAI image analysis, USB camera capture, preprocessing, and the shared CLI pipeline are in place.
 - Phase 5-6: Flask touchscreen UI and GPIO-triggered capture are integrated around the same pipeline runner.
 - Phase 8-9: device diagnostics and long-distance screen/document optimization are implemented.
-- Phase 10-11: production-oriented `480x320` landscape UI, live preview, and the shared hardware state machine are implemented.
+- Phase 10-11: production-oriented landscape kiosk UI, live preview, and the shared hardware state machine are implemented.
 - Phase 13-15: assistant mode registry, reliability/logging/health monitoring, recent results, offline retry, and privacy hardening are implemented.
 - Phase 16: first-boot setup gating, YAML-backed setup metadata, `.env` key upsert, Wi-Fi onboarding via `nmcli`, and setup-specific GPIO verification are implemented.
 
@@ -170,8 +170,8 @@ camera:
 
 display:
   size:
-    width: 480
-    height: 320
+    width: 1200
+    height: 800
   orientation: landscape
 
 button:
@@ -356,10 +356,10 @@ READY -> MODE_SELECTED -> CAPTURING -> PROCESSING -> DONE | ERROR
 Current UI behavior:
 
 - `setup`: mandatory first-boot wizard for Wi-Fi, API key, camera check, GPIO verification, warning review, and restart
-- `home` without a selected mode: shows the five touch modes, a direct `Capture` action, and the health pills
-- `home` with a selected mode: shows the live preview, selected mode header, `Click Button to Capture`, and `Change Mode`
+- `home` without a selected mode: shows the VisionDesk dashboard, five touch modes, the large clock, and the health pills
+- `home` with a selected mode: keeps the same dashboard layout, highlights the selected mode card, and waits for the main capture trigger
 - `processing`: auto-refreshing progress view with `Capturing...`, `Processing...`, and `Thinking...`
-- `result`: large scrollable answer box with `Capture Again`, `Recent Results`, and delete-all-data actions
+- `result`: a two-panel answer screen with status, current mode, processed preview, answer text, `Capture Again`, and `Back`
 - `error`: short classified camera/network/API/generic failure screen with retry actions
 - `history` and `history_detail`: recent text-only results without retained source images
 
@@ -400,6 +400,7 @@ User-facing and runtime artifacts:
 - `data/ui_state.json`: persisted UI mode, screen, and device state
 - `data/setup_state.json`: persisted partial first-boot wizard progress
 - `data/result_history.json`: text-only recent result history
+- `data/ui-previews/`: local-only active result preview used by the answer screen
 - `data/health_status.json`: latest background health snapshot
 - `data/private/current/`: per-job working capture and processed files
 - `data/private/retry_queue.json`: persisted queue metadata for retryable OpenAI failures
@@ -490,7 +491,7 @@ For fullscreen kiosk startup on Raspberry Pi OS Bookworm with `labwc`:
 - `/admin/setup` is intentionally unprotected in V1 and is meant only for trusted local device access.
 - The V1 setup wizard keeps locale fixed to English and does not yet expose language selection.
 - Final button feel, live-preview smoothness, and LED timing still need more validation on the exact target Raspberry Pi hardware.
-- The current UI is tuned first for a `480x320` landscape touchscreen and may need further work for other display sizes.
+- The current UI is tuned first for a `1200x800` landscape touchscreen and may need further work for other display sizes.
 - OpenAI analysis still requires internet access and a valid API key.
 
 ## Related Docs
