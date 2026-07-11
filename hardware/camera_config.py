@@ -28,6 +28,8 @@ class CameraControlRequest:
     exposure: str | int
     brightness: float
     capture_delay_seconds: float
+    force_mjpeg: bool = False
+    target_fps: float = 0.0
 
 
 @dataclass(slots=True)
@@ -65,6 +67,8 @@ def build_camera_request(
     exposure: str | int | None = None,
     brightness: float | None = None,
     capture_delay_seconds: float | None = None,
+    force_mjpeg: bool | None = None,
+    target_fps: float | None = None,
 ) -> CameraControlRequest:
     """Merge explicit values with device defaults."""
     settings = load_device_settings()
@@ -106,6 +110,8 @@ def build_camera_request(
             if capture_delay_seconds is None
             else float(capture_delay_seconds)
         )
+        resolved_force_mjpeg = False if force_mjpeg is None else bool(force_mjpeg)
+        resolved_target_fps = 0.0 if target_fps is None else float(target_fps)
     except (TypeError, ValueError) as exc:
         raise CameraConfigError("Invalid numeric camera control value.") from exc
 
@@ -115,6 +121,8 @@ def build_camera_request(
         raise CameraConfigError("Capture width and height must both be greater than 0.")
     if resolved_delay < 0:
         raise CameraConfigError("Capture delay must be 0 or greater.")
+    if resolved_target_fps < 0:
+        raise CameraConfigError("Target FPS must be 0 or greater.")
 
     if resolved_exposure != "auto":
         try:
@@ -137,6 +145,8 @@ def build_camera_request(
         exposure=resolved_exposure,
         brightness=resolved_brightness,
         capture_delay_seconds=resolved_delay,
+        force_mjpeg=resolved_force_mjpeg,
+        target_fps=resolved_target_fps,
     )
 def resolve_opencv_config(request: CameraControlRequest) -> ResolvedCameraConfig:
     """Resolve OpenCV settings and document best-effort control support."""

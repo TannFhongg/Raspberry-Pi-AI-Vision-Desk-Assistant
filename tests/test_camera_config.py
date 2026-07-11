@@ -42,6 +42,8 @@ class CameraConfigTests(unittest.TestCase):
         self.assertEqual(request.height, 2592)
         self.assertEqual(request.autofocus_mode, "continuous")
         self.assertEqual(request.exposure, "auto")
+        self.assertFalse(request.force_mjpeg)
+        self.assertEqual(request.target_fps, 0.0)
 
     def test_build_camera_request_rejects_removed_non_opencv_backends(self) -> None:
         settings = _build_settings()
@@ -63,6 +65,19 @@ class CameraConfigTests(unittest.TestCase):
 
         self.assertEqual(resolved.backend, "opencv")
         self.assertGreaterEqual(len(resolved.warnings), 3)
+
+    def test_build_camera_request_accepts_preview_stream_hints(self) -> None:
+        settings = _build_settings()
+        with patch("hardware.camera_config.load_device_settings", return_value=settings):
+            request = build_camera_request(
+                width=640,
+                height=360,
+                force_mjpeg=True,
+                target_fps=30.0,
+            )
+
+        self.assertTrue(request.force_mjpeg)
+        self.assertEqual(request.target_fps, 30.0)
 
 
 def _build_settings() -> DeviceSettings:

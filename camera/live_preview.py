@@ -15,6 +15,7 @@ from PIL import Image, ImageDraw
 from camera.capture import (
     OPENCV_INSTALL_HINT,
     camera_access,
+    _describe_opencv_stream,
     _apply_opencv_controls,
     _configure_opencv_camera,
     _read_latest_valid_frame,
@@ -27,8 +28,9 @@ from hardware.camera_config import (
 
 LOGGER = logging.getLogger(__name__)
 DEFAULT_PLACEHOLDER_SIZE = (960, 540)
-DEFAULT_PREVIEW_STREAM_RESOLUTION = (640, 480)
+DEFAULT_PREVIEW_STREAM_RESOLUTION = (640, 360)
 DEFAULT_RECENT_PREVIEW_FRAME_WINDOW_SECONDS = 10.0
+PERSISTENT_PREVIEW_READ_ATTEMPTS = 2
 
 
 class LivePreviewError(Exception):
@@ -45,9 +47,13 @@ class LivePreviewService:
         camera_index: int | None = None,
         width: int | None = None,
         height: int | None = None,
+        preview_width: int | None = None,
+        preview_height: int | None = None,
         autofocus_mode: str | None = None,
         exposure: str | int | None = None,
         brightness: float | None = None,
+        force_mjpeg: bool = True,
+        target_fps: float = 0.0,
         frame_interval_seconds: float = 0.15,
     ) -> None:
         request = build_camera_request(
@@ -59,10 +65,24 @@ class LivePreviewService:
             exposure=exposure,
             brightness=brightness,
             capture_delay_seconds=0.0,
+            force_mjpeg=force_mjpeg,
+            target_fps=target_fps,
+        )
+        preview_max_width = (
+            DEFAULT_PREVIEW_STREAM_RESOLUTION[0]
+            if preview_width is None
+            else max(1, int(preview_width))
+        )
+        preview_max_height = (
+            DEFAULT_PREVIEW_STREAM_RESOLUTION[1]
+            if preview_height is None
+            else max(1, int(preview_height))
         )
         preview_width, preview_height = _build_preview_resolution(
             request.width,
             request.height,
+            max_width=preview_max_width,
+            max_height=preview_max_height,
         )
 
         self._request = replace(
@@ -72,9 +92,10 @@ class LivePreviewService:
             capture_delay_seconds=0.0,
             autofocus_mode="continuous" if request.autofocus_mode == "auto" else request.autofocus_mode,
         )
-        self._frame_interval_seconds = max(0.05, frame_interval_seconds)
+        self._frame_interval_seconds = max(0.02, frame_interval_seconds)
         self._preview_size = (preview_width, preview_height)
-        self._snapshot_mode = sys.platform.startswith("linux")
+        self._linux_mode = sys.platform.startswith("linux")
+        self._linux_snapshot_fallback = False
         self._condition = threading.Condition()
         self._latest_frame = _build_placeholder_frame(
             "Starting live camera feed...",
@@ -250,11 +271,29 @@ class LivePreviewService:
                     continue
 
                 if source is None:
-                    if not self._snapshot_mode:
-                        self._mark_source_active(True)
+                    self._mark_source_active(True)
                     try:
-                        source = _open_frame_source(self._request)
-                        LOGGER.info("Live preview source opened")
+                        source = _open_frame_source(
+                            self._request,
+                            prefer_snapshot_on_linux=self._linux_snapshot_fallback,
+                        )
+                        if (
+                            self._linux_mode
+                            and not self._linux_snapshot_fallback
+                            and isinstance(source, _OpenCVSnapshotFrameSource)
+                        ):
+                            self._linux_snapshot_fallback = True
+                        if not source.holds_camera_between_reads():
+                            self._mark_source_active(False)
+                        LOGGER.info(
+                            "Live preview source opened mode=%s resolution=%sx%s force_mjpeg=%s target_fps=%.1f stream=%s",
+                            source.describe_mode(),
+                            self._request.width,
+                            self._request.height,
+                            self._request.force_mjpeg,
+                            self._request.target_fps,
+                            source.describe_stream() or "unknown",
+                        )
                     except LivePreviewError as exc:
                         self._mark_source_active(False)
                         LOGGER.warning("Live preview unavailable: %s", exc)
@@ -275,17 +314,23 @@ class LivePreviewService:
                             continue
 
                 try:
-                    if self._snapshot_mode:
+                    if not source.holds_camera_between_reads():
                         self._mark_source_active(True)
                     try:
                         frame = source.read_frame()
                     finally:
-                        if self._snapshot_mode:
+                        if not source.holds_camera_between_reads():
                             self._mark_source_active(False)
                     jpeg_bytes = _encode_preview_frame(frame)
                     self._record_frame_success()
                     self._update_frame(jpeg_bytes)
                 except Exception as exc:
+                    if self._linux_mode and isinstance(source, _OpenCVFrameSource):
+                        self._linux_snapshot_fallback = True
+                        LOGGER.warning(
+                            "Persistent Linux preview failed; switching to snapshot fallback: %s",
+                            exc,
+                        )
                     LOGGER.warning("Live preview frame failed: %s", exc)
                     self._record_frame_failure(str(exc))
                     self._update_frame(
@@ -347,18 +392,55 @@ class LivePreviewService:
         return None
 
 
-def _build_preview_resolution(width: int, height: int) -> tuple[int, int]:
-    """Return a webcam-friendly preview size that avoids odd USB camera modes."""
-    max_width, max_height = DEFAULT_PREVIEW_STREAM_RESOLUTION
-    if width <= max_width and height <= max_height:
-        return (width, height)
-    return DEFAULT_PREVIEW_STREAM_RESOLUTION
+def _build_preview_resolution(
+    width: int,
+    height: int,
+    *,
+    max_width: int = DEFAULT_PREVIEW_STREAM_RESOLUTION[0],
+    max_height: int = DEFAULT_PREVIEW_STREAM_RESOLUTION[1],
+) -> tuple[int, int]:
+    """Scale preview frames down to a lighter resolution while preserving aspect ratio."""
+    safe_width = max(1, int(width))
+    safe_height = max(1, int(height))
+    bounded_max_width = max(1, int(max_width))
+    bounded_max_height = max(1, int(max_height))
+    scale = min(
+        1.0,
+        bounded_max_width / float(safe_width),
+        bounded_max_height / float(safe_height),
+    )
+    preview_width = _normalize_even_dimension(int(round(safe_width * scale)))
+    preview_height = _normalize_even_dimension(int(round(safe_height * scale)))
+    return (preview_width, preview_height)
 
 
-def _open_frame_source(request) -> "_BaseFrameSource":
+def _normalize_even_dimension(value: int) -> int:
+    """Prefer even preview dimensions so common webcam formats stay happy."""
+    normalized = max(1, int(value))
+    if normalized <= 2:
+        return normalized
+    if normalized % 2 == 0:
+        return normalized
+    return normalized - 1
+
+
+def _open_frame_source(
+    request,
+    *,
+    prefer_snapshot_on_linux: bool = False,
+) -> "_BaseFrameSource":
     """Open the OpenCV live-preview source for the configured USB webcam."""
     if sys.platform.startswith("linux"):
-        return _OpenCVSnapshotFrameSource(request)
+        if prefer_snapshot_on_linux:
+            return _OpenCVSnapshotFrameSource(request)
+        try:
+            return _OpenCVFrameSource(request)
+        except LivePreviewError as exc:
+            LOGGER.warning(
+                "Persistent Linux preview could not start; falling back to snapshot mode: %s",
+                exc,
+            )
+            return _OpenCVSnapshotFrameSource(request)
     return _OpenCVFrameSource(request)
 
 
@@ -400,6 +482,18 @@ class _BaseFrameSource:
     def read_frame(self) -> Any:
         raise NotImplementedError
 
+    def holds_camera_between_reads(self) -> bool:
+        """Return True when the source keeps the camera open continuously."""
+        return False
+
+    def describe_mode(self) -> str:
+        """Return a short mode label for logs."""
+        return "unknown"
+
+    def describe_stream(self) -> str:
+        """Return a compact stream summary for logs when available."""
+        return ""
+
     def close(self) -> None:
         raise NotImplementedError
 
@@ -422,17 +516,14 @@ class _OpenCVFrameSource(_BaseFrameSource):
 
         resolved_config = resolve_opencv_config(request)
         _configure_opencv_camera(self._camera, request, resolved_config, cv2)
+        self._stream_summary = _describe_opencv_stream(self._camera, cv2)
 
     def read_frame(self) -> Any:
         """Read the newest frame and convert it from BGR into RGB."""
         if self._camera is None:
             raise LivePreviewError("OpenCV preview is not running.")
 
-        frame = _read_latest_valid_frame(
-            self._camera,
-            attempts=4,
-            inter_read_delay_seconds=0.03,
-        )
+        frame = _read_persistent_preview_frame(self._camera)
         if frame is None or getattr(frame, "size", 0) <= 0:
             raise LivePreviewError("OpenCV preview could not read a frame.")
 
@@ -441,6 +532,18 @@ class _OpenCVFrameSource(_BaseFrameSource):
         if frame.shape[2] == 4:
             return frame[:, :, [2, 1, 0, 3]].copy()
         return frame[:, :, ::-1].copy()
+
+    def holds_camera_between_reads(self) -> bool:
+        """Persistent preview keeps a camera handle open between frames."""
+        return True
+
+    def describe_mode(self) -> str:
+        """Return a human-readable label for preview logs."""
+        return "persistent"
+
+    def describe_stream(self) -> str:
+        """Return the actual persistent stream properties when known."""
+        return self._stream_summary
 
     def close(self) -> None:
         """Release the OpenCV camera handle."""
@@ -501,3 +604,20 @@ class _OpenCVSnapshotFrameSource(_BaseFrameSource):
     def close(self) -> None:
         """Snapshot preview does not keep a persistent camera handle."""
         return None
+
+    def describe_mode(self) -> str:
+        """Return a human-readable label for preview logs."""
+        return "snapshot"
+
+    def describe_stream(self) -> str:
+        """Snapshot mode reopens the camera for each frame."""
+        return "open-per-frame"
+
+
+def _read_persistent_preview_frame(camera):
+    """Read a preview frame with minimal latency from a persistent camera handle."""
+    return _read_latest_valid_frame(
+        camera,
+        attempts=PERSISTENT_PREVIEW_READ_ATTEMPTS,
+        inter_read_delay_seconds=0.0,
+    )

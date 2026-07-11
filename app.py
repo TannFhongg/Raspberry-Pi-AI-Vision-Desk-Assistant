@@ -181,6 +181,10 @@ CAMERA_AUTOFOCUS_MODE = SETTINGS.camera.autofocus_mode
 CAMERA_EXPOSURE = SETTINGS.camera.exposure
 CAMERA_BRIGHTNESS = SETTINGS.camera.brightness
 CAPTURE_DELAY_SECONDS = SETTINGS.camera.capture_delay_seconds
+PREVIEW_WIDTH = SETTINGS.camera.preview.resolution.width
+PREVIEW_HEIGHT = SETTINGS.camera.preview.resolution.height
+PREVIEW_TARGET_FPS = SETTINGS.camera.preview.target_fps
+PREVIEW_FORCE_MJPEG = SETTINGS.camera.preview.force_mjpeg
 GRAYSCALE = SETTINGS.camera.grayscale
 MAX_DIMENSION = SETTINGS.camera.max_dimension
 ENABLE_GPIO_BUTTON = SETTINGS.button.enabled
@@ -218,8 +222,8 @@ UI_DISPLAY_ORIENTATION = _read_orientation_env(
 )
 LIVE_PREVIEW_FRAME_INTERVAL_MS = _read_int_env(
     "LIVE_PREVIEW_FRAME_INTERVAL_MS",
-    80,
-    minimum=50,
+    max(20, int(round(1000.0 / max(1.0, PREVIEW_TARGET_FPS)))),
+    minimum=20,
     maximum=500,
 )
 UI_HEALTH_REFRESH_MS = _read_int_env("UI_HEALTH_REFRESH_MS", 5000, minimum=2000, maximum=60000)
@@ -276,9 +280,13 @@ LIVE_PREVIEW = LivePreviewService(
     camera_index=CAMERA_INDEX,
     width=CAPTURE_WIDTH,
     height=CAPTURE_HEIGHT,
+    preview_width=PREVIEW_WIDTH,
+    preview_height=PREVIEW_HEIGHT,
     autofocus_mode=CAMERA_AUTOFOCUS_MODE,
     exposure=CAMERA_EXPOSURE,
     brightness=CAMERA_BRIGHTNESS,
+    force_mjpeg=PREVIEW_FORCE_MJPEG,
+    target_fps=PREVIEW_TARGET_FPS,
     frame_interval_seconds=LIVE_PREVIEW_FRAME_INTERVAL_MS / 1000.0,
 )
 

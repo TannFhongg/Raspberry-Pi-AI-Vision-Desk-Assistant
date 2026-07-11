@@ -66,6 +66,10 @@ class LoadDeviceSettingsTests(unittest.TestCase):
 
         self.assertEqual(settings.camera.backend, "opencv")
         self.assertEqual(settings.camera.resolution.width, 4608)
+        self.assertEqual(settings.camera.preview.resolution.width, 640)
+        self.assertEqual(settings.camera.preview.resolution.height, 360)
+        self.assertAlmostEqual(settings.camera.preview.target_fps, 30.0)
+        self.assertTrue(settings.camera.preview.force_mjpeg)
         self.assertEqual(settings.display.size.height, 320)
         self.assertTrue(settings.button.enabled)
         self.assertEqual(settings.button.pin, 17)
@@ -148,6 +152,10 @@ class LoadDeviceSettingsTests(unittest.TestCase):
                 "VISION_CAMERA_BACKEND": "opencv",
                 "VISION_CAPTURE_WIDTH": "1280",
                 "VISION_CAPTURE_HEIGHT": "720",
+                "LIVE_PREVIEW_WIDTH": "512",
+                "LIVE_PREVIEW_HEIGHT": "288",
+                "LIVE_PREVIEW_TARGET_FPS": "24",
+                "LIVE_PREVIEW_FORCE_MJPEG": "0",
                 "VISION_AUTOFOCUS_MODE": "off",
                 "VISION_EXPOSURE": "12000",
                 "VISION_BRIGHTNESS": "0.2",
@@ -183,6 +191,10 @@ class LoadDeviceSettingsTests(unittest.TestCase):
         self.assertEqual(settings.camera.backend, "opencv")
         self.assertEqual(settings.camera.resolution.width, 1280)
         self.assertEqual(settings.camera.resolution.height, 720)
+        self.assertEqual(settings.camera.preview.resolution.width, 512)
+        self.assertEqual(settings.camera.preview.resolution.height, 288)
+        self.assertAlmostEqual(settings.camera.preview.target_fps, 24.0)
+        self.assertFalse(settings.camera.preview.force_mjpeg)
         self.assertEqual(settings.camera.autofocus_mode, "off")
         self.assertEqual(settings.camera.exposure, 12000)
         self.assertAlmostEqual(settings.camera.brightness, 0.2)

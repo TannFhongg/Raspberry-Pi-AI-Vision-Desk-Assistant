@@ -322,14 +322,25 @@ def _apply_opencv_controls(camera, resolved_config, cv2_module) -> list[str]:
 
 def _configure_opencv_camera(camera, request, resolved_config, cv2_module) -> list[str]:
     """Apply stream preferences, resolution, and controls to an opened camera."""
-    warnings = _apply_opencv_stream_preferences(camera, cv2_module)
+    warnings = _apply_opencv_stream_preferences(
+        camera,
+        cv2_module,
+        force_mjpeg=bool(getattr(request, "force_mjpeg", False)),
+        target_fps=float(getattr(request, "target_fps", 0.0) or 0.0),
+    )
     camera.set(cv2_module.CAP_PROP_FRAME_WIDTH, float(request.width))
     camera.set(cv2_module.CAP_PROP_FRAME_HEIGHT, float(request.height))
     warnings.extend(_apply_opencv_controls(camera, resolved_config, cv2_module))
     return warnings
 
 
-def _apply_opencv_stream_preferences(camera, cv2_module) -> list[str]:
+def _apply_opencv_stream_preferences(
+    camera,
+    cv2_module,
+    *,
+    force_mjpeg: bool = False,
+    target_fps: float = 0.0,
+) -> list[str]:
     """Apply best-effort stream settings that are friendlier to USB webcams on Linux."""
     warnings: list[str] = []
 
@@ -342,9 +353,15 @@ def _apply_opencv_stream_preferences(camera, cv2_module) -> list[str]:
     if mjpg_fourcc is not None and fourcc_prop is not None:
         try:
             if not camera.set(fourcc_prop, float(mjpg_fourcc)):
-                warnings.append("OpenCV MJPG stream preference was ignored by the camera driver.")
+                if force_mjpeg:
+                    warnings.append("OpenCV MJPG preview request was ignored by the camera driver.")
+                else:
+                    warnings.append("OpenCV MJPG stream preference was ignored by the camera driver.")
         except Exception:
-            warnings.append("OpenCV MJPG stream preference could not be applied.")
+            if force_mjpeg:
+                warnings.append("OpenCV MJPG preview request could not be applied.")
+            else:
+                warnings.append("OpenCV MJPG stream preference could not be applied.")
 
     buffer_prop = getattr(cv2_module, "CAP_PROP_BUFFERSIZE", None)
     if buffer_prop is not None:
@@ -353,7 +370,68 @@ def _apply_opencv_stream_preferences(camera, cv2_module) -> list[str]:
         except Exception:
             pass
 
+    fps_prop = getattr(cv2_module, "CAP_PROP_FPS", None)
+    if fps_prop is not None and target_fps > 0:
+        try:
+            if not camera.set(fps_prop, float(target_fps)):
+                warnings.append(
+                    f"OpenCV target FPS {float(target_fps):.1f} was ignored by the camera driver."
+                )
+        except Exception:
+            warnings.append(
+                f"OpenCV target FPS {float(target_fps):.1f} could not be applied."
+            )
+
     return warnings
+
+
+def _describe_opencv_stream(camera, cv2_module) -> str:
+    """Return a compact summary of the active OpenCV stream properties."""
+    width = _read_opencv_numeric_property(camera, getattr(cv2_module, "CAP_PROP_FRAME_WIDTH", None))
+    height = _read_opencv_numeric_property(camera, getattr(cv2_module, "CAP_PROP_FRAME_HEIGHT", None))
+    fps = _read_opencv_numeric_property(camera, getattr(cv2_module, "CAP_PROP_FPS", None))
+    fourcc_value = _read_opencv_numeric_property(camera, getattr(cv2_module, "CAP_PROP_FOURCC", None))
+
+    parts: list[str] = []
+    if width > 0 and height > 0:
+        parts.append(f"{int(round(width))}x{int(round(height))}")
+    if fps > 0:
+        parts.append(f"{float(fps):.1f}fps")
+    fourcc = _decode_opencv_fourcc(fourcc_value)
+    if fourcc:
+        parts.append(fourcc)
+    return " ".join(parts)
+
+
+def _read_opencv_numeric_property(camera, property_id) -> float:
+    """Return one numeric OpenCV capture property or 0.0 when unavailable."""
+    if property_id is None:
+        return 0.0
+    try:
+        value = float(camera.get(property_id))
+    except Exception:
+        return 0.0
+    if value != value:
+        return 0.0
+    return value
+
+
+def _decode_opencv_fourcc(value: float) -> str:
+    """Best-effort decode for an OpenCV FOURCC number."""
+    try:
+        integer_value = int(round(value))
+    except (TypeError, ValueError):
+        return ""
+    if integer_value <= 0:
+        return ""
+
+    chars = []
+    for shift in range(4):
+        code = (integer_value >> (8 * shift)) & 0xFF
+        if code <= 0 or code > 127:
+            return ""
+        chars.append(chr(code))
+    return "".join(chars).strip()
 
 
 def _capture_opencv_frame(request, cv2_module) -> CapturedFrame:

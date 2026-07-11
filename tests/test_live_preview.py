@@ -10,10 +10,13 @@ from unittest.mock import patch
 from camera.live_preview import (
     DEFAULT_PREVIEW_STREAM_RESOLUTION,
     LivePreviewService,
+    LivePreviewError,
+    PERSISTENT_PREVIEW_READ_ATTEMPTS,
     _OpenCVFrameSource,
     _OpenCVSnapshotFrameSource,
     _build_preview_resolution,
     _open_frame_source,
+    _read_persistent_preview_frame,
 )
 from hardware.camera_config import CameraControlRequest
 
@@ -27,7 +30,7 @@ class LivePreviewServiceTests(unittest.TestCase):
         open_started = threading.Event()
         allow_open_to_finish = threading.Event()
 
-        def open_source(_request):
+        def open_source(_request, **_kwargs):
             open_started.set()
             allow_open_to_finish.wait(timeout=2.0)
             return source
@@ -153,13 +156,36 @@ class LivePreviewServiceTests(unittest.TestCase):
     def test_build_preview_resolution_prefers_webcam_safe_default_for_large_inputs(self) -> None:
         self.assertEqual(_build_preview_resolution(1920, 1080), DEFAULT_PREVIEW_STREAM_RESOLUTION)
 
-    def test_open_frame_source_prefers_snapshot_mode_on_linux(self) -> None:
+    def test_build_preview_resolution_preserves_aspect_ratio_inside_bounds(self) -> None:
+        self.assertEqual(
+            _build_preview_resolution(4000, 3000, max_width=640, max_height=360),
+            (480, 360),
+        )
+
+    def test_open_frame_source_prefers_persistent_mode_on_linux(self) -> None:
         request = _build_request()
 
         with patch("camera.live_preview.sys.platform", "linux"), patch(
-            "camera.live_preview._OpenCVSnapshotFrameSource",
+            "camera.live_preview._OpenCVFrameSource",
             autospec=True,
-        ) as snapshot_source:
+        ) as frame_source:
+            sentinel = object()
+            frame_source.return_value = sentinel
+            source = _open_frame_source(request)
+
+        self.assertIs(source, sentinel)
+
+    def test_open_frame_source_falls_back_to_snapshot_mode_on_linux(self) -> None:
+        request = _build_request()
+
+        with (
+            patch("camera.live_preview.sys.platform", "linux"),
+            patch(
+                "camera.live_preview._OpenCVFrameSource",
+                side_effect=LivePreviewError("persistent failed"),
+            ),
+            patch("camera.live_preview._OpenCVSnapshotFrameSource", autospec=True) as snapshot_source,
+        ):
             sentinel = object()
             snapshot_source.return_value = sentinel
             source = _open_frame_source(request)
@@ -178,6 +204,19 @@ class LivePreviewServiceTests(unittest.TestCase):
             source = _open_frame_source(request)
 
         self.assertIs(source, sentinel)
+
+    def test_read_persistent_preview_frame_uses_low_latency_reads(self) -> None:
+        camera = object()
+
+        with patch("camera.live_preview._read_latest_valid_frame", return_value="frame") as reader:
+            frame = _read_persistent_preview_frame(camera)
+
+        self.assertEqual(frame, "frame")
+        reader.assert_called_once_with(
+            camera,
+            attempts=PERSISTENT_PREVIEW_READ_ATTEMPTS,
+            inter_read_delay_seconds=0.0,
+        )
 
     def test_linux_snapshot_preview_worker_produces_recent_frame(self) -> None:
         request = _build_request()
@@ -229,6 +268,15 @@ class _BlockingFrameSource:
     def close(self) -> None:
         self.closed_event.set()
 
+    def holds_camera_between_reads(self) -> bool:
+        return True
+
+    def describe_mode(self) -> str:
+        return "blocking"
+
+    def describe_stream(self) -> str:
+        return "blocking-stream"
+
 
 class _ImmediateFrameSource:
     """Preview source double that should be closed before any frame is read."""
@@ -243,6 +291,15 @@ class _ImmediateFrameSource:
 
     def close(self) -> None:
         self.closed_event.set()
+
+    def holds_camera_between_reads(self) -> bool:
+        return True
+
+    def describe_mode(self) -> str:
+        return "immediate"
+
+    def describe_stream(self) -> str:
+        return "immediate-stream"
 
 
 def _build_request() -> CameraControlRequest:

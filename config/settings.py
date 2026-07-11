@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -47,6 +47,10 @@ DEFAULT_OFFLINE_RETRY_MAX_DELAY_SECONDS = 900.0
 DEFAULT_OFFLINE_RETRY_POLL_INTERVAL_SECONDS = 5.0
 DEFAULT_OFFLINE_RETRY_MIN_FREE_MB = 128
 DEFAULT_OFFLINE_RETRY_MAX_STORAGE_MB = 512
+DEFAULT_CAMERA_PREVIEW_WIDTH = 640
+DEFAULT_CAMERA_PREVIEW_HEIGHT = 360
+DEFAULT_CAMERA_PREVIEW_TARGET_FPS = 30.0
+DEFAULT_CAMERA_PREVIEW_FORCE_MJPEG = True
 
 
 class SettingsError(Exception):
@@ -62,6 +66,20 @@ class ResolutionSettings:
 
 
 @dataclass(slots=True)
+class PreviewSettings:
+    """Dedicated low-overhead preview settings kept separate from still capture."""
+
+    resolution: ResolutionSettings = field(
+        default_factory=lambda: ResolutionSettings(
+            width=DEFAULT_CAMERA_PREVIEW_WIDTH,
+            height=DEFAULT_CAMERA_PREVIEW_HEIGHT,
+        )
+    )
+    target_fps: float = DEFAULT_CAMERA_PREVIEW_TARGET_FPS
+    force_mjpeg: bool = DEFAULT_CAMERA_PREVIEW_FORCE_MJPEG
+
+
+@dataclass(slots=True)
 class CameraSettings:
     """Camera and preprocessing defaults for the device."""
 
@@ -74,6 +92,7 @@ class CameraSettings:
     capture_delay_seconds: float
     grayscale: bool
     max_dimension: int
+    preview: PreviewSettings = field(default_factory=PreviewSettings)
 
 
 @dataclass(slots=True)
@@ -223,6 +242,7 @@ def load_device_settings(
     reliability = merged.get("reliability", {})
     retention = merged.get("retention", {})
     offline_retry = merged.get("offline_retry", {})
+    preview = camera.get("preview", {})
 
     settings = DeviceSettings(
         camera=CameraSettings(
@@ -261,6 +281,31 @@ def load_device_settings(
                 camera.get("max_dimension"),
                 "camera.max_dimension",
                 minimum=1,
+            ),
+            preview=PreviewSettings(
+                resolution=ResolutionSettings(
+                    width=_parse_int(
+                        _nested_get(preview, "resolution", "width")
+                        or DEFAULT_CAMERA_PREVIEW_WIDTH,
+                        "camera.preview.resolution.width",
+                        minimum=1,
+                    ),
+                    height=_parse_int(
+                        _nested_get(preview, "resolution", "height")
+                        or DEFAULT_CAMERA_PREVIEW_HEIGHT,
+                        "camera.preview.resolution.height",
+                        minimum=1,
+                    ),
+                ),
+                target_fps=_parse_float(
+                    preview.get("target_fps", DEFAULT_CAMERA_PREVIEW_TARGET_FPS),
+                    "camera.preview.target_fps",
+                    minimum=1.0,
+                ),
+                force_mjpeg=_parse_bool(
+                    preview.get("force_mjpeg", DEFAULT_CAMERA_PREVIEW_FORCE_MJPEG),
+                    "camera.preview.force_mjpeg",
+                ),
             ),
         ),
         display=DisplaySettings(
@@ -552,6 +597,10 @@ def _apply_environment_overrides(
     camera = merged["camera"]
     camera_resolution = dict(camera.get("resolution", {}))
     camera["resolution"] = camera_resolution
+    camera_preview = dict(camera.get("preview", {}))
+    camera["preview"] = camera_preview
+    camera_preview_resolution = dict(camera_preview.get("resolution", {}))
+    camera_preview["resolution"] = camera_preview_resolution
     display = merged["display"]
     display_size = dict(display.get("size", {}))
     display["size"] = display_size
@@ -560,6 +609,10 @@ def _apply_environment_overrides(
     _set_if_present(camera, "index", env, "VISION_CAMERA_INDEX")
     _set_if_present(camera_resolution, "width", env, "VISION_CAPTURE_WIDTH")
     _set_if_present(camera_resolution, "height", env, "VISION_CAPTURE_HEIGHT")
+    _set_if_present(camera_preview_resolution, "width", env, "LIVE_PREVIEW_WIDTH")
+    _set_if_present(camera_preview_resolution, "height", env, "LIVE_PREVIEW_HEIGHT")
+    _set_if_present(camera_preview, "target_fps", env, "LIVE_PREVIEW_TARGET_FPS")
+    _set_if_present(camera_preview, "force_mjpeg", env, "LIVE_PREVIEW_FORCE_MJPEG")
     _set_if_present(camera, "grayscale", env, "VISION_GRAYSCALE")
     _set_if_present(camera, "max_dimension", env, "VISION_MAX_DIMENSION")
     _set_if_present(
