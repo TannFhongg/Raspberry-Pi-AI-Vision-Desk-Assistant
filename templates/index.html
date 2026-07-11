@@ -60,6 +60,9 @@
                         src="{{ live_preview_url }}"
                         alt="Live camera feed"
                         class="preview-image"
+                        data-live-preview-image="true"
+                        data-live-preview-base-url="{{ live_preview_base_url }}"
+                        data-live-preview-refresh-ms="{{ live_preview_refresh_ms }}"
                     >
                 </div>
 
@@ -317,6 +320,9 @@
             var healthPollMs = Number(root.dataset.healthPollMs || "0");
             var uiStateRequestInFlight = false;
             var healthRequestInFlight = false;
+            var previewRefreshTimer = null;
+            var previewRequestInFlight = false;
+            var previewObjectUrl = "";
 
             window.confirmDeleteAll = function (form) {
                 var stageField = form.querySelector('input[name="confirm_stage"]');
@@ -392,6 +398,53 @@
                 }
             }
 
+            function startLivePreviewRefresh() {
+                var previewImage = document.querySelector("[data-live-preview-image]");
+                if (!previewImage) {
+                    return;
+                }
+                var refreshMs = Number(previewImage.dataset.livePreviewRefreshMs || "0");
+                var baseUrl = previewImage.dataset.livePreviewBaseUrl || "";
+                if (!baseUrl || refreshMs <= 0) {
+                    return;
+                }
+
+                var refreshPreview = function () {
+                    if (previewRequestInFlight) {
+                        return;
+                    }
+                    previewRequestInFlight = true;
+                    fetch(baseUrl + "?t=" + String(Date.now()), {
+                        cache: "no-store",
+                        headers: {
+                            "Accept": "image/jpeg"
+                        }
+                    })
+                        .then(function (response) {
+                            if (!response.ok) {
+                                throw new Error("Preview request failed");
+                            }
+                            return response.blob();
+                        })
+                        .then(function (blob) {
+                            if (previewObjectUrl) {
+                                window.URL.revokeObjectURL(previewObjectUrl);
+                            }
+                            previewObjectUrl = window.URL.createObjectURL(blob);
+                            previewImage.src = previewObjectUrl;
+                        })
+                        .catch(function () {
+                            return null;
+                        })
+                        .finally(function () {
+                            previewRequestInFlight = false;
+                            previewRefreshTimer = window.setTimeout(refreshPreview, refreshMs);
+                        });
+                };
+
+                refreshPreview();
+            }
+
             function applyUiStatePayload(payload) {
                 if (!payload || typeof payload !== "object" || !payload.updated_at) {
                     return;
@@ -462,6 +515,8 @@
                 pollHealth();
                 window.setInterval(pollHealth, healthPollMs);
             }
+
+            startLivePreviewRefresh();
 
         })();
     </script>

@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import re
+import sys
 import threading
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -16,6 +17,7 @@ from flask import Flask, Response, jsonify, redirect, render_template, request, 
 from markupsafe import Markup, escape
 
 from ai.modes import get_mode, normalize_mode
+from camera import CameraCaptureError, capture_preview_jpeg
 from camera.live_preview import LivePreviewService
 from config import SettingsError, load_device_settings
 from hardware import (
@@ -290,7 +292,23 @@ def index():
 @app.get("/camera/live-frame.jpg")
 def live_preview_frame():
     """Return a single live preview frame for diagnostics and compatibility."""
-    frame_bytes = LIVE_PREVIEW.get_jpeg_frame()
+    if _use_snapshot_preview_route():
+        try:
+            frame_bytes = capture_preview_jpeg(
+                backend=CAMERA_BACKEND,
+                camera_index=CAMERA_INDEX,
+                width=640,
+                height=480,
+                autofocus_mode=CAMERA_AUTOFOCUS_MODE,
+                exposure=CAMERA_EXPOSURE,
+                brightness=CAMERA_BRIGHTNESS,
+                capture_delay_seconds=max(CAPTURE_DELAY_SECONDS, 0.5),
+            )
+        except CameraCaptureError as exc:
+            LOGGER.warning("Direct Linux preview capture failed: %s", exc)
+            frame_bytes = LIVE_PREVIEW.get_jpeg_frame()
+    else:
+        frame_bytes = LIVE_PREVIEW.get_jpeg_frame()
     return Response(
         frame_bytes,
         mimetype="image/jpeg",
@@ -491,7 +509,26 @@ def _build_idle_state_payload(
 
 def _build_live_preview_url() -> str:
     """Return the cache-busted live preview endpoint for the UI."""
-    return f"{url_for('live_preview_stream')}?t={int(datetime.now().timestamp() * 1000)}"
+    route_name = "live_preview_frame" if _use_snapshot_preview_route() else "live_preview_stream"
+    return f"{url_for(route_name)}?t={int(datetime.now().timestamp() * 1000)}"
+
+
+def _build_live_preview_base_url() -> str:
+    """Return the non-cache-busted preview URL used by the browser refresh loop."""
+    route_name = "live_preview_frame" if _use_snapshot_preview_route() else "live_preview_stream"
+    return url_for(route_name)
+
+
+def _use_snapshot_preview_route() -> bool:
+    """Prefer single-frame polling on Linux where USB webcams are more reliable that way."""
+    return sys.platform.startswith("linux")
+
+
+def _build_live_preview_refresh_ms() -> int:
+    """Return a conservative preview refresh rate for the current platform."""
+    if not _use_snapshot_preview_route():
+        return 0
+    return max(1500, int(max(CAPTURE_DELAY_SECONDS, 0.5) * 1000) + 700)
 
 
 def _build_ui_state_api_payload() -> dict[str, Any]:
@@ -1011,6 +1048,8 @@ def _build_template_context(
         "mode_options": UI_MODE_OPTIONS,
         "progress_steps": _build_progress_steps(state["current_step"]),
         "live_preview_url": _build_live_preview_url(),
+        "live_preview_base_url": _build_live_preview_base_url(),
+        "live_preview_refresh_ms": _build_live_preview_refresh_ms(),
         "default_capture_mode_label": MODE_LABELS[DEFAULT_CAPTURE_MODE],
         "auto_refresh_ms": _get_auto_refresh_ms(screen),
         "ui_state_api_url": url_for("ui_state_api"),

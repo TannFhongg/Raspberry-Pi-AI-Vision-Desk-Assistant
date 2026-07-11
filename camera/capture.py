@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
 import sys
+import threading
 
 from hardware.camera_config import (
     CameraConfigError,
@@ -27,11 +29,24 @@ class CameraCaptureError(Exception):
     """Friendly error raised when camera capture fails."""
 
 
+CAMERA_ACCESS_LOCK = threading.Lock()
+
+
 @dataclass(slots=True)
 class CaptureResult:
     """Capture metadata returned after a successful image save."""
 
     output_path: Path
+    backend_used: str
+    resolution: tuple[int, int] | None = None
+    warnings: tuple[str, ...] = ()
+
+
+@dataclass(slots=True)
+class CapturedFrame:
+    """In-memory frame capture returned before writing to disk."""
+
+    frame: object
     backend_used: str
     resolution: tuple[int, int] | None = None
     warnings: tuple[str, ...] = ()
@@ -74,7 +89,8 @@ def capture_image(
             raise CameraCaptureError(
                 f"Unsupported camera backend '{normalized_backend}'. Only 'opencv' is available."
             )
-        result = _capture_with_opencv(temporary_output, request)
+        with camera_access():
+            result = _capture_with_opencv(temporary_output, request)
 
         _validate_output_file(result.output_path)
         _finalize_output_file(result.output_path, destination)
@@ -82,6 +98,56 @@ def capture_image(
     except CameraCaptureError:
         _cleanup_temporary_file(temporary_output)
         raise
+
+
+def capture_preview_jpeg(
+    *,
+    backend: str | None = None,
+    camera_index: int | None = None,
+    width: int | None = None,
+    height: int | None = None,
+    autofocus_mode: str | None = None,
+    exposure: str | int | None = None,
+    brightness: float | None = None,
+    capture_delay_seconds: float | None = None,
+    jpeg_quality: int = 82,
+) -> bytes:
+    """Capture a single JPEG preview frame through the same OpenCV path as still capture."""
+    try:
+        request = build_camera_request(
+            backend=backend,
+            camera_index=camera_index,
+            width=width,
+            height=height,
+            autofocus_mode=autofocus_mode,
+            exposure=exposure,
+            brightness=brightness,
+            capture_delay_seconds=capture_delay_seconds,
+        )
+    except CameraConfigError as exc:
+        raise CameraCaptureError(str(exc)) from exc
+
+    if request.backend != "opencv":
+        raise CameraCaptureError(
+            f"Unsupported camera backend '{request.backend}'. Only 'opencv' is available."
+        )
+
+    try:
+        import cv2
+    except ImportError as exc:
+        raise CameraCaptureError(OPENCV_INSTALL_HINT) from exc
+
+    with camera_access():
+        captured_frame = _capture_opencv_frame(request, cv2)
+
+    encode_success, encoded = cv2.imencode(
+        ".jpg",
+        captured_frame.frame,
+        [int(cv2.IMWRITE_JPEG_QUALITY), max(1, min(100, int(jpeg_quality)))],
+    )
+    if not encode_success or encoded is None:
+        raise CameraCaptureError("OpenCV captured a preview frame but could not encode it as JPEG.")
+    return encoded.tobytes()
 
 
 def _prepare_output_path(output_path: Path) -> None:
@@ -107,45 +173,9 @@ def _capture_with_opencv(output_path: Path, request) -> CaptureResult:
     except ImportError as exc:
         raise CameraCaptureError(OPENCV_INSTALL_HINT) from exc
 
-    camera = None
-    last_valid_frame = None
-
     try:
-        resolved_config = resolve_opencv_config(request)
-        requested_width, requested_height = resolved_config.resolved_resolution
-        camera, open_backend_label = _open_opencv_camera(
-            request.camera_index,
-            cv2,
-            error_cls=CameraCaptureError,
-        )
-        _status(
-            "Capturing image with OpenCV camera index "
-            f"{request.camera_index} at {requested_width}x{requested_height} "
-            f"using {open_backend_label}..."
-        )
-
-        warnings = list(resolved_config.warnings)
-        if open_backend_label != "default":
-            warnings.append(f"OpenCV camera opened through the {open_backend_label} backend.")
-        warnings.extend(_apply_opencv_stream_preferences(camera, cv2))
-        camera.set(cv2.CAP_PROP_FRAME_WIDTH, float(requested_width))
-        camera.set(cv2.CAP_PROP_FRAME_HEIGHT, float(requested_height))
-        warnings.extend(_apply_opencv_controls(camera, resolved_config, cv2))
-        if request.capture_delay_seconds > 0:
-            time.sleep(request.capture_delay_seconds)
-
-        for _ in range(8):
-            success, frame = camera.read()
-            if success and frame is not None and getattr(frame, "size", 0) > 0:
-                last_valid_frame = frame
-            time.sleep(0.1)
-
-        if last_valid_frame is None:
-            raise CameraCaptureError(
-                f"OpenCV opened camera index {request.camera_index}, but no valid frame was captured."
-            )
-
-        saved = cv2.imwrite(str(output_path), last_valid_frame)
+        captured_frame = _capture_opencv_frame(request, cv2)
+        saved = cv2.imwrite(str(output_path), captured_frame.frame)
         if not saved:
             raise CameraCaptureError(
                 f"OpenCV captured a frame but could not save it to '{output_path}'."
@@ -156,22 +186,16 @@ def _capture_with_opencv(output_path: Path, request) -> CaptureResult:
         raise CameraCaptureError(
             f"OpenCV capture failed for camera index {request.camera_index}. Original error: {exc}"
         ) from exc
-    finally:
-        if camera is not None:
-            camera.release()
 
     actual_resolution = read_image_resolution(output_path)
-    if actual_resolution is None and last_valid_frame is not None:
-        actual_resolution = (
-            int(last_valid_frame.shape[1]),
-            int(last_valid_frame.shape[0]),
-        )
+    if actual_resolution is None:
+        actual_resolution = captured_frame.resolution
 
     return CaptureResult(
         output_path=output_path,
-        backend_used="opencv",
+        backend_used=captured_frame.backend_used,
         resolution=actual_resolution,
-        warnings=tuple(warnings),
+        warnings=captured_frame.warnings,
     )
 
 
@@ -244,6 +268,22 @@ def _finalize_capture_result(result: CaptureResult, destination: Path) -> Captur
     )
 
 
+@contextmanager
+def camera_access(timeout_seconds: float | None = None):
+    """Serialize physical camera access across preview, health checks, and capture jobs."""
+    if timeout_seconds is None:
+        CAMERA_ACCESS_LOCK.acquire()
+        acquired = True
+    else:
+        acquired = CAMERA_ACCESS_LOCK.acquire(timeout=max(0.0, timeout_seconds))
+    if not acquired:
+        raise CameraCaptureError("Timed out waiting for exclusive camera access.")
+    try:
+        yield
+    finally:
+        CAMERA_ACCESS_LOCK.release()
+
+
 def _apply_opencv_controls(camera, resolved_config, cv2_module) -> list[str]:
     """Apply best-effort OpenCV camera controls and collect non-fatal warnings."""
     warnings: list[str] = []
@@ -280,6 +320,15 @@ def _apply_opencv_controls(camera, resolved_config, cv2_module) -> list[str]:
     return warnings
 
 
+def _configure_opencv_camera(camera, request, resolved_config, cv2_module) -> list[str]:
+    """Apply stream preferences, resolution, and controls to an opened camera."""
+    warnings = _apply_opencv_stream_preferences(camera, cv2_module)
+    camera.set(cv2_module.CAP_PROP_FRAME_WIDTH, float(request.width))
+    camera.set(cv2_module.CAP_PROP_FRAME_HEIGHT, float(request.height))
+    warnings.extend(_apply_opencv_controls(camera, resolved_config, cv2_module))
+    return warnings
+
+
 def _apply_opencv_stream_preferences(camera, cv2_module) -> list[str]:
     """Apply best-effort stream settings that are friendlier to USB webcams on Linux."""
     warnings: list[str] = []
@@ -305,6 +354,78 @@ def _apply_opencv_stream_preferences(camera, cv2_module) -> list[str]:
             pass
 
     return warnings
+
+
+def _capture_opencv_frame(request, cv2_module) -> CapturedFrame:
+    """Open the camera, read a valid frame, and return it in memory."""
+    camera = None
+
+    try:
+        resolved_config = resolve_opencv_config(request)
+        requested_width, requested_height = resolved_config.resolved_resolution
+        camera, open_backend_label = _open_opencv_camera(
+            request.camera_index,
+            cv2_module,
+            error_cls=CameraCaptureError,
+        )
+        _status(
+            "Capturing image with OpenCV camera index "
+            f"{request.camera_index} at {requested_width}x{requested_height} "
+            f"using {open_backend_label}..."
+        )
+
+        warnings = list(resolved_config.warnings)
+        if open_backend_label != "default":
+            warnings.append(f"OpenCV camera opened through the {open_backend_label} backend.")
+        warnings.extend(_configure_opencv_camera(camera, request, resolved_config, cv2_module))
+        if request.capture_delay_seconds > 0:
+            time.sleep(request.capture_delay_seconds)
+
+        frame = _read_latest_valid_frame(
+            camera,
+            attempts=8,
+            inter_read_delay_seconds=0.1,
+        )
+        if frame is None:
+            raise CameraCaptureError(
+                f"OpenCV opened camera index {request.camera_index}, but no valid frame was captured."
+            )
+
+        resolution = (
+            int(frame.shape[1]),
+            int(frame.shape[0]),
+        )
+        return CapturedFrame(
+            frame=frame,
+            backend_used="opencv",
+            resolution=resolution,
+            warnings=tuple(warnings),
+        )
+    finally:
+        if camera is not None:
+            try:
+                camera.release()
+            except Exception:
+                pass
+
+
+def _read_latest_valid_frame(
+    camera,
+    *,
+    attempts: int,
+    inter_read_delay_seconds: float,
+):
+    """Read several frames and return the newest valid one."""
+    last_valid_frame = None
+
+    for index in range(max(1, attempts)):
+        success, frame = camera.read()
+        if success and frame is not None and getattr(frame, "size", 0) > 0:
+            last_valid_frame = frame
+        if index + 1 < attempts and inter_read_delay_seconds > 0:
+            time.sleep(inter_read_delay_seconds)
+
+    return last_valid_frame
 
 
 def _open_opencv_camera(camera_index: int, cv2_module, *, error_cls=CameraCaptureError):

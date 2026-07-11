@@ -120,6 +120,24 @@ class PrivacyFirstAppTests(unittest.TestCase):
         self.assertIn("boundary=frame", stream_response.content_type)
         self.assertEqual(stream_response.headers["Cache-Control"], "no-store, no-cache, must-revalidate, max-age=0")
 
+    def test_linux_live_frame_route_uses_direct_preview_capture(self) -> None:
+        client = app_module.app.test_client()
+
+        with patch("app.sys.platform", "linux"), patch("app.capture_preview_jpeg", return_value=b"linux-frame"):
+            response = client.get("/camera/live-frame.jpg")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data, b"linux-frame")
+
+    def test_linux_template_context_prefers_live_frame_preview_refresh(self) -> None:
+        with patch("app.sys.platform", "linux"):
+            with app_module.app.test_request_context("/"):
+                context = app_module._build_template_context()
+
+        self.assertIn("/camera/live-frame.jpg", context["live_preview_url"])
+        self.assertIn("/camera/live-frame.jpg", context["live_preview_base_url"])
+        self.assertGreaterEqual(context["live_preview_refresh_ms"], 1500)
+
     def test_successful_capture_cleans_private_working_media_and_persists_text_history(self) -> None:
         self.captured_path.write_bytes(b"captured")
         self.processed_path.write_bytes(b"processed")

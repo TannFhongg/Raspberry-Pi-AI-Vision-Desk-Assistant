@@ -6,7 +6,14 @@ import threading
 import unittest
 from unittest.mock import patch
 
-from camera.live_preview import DEFAULT_PREVIEW_STREAM_RESOLUTION, LivePreviewService, _build_preview_resolution
+from camera.live_preview import (
+    DEFAULT_PREVIEW_STREAM_RESOLUTION,
+    LivePreviewService,
+    _OpenCVFrameSource,
+    _OpenCVSnapshotFrameSource,
+    _build_preview_resolution,
+    _open_frame_source,
+)
 from hardware.camera_config import CameraControlRequest
 
 
@@ -144,6 +151,58 @@ class LivePreviewServiceTests(unittest.TestCase):
 
     def test_build_preview_resolution_prefers_webcam_safe_default_for_large_inputs(self) -> None:
         self.assertEqual(_build_preview_resolution(1920, 1080), DEFAULT_PREVIEW_STREAM_RESOLUTION)
+
+    def test_open_frame_source_prefers_snapshot_mode_on_linux(self) -> None:
+        request = _build_request()
+
+        with patch("camera.live_preview.sys.platform", "linux"), patch(
+            "camera.live_preview._OpenCVSnapshotFrameSource",
+            autospec=True,
+        ) as snapshot_source:
+            sentinel = object()
+            snapshot_source.return_value = sentinel
+            source = _open_frame_source(request)
+
+        self.assertIs(source, sentinel)
+
+    def test_open_frame_source_uses_persistent_mode_off_linux(self) -> None:
+        request = _build_request()
+
+        with patch("camera.live_preview.sys.platform", "win32"), patch(
+            "camera.live_preview._OpenCVFrameSource",
+            autospec=True,
+        ) as frame_source:
+            sentinel = object()
+            frame_source.return_value = sentinel
+            source = _open_frame_source(request)
+
+        self.assertIs(source, sentinel)
+
+    def test_linux_snapshot_preview_captures_frame_on_demand(self) -> None:
+        request = _build_request()
+
+        with (
+            patch("camera.live_preview.sys.platform", "linux"),
+            patch("camera.live_preview.build_camera_request", return_value=request),
+            patch("camera.live_preview.capture_preview_jpeg", return_value=b"frame"),
+        ):
+            service = LivePreviewService(
+                backend="opencv",
+                camera_index=0,
+                width=640,
+                height=480,
+                autofocus_mode="continuous",
+                exposure="auto",
+                brightness=0.0,
+                frame_interval_seconds=1.0,
+            )
+
+            try:
+                frame = service.get_jpeg_frame(timeout_seconds=0.1)
+            finally:
+                service.close()
+
+        self.assertEqual(frame, b"frame")
 
 
 class _BlockingFrameSource:

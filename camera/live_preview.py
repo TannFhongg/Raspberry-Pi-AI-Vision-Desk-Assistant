@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 import io
 import logging
+import sys
 import threading
 import time
 from typing import Any, Iterator
@@ -13,8 +14,11 @@ from PIL import Image, ImageDraw
 
 from camera.capture import (
     OPENCV_INSTALL_HINT,
+    capture_preview_jpeg,
+    camera_access,
     _apply_opencv_controls,
-    _apply_opencv_stream_preferences,
+    _configure_opencv_camera,
+    _read_latest_valid_frame,
     _open_opencv_camera,
 )
 from hardware.camera_config import (
@@ -25,6 +29,7 @@ from hardware.camera_config import (
 LOGGER = logging.getLogger(__name__)
 DEFAULT_PLACEHOLDER_SIZE = (960, 540)
 DEFAULT_PREVIEW_STREAM_RESOLUTION = (640, 480)
+DEFAULT_SNAPSHOT_PREVIEW_CAPTURE_DELAY_SECONDS = 0.5
 
 
 class LivePreviewError(Exception):
@@ -70,6 +75,8 @@ class LivePreviewService:
         )
         self._frame_interval_seconds = max(0.05, frame_interval_seconds)
         self._preview_size = (preview_width, preview_height)
+        self._snapshot_mode = sys.platform.startswith("linux")
+        self._snapshot_read_lock = threading.Lock()
         self._condition = threading.Condition()
         self._latest_frame = _build_placeholder_frame(
             "Starting live camera feed...",
@@ -82,7 +89,9 @@ class LivePreviewService:
         self._worker: threading.Thread | None = None
 
     def get_jpeg_frame(self, timeout_seconds: float = 1.0) -> bytes:
-        """Return the latest JPEG frame, starting the worker on demand."""
+        """Return the latest JPEG frame, using snapshot reads on Linux."""
+        if self._snapshot_mode:
+            return self._capture_snapshot_jpeg_frame(timeout_seconds=timeout_seconds)
         frame_bytes, _ = self._wait_for_frame(after_version=None, timeout_seconds=timeout_seconds)
         return frame_bytes
 
@@ -93,6 +102,24 @@ class LivePreviewService:
         timeout_seconds: float = 1.0,
     ) -> Iterator[bytes]:
         """Yield a multipart MJPEG stream for browsers and kiosk displays."""
+        if self._snapshot_mode:
+            separator = boundary.encode("ascii")
+            try:
+                while True:
+                    frame_bytes = self.get_jpeg_frame(timeout_seconds=timeout_seconds)
+                    yield (
+                        b"--" + separator + b"\r\n"
+                        b"Content-Type: image/jpeg\r\n"
+                        b"Content-Length: " + str(len(frame_bytes)).encode("ascii") + b"\r\n"
+                        b"Cache-Control: no-store, no-cache, must-revalidate, max-age=0\r\n"
+                        b"Pragma: no-cache\r\n\r\n"
+                        + frame_bytes
+                        + b"\r\n"
+                    )
+                    time.sleep(self._frame_interval_seconds)
+            except GeneratorExit:
+                return
+
         last_version: int | None = None
         separator = boundary.encode("ascii")
 
@@ -153,6 +180,46 @@ class LivePreviewService:
             fallback_version,
         )
 
+    def _capture_snapshot_jpeg_frame(self, *, timeout_seconds: float) -> bytes:
+        """Capture one fresh preview frame on demand without a background worker."""
+        with self._condition:
+            if self._paused or self._stop_requested:
+                return self._latest_frame
+
+        acquired = self._snapshot_read_lock.acquire(timeout=max(0.0, timeout_seconds))
+        if not acquired:
+            return self._latest_frame
+
+        self._mark_source_active(True)
+        try:
+            jpeg_bytes = capture_preview_jpeg(
+                backend=self._request.backend,
+                camera_index=self._request.camera_index,
+                width=self._request.width,
+                height=self._request.height,
+                autofocus_mode=self._request.autofocus_mode,
+                exposure=self._request.exposure,
+                brightness=self._request.brightness,
+                capture_delay_seconds=max(
+                    DEFAULT_SNAPSHOT_PREVIEW_CAPTURE_DELAY_SECONDS,
+                    self._request.capture_delay_seconds,
+                ),
+            )
+            self._update_frame(jpeg_bytes)
+            return jpeg_bytes
+        except Exception as exc:
+            LOGGER.warning("Live preview snapshot failed: %s", exc)
+            placeholder = _build_placeholder_frame(
+                "Live camera feed unavailable.",
+                subtitle=str(exc),
+                size=self._preview_size,
+            )
+            self._update_frame(placeholder)
+            return placeholder
+        finally:
+            self._mark_source_active(False)
+            self._snapshot_read_lock.release()
+
     def pause(self, timeout_seconds: float = 2.0) -> bool:
         """Stop the preview and wait for the current camera handle to be released."""
         deadline = time.monotonic() + max(0.0, timeout_seconds)
@@ -184,12 +251,17 @@ class LivePreviewService:
             self._stop_requested = True
             self._condition.notify_all()
 
+        if self._snapshot_mode:
+            return
+
         worker = self._worker
         if worker is not None:
             worker.join(timeout=1.0)
 
     def _ensure_worker_started(self) -> None:
         """Create the preview worker only once."""
+        if self._snapshot_mode:
+            return
         with self._condition:
             if self._worker is not None and self._worker.is_alive():
                 return
@@ -310,6 +382,8 @@ def _build_preview_resolution(width: int, height: int) -> tuple[int, int]:
 
 def _open_frame_source(request) -> "_BaseFrameSource":
     """Open the OpenCV live-preview source for the configured USB webcam."""
+    if sys.platform.startswith("linux"):
+        return _OpenCVSnapshotFrameSource(request)
     return _OpenCVFrameSource(request)
 
 
@@ -372,22 +446,19 @@ class _OpenCVFrameSource(_BaseFrameSource):
         )
 
         resolved_config = resolve_opencv_config(request)
-        _apply_opencv_stream_preferences(self._camera, cv2)
-        self._camera.set(cv2.CAP_PROP_FRAME_WIDTH, float(request.width))
-        self._camera.set(cv2.CAP_PROP_FRAME_HEIGHT, float(request.height))
-        _apply_opencv_controls(self._camera, resolved_config, cv2)
-
-        for _ in range(2):
-            self._camera.read()
-            time.sleep(0.05)
+        _configure_opencv_camera(self._camera, request, resolved_config, cv2)
 
     def read_frame(self) -> Any:
         """Read the newest frame and convert it from BGR into RGB."""
         if self._camera is None:
             raise LivePreviewError("OpenCV preview is not running.")
 
-        success, frame = self._camera.read()
-        if not success or frame is None or getattr(frame, "size", 0) <= 0:
+        frame = _read_latest_valid_frame(
+            self._camera,
+            attempts=4,
+            inter_read_delay_seconds=0.03,
+        )
+        if frame is None or getattr(frame, "size", 0) <= 0:
             raise LivePreviewError("OpenCV preview could not read a frame.")
 
         if len(frame.shape) == 2:
@@ -405,3 +476,53 @@ class _OpenCVFrameSource(_BaseFrameSource):
         except Exception:
             pass
         self._camera = None
+
+
+class _OpenCVSnapshotFrameSource(_BaseFrameSource):
+    """Open the camera per frame on Linux for more reliable USB webcam previews."""
+
+    def __init__(self, request) -> None:
+        try:
+            import cv2
+        except ImportError as exc:
+            raise LivePreviewError(OPENCV_INSTALL_HINT) from exc
+
+        self._cv2 = cv2
+        self._request = request
+        self._resolved_config = resolve_opencv_config(request)
+
+    def read_frame(self) -> Any:
+        """Capture a fresh preview frame without holding the camera between reads."""
+        camera = None
+        try:
+            with camera_access():
+                camera, _backend_label = _open_opencv_camera(
+                    self._request.camera_index,
+                    self._cv2,
+                    error_cls=LivePreviewError,
+                )
+                _configure_opencv_camera(camera, self._request, self._resolved_config, self._cv2)
+                time.sleep(0.05)
+                frame = _read_latest_valid_frame(
+                    camera,
+                    attempts=6,
+                    inter_read_delay_seconds=0.03,
+                )
+                if frame is None or getattr(frame, "size", 0) <= 0:
+                    raise LivePreviewError("OpenCV preview could not read a frame.")
+
+                if len(frame.shape) == 2:
+                    return frame
+                if frame.shape[2] == 4:
+                    return frame[:, :, [2, 1, 0, 3]].copy()
+                return frame[:, :, ::-1].copy()
+        finally:
+            if camera is not None:
+                try:
+                    camera.release()
+                except Exception:
+                    pass
+
+    def close(self) -> None:
+        """Snapshot preview does not keep a persistent camera handle."""
+        return None
