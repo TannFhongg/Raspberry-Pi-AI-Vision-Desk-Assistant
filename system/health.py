@@ -20,6 +20,7 @@ CPU_TEMPERATURE_PATH = Path("/sys/class/thermal/thermal_zone0/temp")
 MEMORY_INFO_PATH = Path("/proc/meminfo")
 CPU_TEMPERATURE_FAIL_C = 80.0
 MEMORY_USED_FAIL_PERCENT = 95.0
+DEFAULT_INITIAL_CAMERA_PROBE_DELAY_SECONDS = 15.0
 LOGGER = logging.getLogger(__name__)
 
 
@@ -70,14 +71,17 @@ class HealthMonitor:
         *,
         output_path: str | Path = DEFAULT_HEALTH_STATUS_PATH,
         is_busy: Callable[[], bool] | None = None,
+        initial_camera_probe_delay_seconds: float = DEFAULT_INITIAL_CAMERA_PROBE_DELAY_SECONDS,
     ) -> None:
         self.settings = settings or load_device_settings()
         self.output_path = Path(output_path)
         self.is_busy = is_busy or (lambda: False)
+        self.initial_camera_probe_delay_seconds = max(0.0, initial_camera_probe_delay_seconds)
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._latest_snapshot: dict[str, Any] | None = None
         self._last_camera_probe_monotonic: float | None = None
+        self._started_monotonic = time.monotonic()
 
     @property
     def latest_snapshot(self) -> dict[str, Any] | None:
@@ -141,6 +145,9 @@ class HealthMonitor:
             return False
 
         if self._last_camera_probe_monotonic is None:
+            startup_elapsed = time.monotonic() - self._started_monotonic
+            if startup_elapsed < self.initial_camera_probe_delay_seconds:
+                return False
             return True
 
         elapsed = time.monotonic() - self._last_camera_probe_monotonic

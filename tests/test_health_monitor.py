@@ -128,7 +128,11 @@ class HealthMonitorTests(unittest.TestCase):
     def test_health_monitor_defers_camera_probe_until_device_is_idle(self) -> None:
         calls: list[bool] = []
         settings = _build_monitor_settings()
-        monitor = HealthMonitor(settings=settings, is_busy=lambda: True)
+        monitor = HealthMonitor(
+            settings=settings,
+            is_busy=lambda: True,
+            initial_camera_probe_delay_seconds=0.0,
+        )
 
         def fake_collect(settings, previous_snapshot=None, probe_camera=True):
             calls.append(probe_camera)
@@ -142,6 +146,26 @@ class HealthMonitorTests(unittest.TestCase):
             monitor.run_once()
 
         self.assertEqual(calls, [False, True])
+
+    def test_health_monitor_defers_first_camera_probe_during_startup_grace_period(self) -> None:
+        calls: list[bool] = []
+        settings = _build_monitor_settings()
+        monitor = HealthMonitor(
+            settings=settings,
+            is_busy=lambda: False,
+            initial_camera_probe_delay_seconds=30.0,
+        )
+
+        def fake_collect(settings, previous_snapshot=None, probe_camera=True):
+            calls.append(probe_camera)
+            return _build_snapshot("unknown" if not probe_camera else "healthy")
+
+        with patch("system.health.collect_health_snapshot", side_effect=fake_collect), patch(
+            "system.health.write_health_snapshot"
+        ):
+            monitor.run_once()
+
+        self.assertEqual(calls, [False])
 
 
 def _build_monitor_settings() -> SimpleNamespace:
