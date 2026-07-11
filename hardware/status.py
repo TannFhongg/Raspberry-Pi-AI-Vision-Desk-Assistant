@@ -54,6 +54,14 @@ DEVICE_STEP_MAP = {
     DeviceState.DONE: 3,
     DeviceState.ERROR: -1,
 }
+DEVICE_PROGRESS_STATE_MAP = {
+    DeviceState.READY: "IDLE",
+    DeviceState.MODE_SELECTED: "IDLE",
+    DeviceState.CAPTURING: "CAPTURING",
+    DeviceState.PROCESSING: "ANALYZING",
+    DeviceState.DONE: "DONE",
+    DeviceState.ERROR: "ERROR",
+}
 
 
 def coerce_device_state(
@@ -94,6 +102,8 @@ def build_ui_state_payload(
     error_detail: str = "",
     current_step: int | None = None,
     status: str | None = None,
+    progress_state: str | None = None,
+    progress_error_step: int | None = None,
 ) -> dict[str, Any]:
     """Build a normalized persisted UI payload for a given device state."""
     state = coerce_device_state(device_state)
@@ -104,16 +114,15 @@ def build_ui_state_payload(
         "status": status or DEVICE_STATUS_MAP[state],
         "detail": detail if detail is not None else _default_detail_for_state(state, ready_detail),
         "answer": "",
-        "error": "",
-        "error_detail": "",
+        "error": error,
+        "error_detail": error_detail,
         "current_step": DEVICE_STEP_MAP[state] if current_step is None else current_step,
+        "progress_state": progress_state or DEVICE_PROGRESS_STATE_MAP[state],
+        "progress_error_step": -1 if progress_error_step is None else int(progress_error_step),
     }
 
     if state == DeviceState.DONE:
         payload["answer"] = answer
-    elif state == DeviceState.ERROR:
-        payload["error"] = error
-        payload["error_detail"] = error_detail
 
     return payload
 

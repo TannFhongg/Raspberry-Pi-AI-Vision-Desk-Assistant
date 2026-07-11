@@ -30,6 +30,7 @@ class DeviceStatusHelperTests(unittest.TestCase):
         self.assertEqual(payload["status"], "Ready")
         self.assertEqual(payload["detail"], "Press button to select the mode.")
         self.assertEqual(payload["current_step"], -1)
+        self.assertEqual(payload["progress_state"], "IDLE")
 
     def test_mode_selected_payload_stays_on_home_screen(self) -> None:
         payload = build_ui_state_payload(
@@ -57,6 +58,7 @@ class DeviceStatusHelperTests(unittest.TestCase):
         self.assertEqual(payload["screen"], "result")
         self.assertEqual(payload["answer"], "Answer ready")
         self.assertEqual(payload["error"], "")
+        self.assertEqual(payload["progress_state"], "DONE")
 
     def test_error_payload_maps_error_to_error_screen(self) -> None:
         payload = build_ui_state_payload(
@@ -71,6 +73,7 @@ class DeviceStatusHelperTests(unittest.TestCase):
         self.assertEqual(payload["screen"], "error")
         self.assertEqual(payload["error"], "Camera not found")
         self.assertEqual(payload["error_detail"], "Camera backend failed")
+        self.assertEqual(payload["progress_state"], "ERROR")
 
     def test_busy_state_helper_recognizes_capture_and_processing(self) -> None:
         self.assertTrue(is_busy_device_state(DeviceState.CAPTURING))

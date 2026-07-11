@@ -74,6 +74,7 @@ class PrivacyFirstAppTests(unittest.TestCase):
             patch.object(app_module, "LIVE_PREVIEW", self.live_preview),
             patch.object(app_module, "LED_INDICATOR", self.led_indicator),
             patch.object(app_module, "OFFLINE_RETRY_QUEUE", self.queue),
+            patch.object(app_module, "PROCESSING_TRANSITION_SECONDS", 0.0),
         ]
         for patcher in self.patchers:
             patcher.start()
@@ -99,8 +100,9 @@ class PrivacyFirstAppTests(unittest.TestCase):
             DeviceState.PROCESSING,
             selected_mode="read_text",
             selected_mode_internal="document_reader",
-            detail="Processing...",
+            detail="Preprocessing image...",
             current_step=1,
+            progress_state="PREPROCESSING",
         )
 
         response = client.get("/api/ui-state")
@@ -111,6 +113,10 @@ class PrivacyFirstAppTests(unittest.TestCase):
         self.assertEqual(payload["screen"], "processing")
         self.assertEqual(payload["selected_mode"], "read_text")
         self.assertEqual(payload["selected_mode_label"], "Read Text")
+        self.assertEqual(payload["progress_state"], "PREPROCESSING")
+        self.assertEqual(payload["processing_title"], "Reading Text")
+        self.assertEqual(payload["progress_steps"][0]["state"], "complete")
+        self.assertEqual(payload["progress_steps"][1]["state"], "active")
 
     def test_ui_state_api_reports_camera_screen_when_mode_selected(self) -> None:
         client = app_module.app.test_client()
@@ -145,6 +151,172 @@ class PrivacyFirstAppTests(unittest.TestCase):
         self.assertIn(b"CAPTURE", response.data)
         self.assertIn(b"BACK", response.data)
         self.assertIn(b"/camera/live-stream.mjpg", response.data)
+
+    def test_processing_route_renders_mode_specific_processing_screen(self) -> None:
+        client = app_module.app.test_client()
+        app_module._write_device_state(
+            DeviceState.PROCESSING,
+            selected_mode="summarize_document",
+            selected_mode_internal="document_reader",
+            detail="Preprocessing image...",
+            current_step=1,
+            progress_state="PREPROCESSING",
+        )
+
+        response = client.get("/processing")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Summarizing Document", response.data)
+        self.assertIn(b"Analyzing structure and text", response.data)
+        self.assertIn(b"CURRENT MODE", response.data)
+        self.assertIn(b"SUMMARIZE DOCUMENT", response.data)
+        self.assertIn(b"Image captured", response.data)
+        self.assertIn(b"Processing", response.data)
+        self.assertIn(b"Result", response.data)
+        self.assertIn(b"LIVE STATUS", response.data)
+
+    def test_ui_state_api_exposes_retry_queued_progress_mapping(self) -> None:
+        client = app_module.app.test_client()
+        app_module._write_device_state(
+            DeviceState.DONE,
+            selected_mode="read_text",
+            selected_mode_internal="document_reader",
+            detail="Saved for retry",
+            answer="Saved for automatic retry.",
+            current_step=1,
+            status="Queued for retry",
+            progress_state="RETRY_QUEUED",
+            progress_error_step=1,
+        )
+
+        response = client.get("/api/ui-state")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        assert payload is not None
+        self.assertEqual(payload["progress_state"], "RETRY_QUEUED")
+        self.assertEqual(payload["processing_status_message"], "Saved for retry")
+        self.assertEqual(payload["progress_steps"][1]["state"], "error")
+
+    def test_result_route_renders_result_screen(self) -> None:
+        client = app_module.app.test_client()
+        app_module._write_device_state(
+            DeviceState.DONE,
+            selected_mode="summarize_document",
+            selected_mode_internal="document_reader",
+            answer="Point one\nPoint two",
+            status="Answer Ready",
+        )
+
+        response = client.get("/result")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Captured", response.data)
+        self.assertIn(b"SUMMARIZE DOCUMENT", response.data)
+        self.assertIn(b"Key Takeaways", response.data)
+        self.assertIn(b"BACK", response.data)
+        self.assertNotIn(b"Capture Again", response.data)
+
+    def test_result_route_renders_current_mode_pill(self) -> None:
+        client = app_module.app.test_client()
+        app_module._write_device_state(
+            DeviceState.DONE,
+            selected_mode="professional_assistant",
+            selected_mode_internal="general_vision",
+            answer="Recommendations here",
+            status="Answer Ready",
+        )
+
+        response = client.get("/result")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"PROFESSIONAL ASSISTANT", response.data)
+
+    def test_result_route_renders_image_preview_from_private_route(self) -> None:
+        client = app_module.app.test_client()
+        self.processed_path.write_bytes(b"processed-preview")
+        app_module._sync_latest_result_preview(self.processed_path)
+        app_module._write_device_state(
+            DeviceState.DONE,
+            selected_mode="analyze_image",
+            selected_mode_internal="general_vision",
+            answer="Image analysis ready",
+            status="Answer Ready",
+        )
+
+        response = client.get("/result")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"/result-preview/latest.jpg", response.data)
+        self.assertIn(b"Captured image", response.data)
+
+    def test_result_route_formats_ai_answer_markup(self) -> None:
+        client = app_module.app.test_client()
+        app_module._write_device_state(
+            DeviceState.DONE,
+            selected_mode="solve_problem",
+            selected_mode_internal="math_solver",
+            answer="# Summary\n**Important**\n1. First step\n2. Second step\n- Extra note",
+            status="Answer Ready",
+        )
+
+        response = client.get("/result")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"<h3>Summary</h3>", response.data)
+        self.assertIn(b"<strong>Important</strong>", response.data)
+        self.assertIn(b"<ol>", response.data)
+        self.assertIn(b"<ul>", response.data)
+
+    def test_result_screen_uses_independent_scroll_container_for_long_answers(self) -> None:
+        client = app_module.app.test_client()
+        app_module._write_device_state(
+            DeviceState.DONE,
+            selected_mode="read_text",
+            selected_mode_internal="document_reader",
+            answer=("Long answer line\n" * 60).strip(),
+            status="Answer Ready",
+        )
+
+        response = client.get("/result")
+        css = Path("static/style.css").read_text(encoding="utf-8")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"result-answer-scroll", response.data)
+        self.assertIn(".result-answer-scroll", css)
+        self.assertIn("overflow-y: auto;", css)
+
+    def test_result_route_shows_empty_answer_state(self) -> None:
+        client = app_module.app.test_client()
+        app_module._write_device_state(
+            DeviceState.DONE,
+            selected_mode="read_text",
+            selected_mode_internal="document_reader",
+            answer="",
+            status="Answer Ready",
+        )
+
+        response = client.get("/result")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"No answer received", response.data)
+        self.assertIn(b"No answer was received for this capture.", response.data)
+
+    def test_result_route_shows_error_state(self) -> None:
+        client = app_module.app.test_client()
+        app_module._write_device_state(
+            DeviceState.DONE,
+            selected_mode="analyze_image",
+            selected_mode_internal="general_vision",
+            answer="The assistant saved this capture for a retry.",
+            status="Queued for retry",
+        )
+
+        response = client.get("/result")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Retry queued", response.data)
+        self.assertIn(b"Waiting for retry.", response.data)
 
     def test_live_preview_routes_keep_no_store_cache_headers(self) -> None:
         client = app_module.app.test_client()
@@ -285,6 +457,7 @@ class PrivacyFirstAppTests(unittest.TestCase):
         self.assertTrue(self.latest_result_preview_path.is_file())
         state = app_module._load_ui_state()
         self.assertEqual(state["screen"], "result")
+        self.assertEqual(state["progress_state"], "DONE")
         history_entries = app_module._load_result_history()
         self.assertEqual(len(history_entries), 1)
         self.assertEqual(history_entries[0]["model_used"], "gpt-5.4-mini")
@@ -336,10 +509,32 @@ class PrivacyFirstAppTests(unittest.TestCase):
         self.assertFalse(self.processed_path.exists())
         state = app_module._load_ui_state()
         self.assertEqual(state["status"], "Queued for retry")
+        self.assertEqual(state["progress_state"], "RETRY_QUEUED")
+        self.assertEqual(state["progress_error_step"], 1)
         self.assertEqual(self.queue.pending_count(), 1)
         entry = self.queue.list_entries()[0]
         self.assertTrue(self.queue.resolve_processed_path(entry).is_file())
         self.assertEqual(app_module._load_result_history(), [])
+
+    def test_permanent_pipeline_failure_records_processing_error_metadata(self) -> None:
+        failure = PipelineError("OpenAI request timed out after 30 seconds", retryable=False)
+
+        def fail_during_analyze(*args, **kwargs):
+            app_module._update_processing_state(
+                "read_text",
+                "document_reader",
+                "Sending image to OpenAI Vision...",
+            )
+            raise failure
+
+        with patch("app.run_capture_analyze", side_effect=fail_during_analyze):
+            app_module._run_capture_job("read_text", "document_reader")
+
+        state = app_module._load_ui_state()
+        self.assertEqual(state["screen"], "error")
+        self.assertEqual(state["progress_state"], "ERROR")
+        self.assertEqual(state["progress_error_step"], 1)
+        self.assertEqual(state["error"], "OpenAI request timed out")
 
     def test_delete_all_data_route_clears_history_queue_and_private_runtime_files(self) -> None:
         client = app_module.app.test_client()
@@ -448,6 +643,7 @@ class PrivacyFirstAppTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 302)
         start_capture_job.assert_called_once_with()
+        self.assertTrue(response.location.endswith("/processing"))
 
     def test_back_route_returns_to_home_screen(self) -> None:
         client = app_module.app.test_client()
@@ -460,6 +656,40 @@ class PrivacyFirstAppTests(unittest.TestCase):
         self.assertEqual(state["screen"], "home")
         self.assertEqual(state["selected_mode"], "")
         self.assertEqual(state["selected_mode_internal"], "")
+
+    def test_back_route_returns_home_screen_from_result_state(self) -> None:
+        client = app_module.app.test_client()
+        app_module._write_device_state(
+            DeviceState.DONE,
+            selected_mode="read_text",
+            selected_mode_internal="document_reader",
+            answer="Answer ready",
+            status="Answer Ready",
+        )
+
+        response = client.post("/back")
+
+        self.assertEqual(response.status_code, 302)
+        state = app_module._load_ui_state()
+        self.assertEqual(state["screen"], "home")
+
+    def test_back_route_is_ignored_while_processing(self) -> None:
+        client = app_module.app.test_client()
+        app_module._write_device_state(
+            DeviceState.PROCESSING,
+            selected_mode="read_text",
+            selected_mode_internal="document_reader",
+            detail="Sending to AI...",
+            current_step=1,
+            progress_state="ANALYZING",
+        )
+
+        response = client.post("/back")
+
+        self.assertEqual(response.status_code, 302)
+        state = app_module._load_ui_state()
+        self.assertEqual(state["screen"], "processing")
+        self.assertEqual(state["selected_mode"], "read_text")
 
     def test_capture_route_blocks_repeated_requests_while_processing(self) -> None:
         client = app_module.app.test_client()

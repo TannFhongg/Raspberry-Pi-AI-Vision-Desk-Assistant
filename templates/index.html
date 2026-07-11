@@ -355,18 +355,89 @@
                     </form>
                 </footer>
             </section>
+            {% elif screen == "processing" %}
+            <div class="sr-only" aria-live="polite">
+                Processing screen. Current mode: {{ processing_view.mode_label }}. Status: {{ processing_view.status_message }}.
+            </div>
+            <section class="processing-layout" aria-label="Processing screen">
+                <header class="home-topbar processing-topbar">
+                    <div class="home-brand" aria-label="VisionDesk">
+                        <span class="home-brand-word">Vision</span><span class="home-brand-word home-brand-word-accent">Desk</span>
+                    </div>
+                    <div class="system-health-bar home-status-list processing-status-list" aria-label="Device health" data-health-bar>
+                        <span class="health-pill health-pill-overall" data-label="SYS" data-health-overall data-status="{{ health_summary.overall.status }}" title="{{ health_summary.overall.message }}">SYS</span>
+                        <span class="health-pill" data-label="CPU" data-health-cpu data-status="{{ health_summary.cpu.status }}" title="{{ health_summary.cpu.message }}">CPU</span>
+                        <span class="health-pill" data-label="RAM" data-health-memory data-status="{{ health_summary.memory.status }}" title="{{ health_summary.memory.message }}">RAM</span>
+                        <span class="health-pill" data-label="WIFI" data-health-network data-status="{{ health_summary.network.status }}" title="{{ health_summary.network.message }}">WIFI</span>
+                        <span class="health-pill" data-label="CAM" data-health-camera data-status="{{ health_summary.camera.status }}" title="{{ health_summary.camera.message }}">CAM</span>
+                    </div>
+                </header>
+
+                <div class="home-divider processing-divider" aria-hidden="true"></div>
+
+                <section class="processing-main">
+                    <article class="processing-card" aria-label="Pipeline progress">
+                        <div class="processing-copy">
+                            <p class="processing-heading" data-processing-title>{{ processing_view.title }}</p>
+                            <p class="processing-subtitle" data-processing-subtitle>{{ processing_view.subtitle }}</p>
+                        </div>
+                        <div class="processing-progress-list" aria-label="Processing steps">
+                            {% for step in progress_steps %}
+                            <div class="processing-progress-step processing-progress-step-{{ step.state }} progress-step progress-step-{{ step.state }}" data-progress-step="{{ loop.index0 }}">
+                                <span class="processing-progress-indicator" aria-label="{{ step.state_label }}"></span>
+                                <span class="processing-progress-label">{{ step.label }}</span>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </article>
+
+                    <aside class="processing-sidebar" aria-label="Processing details">
+                        <div class="home-clock processing-clock" aria-live="polite" data-live-clock data-locale="{{ ui_config.locale or 'en' }}">
+                            <p class="home-clock-time" data-live-clock-time>--:-- A.M</p>
+                            <p class="home-clock-day" data-live-clock-day>Thursday</p>
+                        </div>
+
+                        <div class="processing-side-divider" aria-hidden="true"></div>
+
+                        <section class="processing-mode-section" aria-label="Current mode">
+                            <div class="processing-mode-row">
+                                <p class="processing-side-heading">CURRENT MODE</p>
+                                <span class="processing-mode-pill" data-processing-mode-value>{{ processing_view.mode_label }}</span>
+                            </div>
+                        </section>
+
+                        <div class="processing-side-divider" aria-hidden="true"></div>
+
+                        <section class="processing-status-section" aria-label="Live processing status">
+                            <p class="processing-status-label">LIVE STATUS</p>
+                            <div class="processing-status-card" data-processing-status-card data-status="{{ processing_view.status_tone }}">
+                                <p class="processing-status-text" data-processing-status-text>{{ processing_view.status_message }}</p>
+                            </div>
+                        </section>
+                    </aside>
+                </section>
+
+                <footer class="processing-footer">
+                    <form class="processing-action-form" aria-hidden="true">
+                        <button type="button" class="processing-action-button processing-action-button-primary" disabled>CAPTURE</button>
+                    </form>
+                    <form class="processing-action-form processing-action-form-back" aria-hidden="true">
+                        <button type="button" class="processing-action-button" disabled>BACK</button>
+                    </form>
+                </footer>
+            </section>
             {% else %}
             <div class="sr-only" aria-live="polite">
                 Assistant screen. Status: {{ display_status }}. {% if has_mode_selected %}Mode: {{ selected_mode_label }}.{% endif %} Live Camera Feed hidden after capture.
             </div>
             <div class="sr-only" data-live-preview-route="{{ live_preview_url }}">Live Camera Feed</div>
             {% if screen == "result" %}
-            <section class="result-layout" aria-label="Answer screen">
+            <section class="result-layout" aria-label="Result screen">
                 <header class="home-topbar result-topbar">
                     <div class="home-brand" aria-label="VisionDesk">
                         <span class="home-brand-word">Vision</span><span class="home-brand-word home-brand-word-accent">Desk</span>
                     </div>
-                    <div class="system-health-bar home-status-list" aria-label="Device health" data-health-bar>
+                    <div class="system-health-bar home-status-list result-status-list" aria-label="Device health" data-health-bar>
                         <span class="health-pill health-pill-overall" data-label="SYS" data-health-overall data-status="{{ health_summary.overall.status }}" title="{{ health_summary.overall.message }}">SYS</span>
                         <span class="health-pill" data-label="CPU" data-health-cpu data-status="{{ health_summary.cpu.status }}" title="{{ health_summary.cpu.message }}">CPU</span>
                         <span class="health-pill" data-label="RAM" data-health-memory data-status="{{ health_summary.memory.status }}" title="{{ health_summary.memory.message }}">RAM</span>
@@ -378,66 +449,45 @@
                 <div class="home-divider result-divider" aria-hidden="true"></div>
 
                 <section class="result-main">
-                    <div class="result-summary-row">
-                        <article class="result-meta-card">
-                            <p class="result-meta-label">Status</p>
-                            <p class="result-meta-value">{{ display_status }}</p>
-                        </article>
-                        <article class="result-meta-card">
-                            <p class="result-meta-label">Current Mode</p>
-                            <p class="result-meta-value">{{ selected_mode_label }}</p>
-                        </article>
-                        <div class="home-clock result-clock" aria-live="polite" data-live-clock data-locale="{{ ui_config.locale or 'en' }}">
-                            <p class="home-clock-time" data-live-clock-time>--:-- A.M</p>
-                            <p class="home-clock-day" data-live-clock-day>Thursday</p>
-                        </div>
-                    </div>
-
                     <div class="result-panels">
-                        <article class="result-panel result-preview-panel">
-                            <div class="result-panel-head">
-                                <p class="result-panel-title">Preview</p>
-                                <p class="result-panel-subtitle">Latest processed capture</p>
+                        <article class="result-preview-column" aria-label="Captured image">
+                            <div class="result-preview-head">
+                                <p class="result-preview-title">Captured</p>
                             </div>
                             <div class="result-preview-frame">
                                 {% if has_result_preview %}
-                                <img src="{{ result_preview_url }}" alt="Latest processed capture" class="result-preview-image">
+                                <img src="{{ result_preview_url }}" alt="Captured image" class="result-preview-image">
                                 {% else %}
-                                <p class="result-preview-placeholder">Processed preview unavailable.</p>
+                                <p class="result-preview-placeholder">Captured image unavailable.</p>
                                 {% endif %}
                             </div>
                         </article>
 
-                        <article class="result-panel result-answer-panel">
-                            <div class="result-panel-head">
-                                <p class="result-panel-title">Answer</p>
-                                <p class="result-panel-subtitle">{{ selected_mode_description }}</p>
-                            </div>
-                            <div class="result-answer-area" tabindex="0">
-                                <div class="answer-copy result-answer-copy">{{ answer_html }}</div>
-                            </div>
-                        </article>
-                    </div>
+                        <aside class="result-detail-column" aria-label="Result details">
+                            <span class="result-mode-pill">{{ result_view.mode_label }}</span>
 
-                    <div class="result-actions">
-                        <form method="post" action="{{ url_for('capture') }}" class="result-action-form">
-                            <button type="submit" class="result-action-button result-action-button-primary">Capture Again</button>
-                        </form>
-                        <form method="post" action="{{ url_for('back') }}" class="result-action-form">
-                            <button type="submit" class="result-action-button">Back</button>
-                        </form>
-                        {% if has_recent_results %}
-                        <form action="{{ url_for('history') }}" class="result-action-form result-action-form-secondary">
-                            <button type="submit" class="result-action-link">Recent Results</button>
-                        </form>
-                        {% endif %}
-                        <form method="post" action="{{ url_for('delete_all_data') }}" class="result-action-form result-action-form-secondary delete-all-form" onsubmit="return confirmDeleteAll(this);">
-                            <input type="hidden" name="confirm" value="delete-all">
-                            <input type="hidden" name="confirm_stage" value="">
-                            <button type="submit" class="result-action-link">Delete All Data</button>
-                        </form>
+                            <div class="result-side-divider" aria-hidden="true"></div>
+
+                            <article class="result-answer-card" data-result-state="{{ result_view.state }}">
+                                <div class="result-answer-head">
+                                    <p class="result-answer-title">{{ result_view.title }}</p>
+                                    {% if result_view.note %}
+                                    <p class="result-answer-note">{{ result_view.note }}</p>
+                                    {% endif %}
+                                </div>
+                                <div class="result-answer-scroll result-answer-area" tabindex="0">
+                                    <div class="answer-copy result-answer-copy">{{ answer_html }}</div>
+                                </div>
+                            </article>
+                        </aside>
                     </div>
                 </section>
+
+                <footer class="result-footer">
+                    <form method="post" action="{{ url_for('back') }}" class="result-action-form">
+                        <button type="submit" class="result-action-button">BACK</button>
+                    </form>
+                </footer>
             </section>
             {% else %}
 
@@ -455,9 +505,7 @@
                         {% endif %}
                     </p>
                     <p class="header-subtitle">
-                        {% if screen == "processing" %}
-                        {{ display_status }}
-                        {% elif screen == "error" %}
+                        {% if screen == "error" %}
                         {{ error or display_status }}
                         {% elif screen == "result" %}
                         {{ display_status }}
@@ -470,9 +518,7 @@
                         {% endif %}
                     </p>
                 </div>
-                {% if screen == "processing" %}
-                <div class="header-status-chip" aria-hidden="true">{{ display_status }}</div>
-                {% elif screen == "history" %}
+                {% if screen == "history" %}
                 <form action="{{ url_for('index') }}" class="header-action-form">
                     <button type="submit" class="header-capture-link">Back</button>
                 </form>
@@ -504,24 +550,7 @@
             </div>
 
             <section class="content-box answer-box answer-box-postcapture" aria-label="Assistant output">
-                {% if screen == "processing" %}
-                <div class="status-panel processing-state">
-                    <div class="status-copy">
-                        <p class="processing-title">{{ display_status }}</p>
-                        {% if detail and detail != display_status %}
-                        <p class="processing-detail">{{ detail }}</p>
-                        {% endif %}
-                    </div>
-                    <div class="progress-list" aria-label="Processing steps">
-                        {% for step in progress_steps %}
-                        <div class="progress-step progress-step-{{ step.state }}">
-                            <span class="progress-dot" aria-hidden="true"></span>
-                            <span>{{ step.label }}</span>
-                        </div>
-                        {% endfor %}
-                    </div>
-                </div>
-                {% elif screen == "error" %}
+                {% if screen == "error" %}
                 <div class="status-panel error-state">
                     <div class="status-copy">
                         <p class="error-title">{{ error or "Something went wrong" }}</p>
@@ -700,18 +729,17 @@
             }
 
             function updateProcessingState(payload) {
-                setText(".header-subtitle", payload.display_status || "");
-                setText(".header-status-chip", payload.display_status || "");
-                setText(".processing-title", payload.display_status || "");
+                setText("[data-processing-title]", payload.processing_title || "");
+                setText("[data-processing-subtitle]", payload.processing_subtitle || "");
+                setText("[data-processing-mode-value]", payload.processing_mode_label || "");
+                setText("[data-processing-status-text]", payload.processing_status_message || payload.display_status || "");
 
-                var detailElement = document.querySelector(".processing-detail");
-                if (detailElement) {
-                    var detailText = payload.detail && payload.detail !== payload.display_status ? payload.detail : "";
-                    detailElement.textContent = detailText;
-                    detailElement.hidden = !detailText;
+                var statusCard = document.querySelector("[data-processing-status-card]");
+                if (statusCard) {
+                    statusCard.dataset.status = payload.processing_status_tone || "active";
                 }
 
-                var stepElements = document.querySelectorAll(".progress-step");
+                var stepElements = document.querySelectorAll(".processing-progress-step");
                 var progressSteps = Array.isArray(payload.progress_steps) ? payload.progress_steps : [];
                 for (var index = 0; index < stepElements.length; index += 1) {
                     var stepElement = stepElements[index];
@@ -719,8 +747,14 @@
                     if (!stepPayload) {
                         continue;
                     }
-                    stepElement.className = "progress-step progress-step-" + stepPayload.state;
-                    var labelElement = stepElement.querySelector("span:last-child");
+                    stepElement.className =
+                        "processing-progress-step processing-progress-step-" + stepPayload.state +
+                        " progress-step progress-step-" + stepPayload.state;
+                    var indicatorElement = stepElement.querySelector(".processing-progress-indicator");
+                    if (indicatorElement) {
+                        indicatorElement.setAttribute("aria-label", stepPayload.state_label || "");
+                    }
+                    var labelElement = stepElement.querySelector(".processing-progress-label");
                     if (labelElement) {
                         labelElement.textContent = stepPayload.label || "";
                     }

@@ -157,11 +157,61 @@ INTERNAL_TO_UI_MODE = {
     "engineering_mode": "analyze_image",
     "general_vision": "analyze_image",
 }
-PROGRESS_STEPS = [
-    "Capturing...",
-    "Processing...",
-    "Thinking...",
-]
+PROGRESS_STEPS = ("Image captured", "Processing", "Result")
+PIPELINE_PROGRESS_STATES = frozenset(
+    {
+        "IDLE",
+        "CAPTURING",
+        "PREPROCESSING",
+        "ANALYZING",
+        "RETRY_QUEUED",
+        "DONE",
+        "ERROR",
+    }
+)
+PIPELINE_PROGRESS_DETAILS = {
+    "CAPTURING": "Capturing image...",
+    "PREPROCESSING": "Preprocessing image...",
+    "ANALYZING": "Sending to AI...",
+    "RETRY_QUEUED": "Saved for retry",
+    "DONE": "Result ready",
+    "ERROR": "Error",
+}
+PROCESSING_MODE_COPY = {
+    "read_text": {
+        "title": "Reading Text",
+        "subtitle": "Reading printed text",
+    },
+    "summarize_document": {
+        "title": "Summarizing Document",
+        "subtitle": "Analyzing structure and text",
+    },
+    "summarize": {
+        "title": "Summarizing Document",
+        "subtitle": "Analyzing structure and text",
+    },
+    "analyze_image": {
+        "title": "Analyzing Image",
+        "subtitle": "Understanding the captured image",
+    },
+    "professional_assistant": {
+        "title": "Professional Assistant",
+        "subtitle": "Organizing a professional response",
+    },
+    "solve_problem": {
+        "title": "Solving Problem",
+        "subtitle": "Working through the problem step by step",
+    },
+}
+PROCESSING_TRANSITION_SECONDS = 1.0
+RESULT_MODE_TITLES = {
+    "read_text": "Extracted Text",
+    "summarize_document": "Key Takeaways",
+    "summarize": "Key Takeaways",
+    "analyze_image": "Analysis",
+    "professional_assistant": "Recommendations",
+    "solve_problem": "Solution",
+}
 
 STATE_LOCK = threading.Lock()
 SETUP_STATE_LOCK = threading.Lock()
@@ -691,6 +741,34 @@ def camera_screen():
     return render_template("index.html", **_build_template_context())
 
 
+@app.get("/processing")
+def processing_screen():
+    """Render the processing screen only while a capture job is active."""
+    state = _load_ui_state()
+    selected_mode, _selected_mode_internal = _resolve_mode_pair(
+        state.get("selected_mode"),
+        state.get("selected_mode_internal"),
+    )
+    screen = _resolve_render_screen(state.get("screen", "home"), selected_mode)
+    if screen != "processing":
+        return redirect(url_for("index"))
+    return render_template("index.html", **_build_template_context(screen_override="processing"))
+
+
+@app.get("/result")
+def result_screen():
+    """Render the result screen only when a completed result is available."""
+    state = _load_ui_state()
+    selected_mode, _selected_mode_internal = _resolve_mode_pair(
+        state.get("selected_mode"),
+        state.get("selected_mode_internal"),
+    )
+    screen = _resolve_render_screen(state.get("screen", "home"), selected_mode)
+    if screen != "result":
+        return redirect(url_for("index"))
+    return render_template("index.html", **_build_template_context(screen_override="result"))
+
+
 @app.get("/setup")
 def setup():
     """Render the first-boot setup wizard."""
@@ -802,14 +880,28 @@ def select_mode():
 @app.post("/analyze")
 def capture():
     """Start a background capture + analyze run and return immediately."""
-    _start_capture_job()
+    started = _start_capture_job()
+    state = _load_ui_state()
+    selected_mode, _selected_mode_internal = _resolve_mode_pair(
+        state.get("selected_mode"),
+        state.get("selected_mode_internal"),
+    )
+    if started or _resolve_render_screen(state.get("screen", "home"), selected_mode) == "processing":
+        return redirect(url_for("processing_screen"))
     return redirect(url_for("index"))
 
 
 @app.post("/retry")
 def retry():
     """Retry the full capture workflow after an error."""
-    _start_capture_job()
+    started = _start_capture_job()
+    state = _load_ui_state()
+    selected_mode, _selected_mode_internal = _resolve_mode_pair(
+        state.get("selected_mode"),
+        state.get("selected_mode_internal"),
+    )
+    if started or _resolve_render_screen(state.get("screen", "home"), selected_mode) == "processing":
+        return redirect(url_for("processing_screen"))
     return redirect(url_for("index"))
 
 
@@ -1308,6 +1400,171 @@ def _resolve_mode_pair(
     return ui_mode, internal_mode
 
 
+def _normalize_progress_state(value: Any, *, default: str = "IDLE") -> str:
+    """Normalize any persisted pipeline-progress marker into a supported value."""
+    normalized = str(value or "").strip().upper()
+    if normalized in PIPELINE_PROGRESS_STATES:
+        return normalized
+    return default
+
+
+def _default_progress_state_for_device_state(device_state: DeviceState | str) -> str:
+    """Return the closest pipeline-progress state for the lifecycle state."""
+    state = coerce_device_state(device_state)
+    return {
+        DeviceState.READY: "IDLE",
+        DeviceState.MODE_SELECTED: "IDLE",
+        DeviceState.CAPTURING: "CAPTURING",
+        DeviceState.PROCESSING: "ANALYZING",
+        DeviceState.DONE: "DONE",
+        DeviceState.ERROR: "ERROR",
+    }[state]
+
+
+def _processing_copy_for_mode(selected_mode: str) -> dict[str, str]:
+    """Return the processing-screen title and subtitle for the selected UI mode."""
+    return PROCESSING_MODE_COPY.get(selected_mode, PROCESSING_MODE_COPY[DEFAULT_CAPTURE_MODE])
+
+
+def _processing_status_tone(progress_state: str) -> str:
+    """Return the small status-card tone for the current processing state."""
+    normalized_state = _normalize_progress_state(progress_state)
+    if normalized_state == "DONE":
+        return "done"
+    if normalized_state == "RETRY_QUEUED":
+        return "queued"
+    if normalized_state == "ERROR":
+        return "error"
+    return "active"
+
+
+def _processing_status_message(progress_state: str, *, detail: str = "", error: str = "") -> str:
+    """Return the concise live processing status shown in the sidebar."""
+    normalized_state = _normalize_progress_state(progress_state)
+    if normalized_state == "ERROR" and error:
+        return error
+    if detail.strip():
+        return detail.strip()
+    return PIPELINE_PROGRESS_DETAILS.get(normalized_state, "Processing...")
+
+
+def _build_processing_view(
+    selected_mode: str,
+    *,
+    selected_mode_label: str,
+    progress_state: str,
+    detail: str,
+    error: str,
+) -> dict[str, str]:
+    """Return the processing-screen copy derived from the selected mode and stage."""
+    mode_copy = _processing_copy_for_mode(selected_mode)
+    mode_label = selected_mode_label or MODE_LABELS.get(DEFAULT_CAPTURE_MODE, "Read Text")
+    return {
+        "title": mode_copy["title"],
+        "subtitle": mode_copy["subtitle"],
+        "mode_label": mode_label.upper(),
+        "status_message": _processing_status_message(
+            progress_state,
+            detail=detail,
+            error=error,
+        ),
+        "status_tone": _processing_status_tone(progress_state),
+    }
+
+
+def _result_title_for_mode(selected_mode: str) -> str:
+    """Return the result-panel title for the selected UI mode."""
+    return RESULT_MODE_TITLES.get(selected_mode, "Result")
+
+
+def _result_state_for_payload(status: str, answer_text: str, error_text: str = "") -> str:
+    """Return the visual result state for the current completed screen payload."""
+    normalized_status = status.strip().lower()
+    if any(token in normalized_status for token in ("queued", "retry", "failed", "error")) or error_text.strip():
+        return "ERROR"
+    if not answer_text.strip():
+        return "RESULT_EMPTY"
+    return "RESULT_READY"
+
+
+def _build_result_view(
+    selected_mode: str,
+    *,
+    selected_mode_label: str,
+    status: str,
+    answer_text: str,
+    error_text: str = "",
+) -> dict[str, Any]:
+    """Return the result-screen title and content derived from the current UI state."""
+    result_state = _result_state_for_payload(status, answer_text, error_text)
+    normalized_status = status.strip()
+    body_text = answer_text.strip()
+    note = ""
+
+    if result_state == "ERROR":
+        if "queued" in normalized_status.lower() or "retry" in normalized_status.lower():
+            title = "Retry queued"
+            note = "Waiting for retry."
+            if not body_text:
+                body_text = "This capture was saved for automatic retry."
+        else:
+            title = "Analysis failed"
+            if not body_text:
+                body_text = error_text.strip() or "Analysis failed. Please go back and try again."
+    elif result_state == "RESULT_EMPTY":
+        title = "No answer received"
+        body_text = "No answer was received for this capture."
+    else:
+        title = _result_title_for_mode(selected_mode)
+
+    return {
+        "state": result_state,
+        "mode_label": (selected_mode_label or MODE_LABELS.get(DEFAULT_CAPTURE_MODE, "Read Text")).upper(),
+        "title": title,
+        "note": note,
+        "body_text": body_text,
+        "body_html": _format_answer_html(body_text),
+    }
+
+
+def _processing_error_step(progress_state: str, current_step: int) -> int:
+    """Return which visual step should show an error for a failed pipeline stage."""
+    normalized_state = _normalize_progress_state(progress_state)
+    if normalized_state == "CAPTURING" or current_step <= 0:
+        return 0
+    return 1
+
+
+def _pipeline_progress_to_step_index(progress_state: str, *, progress_error_step: int = -1) -> int:
+    """Return the legacy numeric progress index used by the persisted UI state."""
+    normalized_state = _normalize_progress_state(progress_state)
+    if normalized_state == "CAPTURING":
+        return 0
+    if normalized_state in {"PREPROCESSING", "ANALYZING"}:
+        return 1
+    if normalized_state == "DONE":
+        return len(PROGRESS_STEPS)
+    if normalized_state in {"RETRY_QUEUED", "ERROR"}:
+        if 0 <= progress_error_step < len(PROGRESS_STEPS):
+            return progress_error_step
+        return 1
+    return -1
+
+
+def _processing_progress_for_message(pipeline_message: str) -> tuple[str, int, str]:
+    """Map shared pipeline callback text into UI-safe stage metadata."""
+    normalized_message = pipeline_message.strip()
+    message_lookup = {
+        "Capturing image...": ("CAPTURING", 0, PIPELINE_PROGRESS_DETAILS["CAPTURING"]),
+        "Preprocessing image...": ("PREPROCESSING", 1, PIPELINE_PROGRESS_DETAILS["PREPROCESSING"]),
+        "Sending image to OpenAI Vision...": ("ANALYZING", 1, PIPELINE_PROGRESS_DETAILS["ANALYZING"]),
+    }
+    return message_lookup.get(
+        normalized_message,
+        ("ANALYZING", 1, PIPELINE_PROGRESS_DETAILS["ANALYZING"]),
+    )
+
+
 def _build_idle_state_payload(
     selected_mode: Any,
     selected_mode_internal: Any = None,
@@ -1381,6 +1638,13 @@ def _build_ui_state_api_payload() -> dict[str, Any]:
     selected_mode_label = (
         selected_mode_definition["name"] if selected_mode_definition else "No mode selected"
     )
+    processing_view = _build_processing_view(
+        selected_mode,
+        selected_mode_label=selected_mode_label,
+        progress_state=state["progress_state"],
+        detail=state["detail"],
+        error=state["error"],
+    )
 
     return {
         "screen": screen,
@@ -1388,6 +1652,8 @@ def _build_ui_state_api_payload() -> dict[str, Any]:
         "selected_mode": selected_mode,
         "selected_mode_internal": selected_mode_internal,
         "selected_mode_label": selected_mode_label,
+        "progress_state": state["progress_state"],
+        "progress_error_step": state["progress_error_step"],
         "status": state["status"],
         "display_status": display_status,
         "detail": state["detail"],
@@ -1396,7 +1662,15 @@ def _build_ui_state_api_payload() -> dict[str, Any]:
         "current_step": state["current_step"],
         "history_entry_id": state["history_entry_id"],
         "updated_at": state["updated_at"],
-        "progress_steps": _build_progress_steps(state["current_step"]),
+        "progress_steps": _build_progress_steps(
+            state["progress_state"],
+            progress_error_step=state["progress_error_step"],
+        ),
+        "processing_title": processing_view["title"],
+        "processing_subtitle": processing_view["subtitle"],
+        "processing_mode_label": processing_view["mode_label"],
+        "processing_status_message": processing_view["status_message"],
+        "processing_status_tone": processing_view["status_tone"],
         "has_mode_selected": bool(selected_mode),
     }
 
@@ -2029,6 +2303,10 @@ def _build_template_context(
     elif screen == "result":
         display_status = state["status"] or "Answer Ready"
         current_result_history_entry = _resolve_active_reanalyze_entry(state)
+        if current_result_history_entry is None:
+            history_entry_id = str(state.get("history_entry_id", "")).strip()
+            if history_entry_id:
+                current_result_history_entry = _get_result_history_entry(history_entry_id)
         if current_result_history_entry is not None:
             current_result_history_entry = _decorate_result_history_entry(current_result_history_entry)
     elif screen == "history":
@@ -2071,6 +2349,20 @@ def _build_template_context(
         ui_state_updated_at = setup_state["updated_at"]
         auto_refresh_ms = 1500 if setup_state["gpio"].get("active") else None
     health_summary = _build_health_summary(render_screen=screen)
+    processing_view = _build_processing_view(
+        selected_mode,
+        selected_mode_label=selected_mode_label,
+        progress_state=state["progress_state"],
+        detail=state["detail"],
+        error=state["error"],
+    )
+    result_view = _build_result_view(
+        selected_mode,
+        selected_mode_label=selected_mode_label,
+        status=state["status"],
+        answer_text=answer_text,
+        error_text=state["error"] or state["error_detail"],
+    )
 
     return {
         "screen": screen,
@@ -2079,11 +2371,15 @@ def _build_template_context(
         "detail": state["detail"],
         "error": state["error"],
         "error_detail": state["error_detail"],
-        "answer_html": _format_answer_html(answer_text),
+        "answer_html": result_view["body_html"],
         "selected_mode": selected_mode,
         "selected_mode_internal": selected_mode_internal,
         "selected_mode_label": selected_mode_label,
         "selected_mode_description": selected_mode_description,
+        "progress_state": state["progress_state"],
+        "progress_error_step": state["progress_error_step"],
+        "processing_view": processing_view,
+        "result_view": result_view,
         "active_mode_name": active_mode_definition.name if active_mode_definition else "",
         "has_mode_selected": bool(selected_mode),
         "recent_results": recent_results,
@@ -2093,7 +2389,10 @@ def _build_template_context(
         "reanalyze_entry": reanalyze_entry,
         "reanalyze_mode_options": reanalyze_mode_options,
         "mode_options": UI_MODE_OPTIONS,
-        "progress_steps": _build_progress_steps(state["current_step"]),
+        "progress_steps": _build_progress_steps(
+            state["progress_state"],
+            progress_error_step=state["progress_error_step"],
+        ),
         "live_preview_url": _build_live_preview_url(),
         "live_preview_base_url": _build_live_preview_base_url(),
         "live_preview_refresh_ms": _build_live_preview_refresh_ms(),
@@ -2153,12 +2452,11 @@ def _start_capture_job() -> bool:
     preview_released = LIVE_PREVIEW.pause()
     if preview_released is False:
         LOGGER.warning("Live preview did not release the camera before capture started")
-    _write_device_state(
-        DeviceState.CAPTURING,
+    _write_processing_screen_state(
         selected_mode=selected_mode,
         selected_mode_internal=selected_mode_internal,
-        detail=PROGRESS_STEPS[0],
-        current_step=0,
+        progress_state="CAPTURING",
+        detail=PIPELINE_PROGRESS_DETAILS["CAPTURING"],
     )
 
     worker = threading.Thread(
@@ -2184,6 +2482,52 @@ def _start_reanalyze_job(entry_id: str, requested_mode: str) -> bool:
         "Saved image re-analysis is unavailable while text-only retention is enabled.",
     )
     return False
+
+
+def _write_processing_screen_state(
+    *,
+    selected_mode: str,
+    selected_mode_internal: str,
+    progress_state: str,
+    detail: str = "",
+    status: str | None = None,
+    error: str = "",
+    error_detail: str = "",
+    progress_error_step: int = -1,
+    current_step: int | None = None,
+) -> None:
+    """Persist an in-progress processing-screen state without switching to the answer/error screen."""
+    normalized_progress_state = _normalize_progress_state(progress_state, default="CAPTURING")
+    resolved_error_step = progress_error_step
+    if normalized_progress_state in {"RETRY_QUEUED", "ERROR"} and resolved_error_step < 0:
+        resolved_error_step = _processing_error_step(
+            normalized_progress_state,
+            current_step if current_step is not None else 1,
+        )
+    if current_step is None:
+        current_step = _pipeline_progress_to_step_index(
+            normalized_progress_state,
+            progress_error_step=resolved_error_step,
+        )
+    _write_device_state(
+        DeviceState.CAPTURING if normalized_progress_state == "CAPTURING" else DeviceState.PROCESSING,
+        selected_mode=selected_mode,
+        selected_mode_internal=selected_mode_internal,
+        detail=detail or _processing_status_message(normalized_progress_state, error=error),
+        current_step=current_step,
+        status=status,
+        error=error,
+        error_detail=error_detail,
+        progress_state=normalized_progress_state,
+        progress_error_step=resolved_error_step,
+    )
+
+
+def _pause_for_processing_transition() -> None:
+    """Keep the processing screen visible long enough for the browser to render the final step state."""
+    if PROCESSING_TRANSITION_SECONDS <= 0:
+        return
+    time.sleep(PROCESSING_TRANSITION_SECONDS)
 
 
 def _run_capture_job(selected_mode: str, selected_mode_internal: str) -> None:
@@ -2220,15 +2564,23 @@ def _run_capture_job(selected_mode: str, selected_mode_internal: str) -> None:
         save_latest_result(result, output_path=str(LATEST_RESULT_PATH))
         history_entry = _append_result_history(result, selected_mode, selected_mode_internal)
         _sync_latest_result_preview(result.processed_path or result.captured_path)
+        _write_processing_screen_state(
+            selected_mode=selected_mode,
+            selected_mode_internal=selected_mode_internal,
+            progress_state="DONE",
+            detail=PIPELINE_PROGRESS_DETAILS["DONE"],
+        )
+        _pause_for_processing_transition()
         _write_device_state(
             DeviceState.DONE,
             selected_mode=selected_mode,
             selected_mode_internal=selected_mode_internal,
             history_entry_id=history_entry["id"] if history_entry is not None else "",
-            detail="Done",
+            detail=PIPELINE_PROGRESS_DETAILS["DONE"],
             answer=result.answer or "",
             current_step=len(PROGRESS_STEPS),
             status="Answer Ready",
+            progress_state="DONE",
         )
         LOGGER.info(
             "Background capture job completed ui_mode=%s internal_mode=%s",
@@ -2242,7 +2594,12 @@ def _run_capture_job(selected_mode: str, selected_mode_internal: str) -> None:
             selected_mode_internal,
         )
         if not _queue_retryable_pipeline_error(selected_mode, selected_mode_internal, exc):
-            _record_error_state(selected_mode, selected_mode_internal, str(exc))
+            _record_error_state(
+                selected_mode,
+                selected_mode_internal,
+                str(exc),
+                processing_transition=True,
+            )
     except Exception as exc:
         LOGGER.exception(
             "Background capture job crashed ui_mode=%s internal_mode=%s",
@@ -2253,6 +2610,7 @@ def _run_capture_job(selected_mode: str, selected_mode_internal: str) -> None:
             selected_mode,
             selected_mode_internal,
             f"Unexpected error: {exc}",
+            processing_transition=True,
         )
     finally:
         _cleanup_current_private_media()
@@ -2276,14 +2634,13 @@ def _update_processing_state(
     pipeline_message: str,
 ) -> None:
     """Translate shared pipeline updates into small-screen UI text."""
-    step_index = _step_index_for_message(pipeline_message)
-    detail = PROGRESS_STEPS[step_index]
-    _write_device_state(
-        DeviceState.CAPTURING if step_index == 0 else DeviceState.PROCESSING,
+    progress_state, current_step, detail = _processing_progress_for_message(pipeline_message)
+    _write_processing_screen_state(
         selected_mode=selected_mode,
         selected_mode_internal=selected_mode_internal,
+        progress_state=progress_state,
         detail=detail,
-        current_step=step_index,
+        current_step=current_step,
     )
 
 
@@ -2291,9 +2648,17 @@ def _record_error_state(
     selected_mode: str,
     selected_mode_internal: str,
     error_message: str,
+    *,
+    processing_transition: bool = False,
 ) -> None:
     """Persist a short, readable error state for the touchscreen."""
     friendly_error = _humanize_error(error_message)
+    state = _load_ui_state()
+    progress_state = _normalize_progress_state(
+        state.get("progress_state"),
+        default=_default_progress_state_for_device_state(state.get("device_state")),
+    )
+    progress_error_step = _processing_error_step(progress_state, int(state.get("current_step", -1)))
     LOGGER.error(
         "Persisting device error state ui_mode=%s internal_mode=%s friendly_error=%s error=%s",
         selected_mode,
@@ -2311,6 +2676,18 @@ def _record_error_state(
         status="error",
     )
     save_latest_result(failure_result, output_path=str(LATEST_RESULT_PATH))
+    if processing_transition:
+        _write_processing_screen_state(
+            selected_mode=selected_mode,
+            selected_mode_internal=selected_mode_internal,
+            progress_state="ERROR",
+            detail=friendly_error,
+            error=friendly_error,
+            error_detail=error_message,
+            progress_error_step=progress_error_step,
+            current_step=progress_error_step,
+        )
+        _pause_for_processing_transition()
     _write_device_state(
         DeviceState.ERROR,
         selected_mode=selected_mode,
@@ -2318,7 +2695,9 @@ def _record_error_state(
         detail="Try again when ready",
         error=friendly_error,
         error_detail=error_message,
-        current_step=-1,
+        current_step=progress_error_step,
+        progress_state="ERROR",
+        progress_error_step=progress_error_step,
     )
 
 
@@ -2352,7 +2731,12 @@ def _queue_retryable_pipeline_error(
             selected_mode,
             selected_mode_internal,
         )
-        _record_error_state(selected_mode, selected_mode_internal, str(exc))
+        _record_error_state(
+            selected_mode,
+            selected_mode_internal,
+            str(exc),
+            processing_transition=True,
+        )
         return True
 
     queue_position = queue.pending_count()
@@ -2375,14 +2759,29 @@ def _queue_retryable_pipeline_error(
         error_summary=friendly_error,
     )
     save_latest_result(queued_result, output_path=str(LATEST_RESULT_PATH))
+    _write_processing_screen_state(
+        selected_mode=selected_mode,
+        selected_mode_internal=selected_mode_internal,
+        progress_state="RETRY_QUEUED",
+        detail=PIPELINE_PROGRESS_DETAILS["RETRY_QUEUED"],
+        error=friendly_error,
+        error_detail=str(error),
+        progress_error_step=1,
+        current_step=1,
+    )
+    _pause_for_processing_transition()
     _write_device_state(
         DeviceState.DONE,
         selected_mode=selected_mode,
         selected_mode_internal=selected_mode_internal,
-        detail="Will retry automatically",
+        detail=PIPELINE_PROGRESS_DETAILS["RETRY_QUEUED"],
         answer=queued_message,
-        current_step=-1,
+        current_step=1,
         status="Queued for retry",
+        error=friendly_error,
+        error_detail=str(error),
+        progress_state="RETRY_QUEUED",
+        progress_error_step=1,
     )
     LOGGER.warning(
         "Background capture job queued for retry entry=%s ui_mode=%s internal_mode=%s",
@@ -2460,17 +2859,6 @@ def _record_offline_retry_failure(
     )
 
 
-def _step_index_for_message(pipeline_message: str) -> int:
-    """Map pipeline callback text to the simple screen progress steps."""
-    normalized_message = pipeline_message.strip()
-    step_lookup = {
-        "Capturing image...": 0,
-        "Preprocessing image...": 1,
-        "Sending image to OpenAI Vision...": 2,
-    }
-    return step_lookup.get(normalized_message, 2)
-
-
 def _get_auto_refresh_ms(screen: str) -> int | None:
     """Refresh active screens so the device UI updates without manual reloads."""
     if screen == "processing":
@@ -2487,34 +2875,75 @@ def _resolve_orientation() -> str:
     return UI_DISPLAY_ORIENTATION
 
 
-def _build_progress_steps(current_step: int) -> list[dict[str, str]]:
-    """Return progress rows with done/active/pending display states."""
+def _build_progress_steps(
+    progress_state: str,
+    *,
+    progress_error_step: int = -1,
+) -> list[dict[str, str]]:
+    """Return Figma-style processing steps for the current pipeline state."""
     steps: list[dict[str, str]] = []
+    normalized_state = _normalize_progress_state(progress_state)
+    visual_states = ["pending"] * len(PROGRESS_STEPS)
+
+    if normalized_state == "CAPTURING":
+        visual_states[0] = "active"
+    elif normalized_state in {"PREPROCESSING", "ANALYZING"}:
+        visual_states[0] = "complete"
+        visual_states[1] = "active"
+    elif normalized_state == "DONE":
+        visual_states = ["complete"] * len(PROGRESS_STEPS)
+    elif normalized_state in {"RETRY_QUEUED", "ERROR"}:
+        resolved_error_step = progress_error_step
+        if resolved_error_step < 0 or resolved_error_step >= len(PROGRESS_STEPS):
+            resolved_error_step = 1
+        for index in range(resolved_error_step):
+            visual_states[index] = "complete"
+        visual_states[resolved_error_step] = "error"
+
     for index, label in enumerate(PROGRESS_STEPS):
-        state = "pending"
-        if current_step > index:
-            state = "done"
-        elif current_step == index:
-            state = "active"
-        steps.append({"label": label, "state": state})
+        state = visual_states[index]
+        steps.append(
+            {
+                "label": label,
+                "state": state,
+                "state_label": state.replace("_", " ").title(),
+            }
+        )
     return steps
 
 
 def _format_answer_html(answer: str) -> Markup:
-    """Render plain-text answers as readable paragraphs and bullet lists."""
+    """Render plain-text answers as readable headings, paragraphs, and lists."""
     if not answer.strip():
         return Markup("<p class='answer-empty'>No answer yet.</p>")
 
     parts: list[str] = []
     list_items: list[str] = []
+    list_kind = ""
 
     def flush_list() -> None:
-        nonlocal list_items
+        nonlocal list_items, list_kind
         if not list_items:
             return
         items = "".join(f"<li>{item}</li>" for item in list_items)
-        parts.append(f"<ul>{items}</ul>")
+        tag_name = "ol" if list_kind == "ol" else "ul"
+        parts.append(f"<{tag_name}>{items}</{tag_name}>")
         list_items = []
+        list_kind = ""
+
+    def format_inline(text: str) -> str:
+        rendered: list[str] = []
+        tokens = re.split(r"(\*\*.*?\*\*|__.*?__)", text)
+        for token in tokens:
+            if not token:
+                continue
+            if (token.startswith("**") and token.endswith("**")) or (
+                token.startswith("__") and token.endswith("__")
+            ):
+                rendered.append(f"<strong>{escape(token[2:-2])}</strong>")
+            else:
+                rendered.append(str(escape(token)))
+        return "".join(rendered)
 
     for raw_line in answer.splitlines():
         line = raw_line.strip()
@@ -2522,13 +2951,31 @@ def _format_answer_html(answer: str) -> Markup:
             flush_list()
             continue
 
-        bullet_match = re.match("^(?:[-*]|\\u2022|\\d+[.)])\\s+(.*)$", line)
+        heading_match = re.match(r"^(#{1,3})\s+(.*)$", line)
+        if heading_match:
+            flush_list()
+            heading_level = min(5, 2 + len(heading_match.group(1)))
+            parts.append(f"<h{heading_level}>{format_inline(heading_match.group(2))}</h{heading_level}>")
+            continue
+
+        numbered_match = re.match(r"^\d+[.)]\s+(.*)$", line)
+        if numbered_match:
+            if list_kind not in {"", "ol"}:
+                flush_list()
+            list_kind = "ol"
+            list_items.append(format_inline(numbered_match.group(1)))
+            continue
+
+        bullet_match = re.match(r"^(?:[-*]|\u2022)\s+(.*)$", line)
         if bullet_match:
-            list_items.append(str(escape(bullet_match.group(1))))
+            if list_kind not in {"", "ul"}:
+                flush_list()
+            list_kind = "ul"
+            list_items.append(format_inline(bullet_match.group(1)))
             continue
 
         flush_list()
-        parts.append(f"<p>{escape(line)}</p>")
+        parts.append(f"<p>{format_inline(line)}</p>")
 
     flush_list()
     return Markup("".join(parts))
@@ -2715,6 +3162,10 @@ def _load_ui_state() -> dict[str, Any]:
         current_step = int(raw_state.get("current_step", -1))
     except (TypeError, ValueError):
         current_step = -1
+    try:
+        progress_error_step = int(raw_state.get("progress_error_step", -1))
+    except (TypeError, ValueError):
+        progress_error_step = -1
 
     state_defaults = build_ui_state_payload(
         device_state,
@@ -2734,6 +3185,11 @@ def _load_ui_state() -> dict[str, Any]:
         "error": str(raw_state.get("error", "")),
         "error_detail": str(raw_state.get("error_detail", "")),
         "current_step": current_step,
+        "progress_state": _normalize_progress_state(
+            raw_state.get("progress_state"),
+            default=state_defaults["progress_state"],
+        ),
+        "progress_error_step": progress_error_step,
         "updated_at": str(raw_state.get("updated_at", default_state["updated_at"])),
     }
 
@@ -2832,6 +3288,8 @@ def _write_device_state(
     error_detail: str = "",
     current_step: int | None = None,
     status: str | None = None,
+    progress_state: str | None = None,
+    progress_error_step: int | None = None,
 ) -> None:
     """Persist the shared device lifecycle state to the UI state file."""
     ui_mode, internal_mode = _resolve_mode_pair(
@@ -2848,6 +3306,8 @@ def _write_device_state(
         error_detail=error_detail,
         current_step=current_step,
         status=status,
+        progress_state=progress_state,
+        progress_error_step=progress_error_step,
     )
     payload["selected_mode_internal"] = internal_mode
     payload["history_entry_id"] = str(history_entry_id).strip()
