@@ -120,23 +120,59 @@ class PrivacyFirstAppTests(unittest.TestCase):
         self.assertIn("boundary=frame", stream_response.content_type)
         self.assertEqual(stream_response.headers["Cache-Control"], "no-store, no-cache, must-revalidate, max-age=0")
 
-    def test_linux_live_frame_route_uses_direct_preview_capture(self) -> None:
+    def test_live_frame_route_uses_live_preview_service(self) -> None:
         client = app_module.app.test_client()
 
-        with patch("app.sys.platform", "linux"), patch("app.capture_preview_jpeg", return_value=b"linux-frame"):
-            response = client.get("/camera/live-frame.jpg")
+        self.live_preview.frame_bytes = b"linux-frame"
+        response = client.get("/camera/live-frame.jpg")
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data, b"linux-frame")
 
-    def test_linux_template_context_prefers_live_frame_preview_refresh(self) -> None:
-        with patch("app.sys.platform", "linux"):
-            with app_module.app.test_request_context("/"):
-                context = app_module._build_template_context()
+    def test_template_context_prefers_live_stream_without_polling(self) -> None:
+        with app_module.app.test_request_context("/"):
+            context = app_module._build_template_context()
 
-        self.assertIn("/camera/live-frame.jpg", context["live_preview_url"])
-        self.assertIn("/camera/live-frame.jpg", context["live_preview_base_url"])
-        self.assertGreaterEqual(context["live_preview_refresh_ms"], 1500)
+        self.assertIn("/camera/live-stream.mjpg", context["live_preview_url"])
+        self.assertIn("/camera/live-stream.mjpg", context["live_preview_base_url"])
+        self.assertEqual(context["live_preview_refresh_ms"], 0)
+
+    def test_health_summary_marks_camera_ok_when_preview_has_recent_frame(self) -> None:
+        self.live_preview.recent_frame = True
+        self.health_status_path.write_text(
+            json.dumps(
+                {
+                    "updated_at": "2026-07-11T10:10:00",
+                    "overall_status": "unknown",
+                    "cpu": {
+                        "status": "pass",
+                        "temperature_c": 50.7,
+                        "message": "CPU temperature is 50.7 C.",
+                    },
+                    "memory": {
+                        "status": "pass",
+                        "used_percent": 11.5,
+                        "message": "Memory usage is 11.5%.",
+                    },
+                    "network": {
+                        "status": "pass",
+                        "message": "Internet connection check succeeded.",
+                    },
+                    "camera": {
+                        "status": "unknown",
+                        "message": "Camera probe has not run yet.",
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        summary = app_module._build_health_summary()
+
+        self.assertEqual(summary["camera"]["status"], "pass")
+        self.assertEqual(summary["camera"]["label"], "CAM OK")
+        self.assertEqual(summary["overall"]["status"], "pass")
+        self.assertEqual(summary["overall"]["label"], "System OK")
 
     def test_successful_capture_cleans_private_working_media_and_persists_text_history(self) -> None:
         self.captured_path.write_bytes(b"captured")
@@ -333,6 +369,8 @@ class _FakeLivePreview:
         self.frame_bytes = b"jpeg-data"
         self.resume_calls = 0
         self.active = False
+        self.recent_frame = False
+        self.error_message = ""
 
     def get_jpeg_frame(self, timeout_seconds: float = 1.0) -> bytes:
         return self.frame_bytes
@@ -348,6 +386,12 @@ class _FakeLivePreview:
 
     def is_camera_active(self) -> bool:
         return self.active
+
+    def has_recent_frame(self, max_age_seconds: float = 10.0) -> bool:
+        return self.recent_frame
+
+    def latest_error_message(self) -> str:
+        return self.error_message
 
 
 class _FakeLEDIndicator:

@@ -14,7 +14,6 @@ from PIL import Image, ImageDraw
 
 from camera.capture import (
     OPENCV_INSTALL_HINT,
-    capture_preview_jpeg,
     camera_access,
     _apply_opencv_controls,
     _configure_opencv_camera,
@@ -29,7 +28,7 @@ from hardware.camera_config import (
 LOGGER = logging.getLogger(__name__)
 DEFAULT_PLACEHOLDER_SIZE = (960, 540)
 DEFAULT_PREVIEW_STREAM_RESOLUTION = (640, 480)
-DEFAULT_SNAPSHOT_PREVIEW_CAPTURE_DELAY_SECONDS = 0.5
+DEFAULT_RECENT_PREVIEW_FRAME_WINDOW_SECONDS = 10.0
 
 
 class LivePreviewError(Exception):
@@ -76,7 +75,6 @@ class LivePreviewService:
         self._frame_interval_seconds = max(0.05, frame_interval_seconds)
         self._preview_size = (preview_width, preview_height)
         self._snapshot_mode = sys.platform.startswith("linux")
-        self._snapshot_read_lock = threading.Lock()
         self._condition = threading.Condition()
         self._latest_frame = _build_placeholder_frame(
             "Starting live camera feed...",
@@ -86,12 +84,12 @@ class LivePreviewService:
         self._paused = False
         self._source_active = False
         self._stop_requested = False
+        self._last_success_monotonic: float | None = None
+        self._last_error_message: str | None = None
         self._worker: threading.Thread | None = None
 
     def get_jpeg_frame(self, timeout_seconds: float = 1.0) -> bytes:
-        """Return the latest JPEG frame, using snapshot reads on Linux."""
-        if self._snapshot_mode:
-            return self._capture_snapshot_jpeg_frame(timeout_seconds=timeout_seconds)
+        """Return the latest JPEG frame, waiting for the worker when needed."""
         frame_bytes, _ = self._wait_for_frame(after_version=None, timeout_seconds=timeout_seconds)
         return frame_bytes
 
@@ -102,24 +100,6 @@ class LivePreviewService:
         timeout_seconds: float = 1.0,
     ) -> Iterator[bytes]:
         """Yield a multipart MJPEG stream for browsers and kiosk displays."""
-        if self._snapshot_mode:
-            separator = boundary.encode("ascii")
-            try:
-                while True:
-                    frame_bytes = self.get_jpeg_frame(timeout_seconds=timeout_seconds)
-                    yield (
-                        b"--" + separator + b"\r\n"
-                        b"Content-Type: image/jpeg\r\n"
-                        b"Content-Length: " + str(len(frame_bytes)).encode("ascii") + b"\r\n"
-                        b"Cache-Control: no-store, no-cache, must-revalidate, max-age=0\r\n"
-                        b"Pragma: no-cache\r\n\r\n"
-                        + frame_bytes
-                        + b"\r\n"
-                    )
-                    time.sleep(self._frame_interval_seconds)
-            except GeneratorExit:
-                return
-
         last_version: int | None = None
         separator = boundary.encode("ascii")
 
@@ -180,46 +160,6 @@ class LivePreviewService:
             fallback_version,
         )
 
-    def _capture_snapshot_jpeg_frame(self, *, timeout_seconds: float) -> bytes:
-        """Capture one fresh preview frame on demand without a background worker."""
-        with self._condition:
-            if self._paused or self._stop_requested:
-                return self._latest_frame
-
-        acquired = self._snapshot_read_lock.acquire(timeout=max(0.0, timeout_seconds))
-        if not acquired:
-            return self._latest_frame
-
-        self._mark_source_active(True)
-        try:
-            jpeg_bytes = capture_preview_jpeg(
-                backend=self._request.backend,
-                camera_index=self._request.camera_index,
-                width=self._request.width,
-                height=self._request.height,
-                autofocus_mode=self._request.autofocus_mode,
-                exposure=self._request.exposure,
-                brightness=self._request.brightness,
-                capture_delay_seconds=max(
-                    DEFAULT_SNAPSHOT_PREVIEW_CAPTURE_DELAY_SECONDS,
-                    self._request.capture_delay_seconds,
-                ),
-            )
-            self._update_frame(jpeg_bytes)
-            return jpeg_bytes
-        except Exception as exc:
-            LOGGER.warning("Live preview snapshot failed: %s", exc)
-            placeholder = _build_placeholder_frame(
-                "Live camera feed unavailable.",
-                subtitle=str(exc),
-                size=self._preview_size,
-            )
-            self._update_frame(placeholder)
-            return placeholder
-        finally:
-            self._mark_source_active(False)
-            self._snapshot_read_lock.release()
-
     def pause(self, timeout_seconds: float = 2.0) -> bool:
         """Stop the preview and wait for the current camera handle to be released."""
         deadline = time.monotonic() + max(0.0, timeout_seconds)
@@ -245,14 +185,30 @@ class LivePreviewService:
         with self._condition:
             return self._source_active and not self._paused
 
+    def has_recent_frame(
+        self,
+        *,
+        max_age_seconds: float = DEFAULT_RECENT_PREVIEW_FRAME_WINDOW_SECONDS,
+    ) -> bool:
+        """Return True when the preview has produced a frame recently."""
+        with self._condition:
+            last_success = self._last_success_monotonic
+            paused = self._paused
+
+        if paused or last_success is None:
+            return False
+        return (time.monotonic() - last_success) <= max(0.0, max_age_seconds)
+
+    def latest_error_message(self) -> str | None:
+        """Return the most recent preview error when available."""
+        with self._condition:
+            return self._last_error_message
+
     def close(self) -> None:
         """Stop the background preview thread."""
         with self._condition:
             self._stop_requested = True
             self._condition.notify_all()
-
-        if self._snapshot_mode:
-            return
 
         worker = self._worker
         if worker is not None:
@@ -260,8 +216,6 @@ class LivePreviewService:
 
     def _ensure_worker_started(self) -> None:
         """Create the preview worker only once."""
-        if self._snapshot_mode:
-            return
         with self._condition:
             if self._worker is not None and self._worker.is_alive():
                 return
@@ -296,13 +250,15 @@ class LivePreviewService:
                     continue
 
                 if source is None:
-                    self._mark_source_active(True)
+                    if not self._snapshot_mode:
+                        self._mark_source_active(True)
                     try:
                         source = _open_frame_source(self._request)
                         LOGGER.info("Live preview source opened")
                     except LivePreviewError as exc:
                         self._mark_source_active(False)
                         LOGGER.warning("Live preview unavailable: %s", exc)
+                        self._record_frame_failure(str(exc))
                         self._update_frame(
                             _build_placeholder_frame(
                                 "Live camera feed unavailable.",
@@ -319,11 +275,19 @@ class LivePreviewService:
                             continue
 
                 try:
-                    frame = source.read_frame()
+                    if self._snapshot_mode:
+                        self._mark_source_active(True)
+                    try:
+                        frame = source.read_frame()
+                    finally:
+                        if self._snapshot_mode:
+                            self._mark_source_active(False)
                     jpeg_bytes = _encode_preview_frame(frame)
+                    self._record_frame_success()
                     self._update_frame(jpeg_bytes)
                 except Exception as exc:
                     LOGGER.warning("Live preview frame failed: %s", exc)
+                    self._record_frame_failure(str(exc))
                     self._update_frame(
                         _build_placeholder_frame(
                             "Reconnecting live camera feed...",
@@ -358,6 +322,17 @@ class LivePreviewService:
         with self._condition:
             self._source_active = active
             self._condition.notify_all()
+
+    def _record_frame_success(self) -> None:
+        """Remember that preview delivered a usable camera frame."""
+        with self._condition:
+            self._last_success_monotonic = time.monotonic()
+            self._last_error_message = None
+
+    def _record_frame_failure(self, message: str) -> None:
+        """Remember the latest preview error for UI health hints."""
+        with self._condition:
+            self._last_error_message = message
 
     def _close_source(self, source: "_BaseFrameSource | None") -> "_BaseFrameSource | None":
         """Close the active preview source and publish that the camera is free."""

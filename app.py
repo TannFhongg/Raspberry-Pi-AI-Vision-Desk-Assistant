@@ -6,7 +6,6 @@ import json
 import logging
 import os
 import re
-import sys
 import threading
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -17,7 +16,7 @@ from flask import Flask, Response, jsonify, redirect, render_template, request, 
 from markupsafe import Markup, escape
 
 from ai.modes import get_mode, normalize_mode
-from camera import CameraCaptureError, capture_preview_jpeg
+from camera import CameraCaptureError
 from camera.live_preview import LivePreviewService
 from config import SettingsError, load_device_settings
 from hardware import (
@@ -206,6 +205,7 @@ RETRY_MEDIA_RETENTION_HOURS = SETTINGS.retention.retry_media_retention_hours
 PURGE_ON_STARTUP = SETTINGS.retention.purge_on_startup
 OFFLINE_RETRY_ENABLED = SETTINGS.offline_retry.enabled
 UI_DEBUG = _read_bool_env("UI_DEBUG", False)
+LIVE_PREVIEW_FORCE_POLLING = _read_bool_env("LIVE_PREVIEW_FORCE_POLLING", False)
 
 UI_BASE_FONT_SIZE = _read_int_env("UI_BASE_FONT_SIZE", 20, minimum=16, maximum=42)
 UI_TITLE_FONT_SIZE = _read_int_env("UI_TITLE_FONT_SIZE", 34, minimum=24, maximum=72)
@@ -292,23 +292,11 @@ def index():
 @app.get("/camera/live-frame.jpg")
 def live_preview_frame():
     """Return a single live preview frame for diagnostics and compatibility."""
-    if _use_snapshot_preview_route():
-        try:
-            frame_bytes = capture_preview_jpeg(
-                backend=CAMERA_BACKEND,
-                camera_index=CAMERA_INDEX,
-                width=640,
-                height=480,
-                autofocus_mode=CAMERA_AUTOFOCUS_MODE,
-                exposure=CAMERA_EXPOSURE,
-                brightness=CAMERA_BRIGHTNESS,
-                capture_delay_seconds=max(CAPTURE_DELAY_SECONDS, 0.5),
-            )
-        except CameraCaptureError as exc:
-            LOGGER.warning("Direct Linux preview capture failed: %s", exc)
-            frame_bytes = LIVE_PREVIEW.get_jpeg_frame()
-    else:
+    try:
         frame_bytes = LIVE_PREVIEW.get_jpeg_frame()
+    except CameraCaptureError as exc:
+        LOGGER.warning("Live preview frame capture failed: %s", exc)
+        frame_bytes = LIVE_PREVIEW.get_jpeg_frame(timeout_seconds=0.1)
     return Response(
         frame_bytes,
         mimetype="image/jpeg",
@@ -520,15 +508,15 @@ def _build_live_preview_base_url() -> str:
 
 
 def _use_snapshot_preview_route() -> bool:
-    """Prefer single-frame polling on Linux where USB webcams are more reliable that way."""
-    return sys.platform.startswith("linux")
+    """Allow a polling fallback when MJPEG streaming needs to be disabled manually."""
+    return LIVE_PREVIEW_FORCE_POLLING
 
 
 def _build_live_preview_refresh_ms() -> int:
     """Return a conservative preview refresh rate for the current platform."""
     if not _use_snapshot_preview_route():
         return 0
-    return max(1500, int(max(CAPTURE_DELAY_SECONDS, 0.5) * 1000) + 700)
+    return max(400, int(max(CAPTURE_DELAY_SECONDS, 0.0) * 1000) + 200)
 
 
 def _build_ui_state_api_payload() -> dict[str, Any]:
@@ -572,15 +560,24 @@ def _build_ui_state_api_payload() -> dict[str, Any]:
 def _build_health_summary() -> dict[str, Any]:
     """Return compact health labels for the small-screen device UI."""
     snapshot = _load_health_snapshot()
-    overall_status = _normalize_overall_health_status(snapshot.get("overall_status") if snapshot else None)
+    cpu_chip = _build_cpu_health_chip(snapshot)
+    memory_chip = _build_memory_health_chip(snapshot)
+    network_chip = _build_component_health_chip(snapshot, "network", prefix="NET")
+    camera_chip = _build_camera_health_chip(snapshot)
+    overall_status = _resolve_ui_health_overall_status(
+        cpu_chip,
+        memory_chip,
+        network_chip,
+        camera_chip,
+    )
 
     return {
         "updated_at": str(snapshot.get("updated_at", "")) if snapshot else "",
         "overall": _build_overall_health_chip(overall_status, snapshot),
-        "cpu": _build_cpu_health_chip(snapshot),
-        "memory": _build_memory_health_chip(snapshot),
-        "network": _build_component_health_chip(snapshot, "network", prefix="NET"),
-        "camera": _build_component_health_chip(snapshot, "camera", prefix="CAM"),
+        "cpu": cpu_chip,
+        "memory": memory_chip,
+        "network": network_chip,
+        "camera": camera_chip,
     }
 
 
@@ -698,6 +695,62 @@ def _build_component_health_chip(
         "label": f"{prefix} {suffix_lookup[status]}",
         "message": str(component.get("message", f"{prefix} status is unavailable.")),
     }
+
+
+def _build_camera_health_chip(snapshot: dict[str, Any] | None) -> dict[str, str]:
+    """Return camera health with live-preview-aware status overrides."""
+    preview_service = LIVE_PREVIEW
+    has_recent_frame = False
+    latest_error = ""
+
+    if hasattr(preview_service, "has_recent_frame"):
+        try:
+            has_recent_frame = bool(preview_service.has_recent_frame())
+        except Exception:
+            has_recent_frame = False
+
+    if hasattr(preview_service, "latest_error_message"):
+        try:
+            latest_error = str(preview_service.latest_error_message() or "")
+        except Exception:
+            latest_error = ""
+
+    if has_recent_frame:
+        return {
+            "status": "pass",
+            "label": "CAM OK",
+            "message": "Live preview is receiving camera frames normally.",
+        }
+
+    component = _build_component_health_chip(snapshot, "camera", prefix="CAM")
+    if component["status"] != "unknown":
+        return component
+
+    if _is_live_preview_screen():
+        return {
+            "status": "unknown",
+            "label": "CAM LIVE",
+            "message": latest_error or "Live preview is warming up the camera feed.",
+        }
+
+    if latest_error:
+        return {
+            "status": "fail",
+            "label": "CAM FAIL",
+            "message": latest_error,
+        }
+
+    return component
+
+
+def _resolve_ui_health_overall_status(*chips: dict[str, str]) -> str:
+    """Collapse UI chip statuses into the overall health pill state."""
+    statuses = [str(chip.get("status", "unknown")).lower() for chip in chips]
+    if any(status == "fail" for status in statuses):
+        return "fail"
+    if statuses and all(status == "pass" for status in statuses):
+        return "pass"
+    return "unknown"
 
 
 def _normalize_component_health_status(value: Any) -> str:
@@ -1858,6 +1911,14 @@ def _health_monitor_busy() -> bool:
         except Exception:
             preview_active = False
     return _is_running() or is_busy_device_state(_get_device_state()) or preview_active
+
+
+def _is_live_preview_screen() -> bool:
+    """Return True when the home screen is showing the live preview panel."""
+    state = _load_ui_state()
+    screen = str(state.get("screen", "")).strip().lower()
+    selected_mode = str(state.get("selected_mode", "")).strip()
+    return screen == "home" and bool(selected_mode)
 
 
 def _ensure_health_monitor_started() -> None:

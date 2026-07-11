@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+import time
 import unittest
 from unittest.mock import patch
 
@@ -178,13 +179,15 @@ class LivePreviewServiceTests(unittest.TestCase):
 
         self.assertIs(source, sentinel)
 
-    def test_linux_snapshot_preview_captures_frame_on_demand(self) -> None:
+    def test_linux_snapshot_preview_worker_produces_recent_frame(self) -> None:
         request = _build_request()
+        source = _ImmediateFrameSource()
 
         with (
             patch("camera.live_preview.sys.platform", "linux"),
             patch("camera.live_preview.build_camera_request", return_value=request),
-            patch("camera.live_preview.capture_preview_jpeg", return_value=b"frame"),
+            patch("camera.live_preview._open_frame_source", return_value=source),
+            patch("camera.live_preview._encode_preview_frame", return_value=b"frame"),
         ):
             service = LivePreviewService(
                 backend="opencv",
@@ -198,10 +201,15 @@ class LivePreviewServiceTests(unittest.TestCase):
             )
 
             try:
+                service._ensure_worker_started()
+                deadline = time.monotonic() + 1.0
+                while time.monotonic() < deadline and not service.has_recent_frame(max_age_seconds=1.0):
+                    time.sleep(0.01)
                 frame = service.get_jpeg_frame(timeout_seconds=0.1)
             finally:
                 service.close()
 
+        self.assertTrue(service.has_recent_frame(max_age_seconds=1.0))
         self.assertEqual(frame, b"frame")
 
 
