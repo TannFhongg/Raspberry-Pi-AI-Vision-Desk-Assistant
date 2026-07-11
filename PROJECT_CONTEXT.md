@@ -5,63 +5,77 @@ Project root: `C:\Users\Admin\Desktop\Raspberry Pi AI Vision Desk Assistant`
 
 ## Purpose
 
-This repository is a portfolio-ready Raspberry Pi 5 AI vision desk assistant. It demonstrates a full local hardware and software workflow:
+This repository is a portfolio-ready Raspberry Pi 5 AI vision desk assistant. It is no longer just a single script demo. The codebase now behaves like a small capture appliance with three main control surfaces:
 
 ```text
-Camera capture -> OpenCV preprocessing / screen optimization -> OpenAI Vision analysis -> CLI / Touchscreen UI / GPIO result
+CLI -> shared pipeline
+Flask kiosk UI -> shared pipeline
+GPIO buttons -> shared pipeline
 ```
 
-The project is organized in phases so each layer can be tested independently and then composed through a shared pipeline.
+The core flow is:
 
-## Current Architecture
+```text
+Camera capture -> OpenCV preprocess / screen optimization -> OpenAI Vision -> readable result
+```
+
+## Repo Snapshot
+
+Main top-level areas:
+
+- `ai/`: canonical assistant modes, hidden OpenAI context builder, and the vision client wrapper
+- `camera/`: still capture and persistent live-preview helpers
+- `config/`: typed YAML-backed device settings loader
+- `hardware/`: button, LED, camera-request, state-machine, and diagnostics helpers
+- `pipeline/`: shared capture, preprocess, analyze, and latest-result orchestration
+- `system/`: logging, storage helpers, health monitor, and offline retry queue
+- `templates/` and `static/`: touchscreen-first Flask UI
+- `vision/`: preprocess pipeline, screen detection, perspective correction, and text enhancement
+- `tests/`: automated regression coverage
 
 Main entrypoints:
 
-- `main.py`: terminal CLI for full capture, preprocess, and analyze, or for analyzing an existing captured image with `--skip-capture`
-- `app.py`: touchscreen-first Flask UI with `home`, `processing`, `result`, `error`, `history`, and `history_detail` screens
-- `test_gpio_button.py`: standalone terminal listener for a physical GPIO button that triggers the full pipeline
-- `test_ai_vision.py`: one-off OpenAI Vision test using an existing local image
+- `main.py`: full terminal pipeline
+- `app.py`: local touchscreen/kiosk UI
+- `check_hardware.py`: standalone device diagnostics
+- `test_ai_vision.py`: one-off existing-image OpenAI test
 - `test_camera_capture.py`: one-off camera capture test
-- `test_preprocess.py`: one-off OpenCV preprocessing test
-- `test_screen_vision.py`: one-off long-distance screen/document optimization test with debug outputs
+- `test_preprocess.py`: one-off preprocess test
+- `test_screen_vision.py`: one-off screen/document optimization test
+- `test_gpio_button.py`: standalone GPIO capture trigger
 
-Shared core:
+## Current Runtime Architecture
 
-- `pipeline/runner.py`: central orchestration for `run_capture`, `run_preprocess`, `run_analyze`, `run_capture_analyze`, and `save_latest_result`
-- `camera/capture.py`: USB webcam capture backend built on OpenCV only
-- `vision/preprocess.py`: preprocessing orchestration for both the legacy path and the advanced screen/document optimization path
-- `vision/screen_detect.py`: preview-based rectangle detection for screens and documents
-- `vision/perspective.py`: quadrilateral ordering, scaling, and four-point perspective correction
+Configuration and shared services:
+
+- `config/settings.py`: loads `config/device.yaml`, applies environment overrides, validates camera/display/button/LED/reliability/retention/retry settings
+- `config/device.yaml`: committed hardware baseline for the kiosk device
+- `system/logging.py`: rotating `logs/app.log` and `logs/error.log`
+- `system/health.py`: background CPU, memory, network, and camera health snapshots
+- `system/offline_retry.py`: durable retry queue that keeps copied processed images for transient OpenAI failures
+
+Shared capture stack:
+
+- `camera/capture.py`: OpenCV-only USB webcam capture backend
+- `camera/live_preview.py`: live preview service with persistent-preview mode plus Linux snapshot fallback
+- `vision/preprocess.py`: base preprocessing plus advanced screen/document path
+- `vision/screen_detect.py`: screen/document quadrilateral detection
+- `vision/perspective.py`: point ordering and perspective correction
 - `vision/enhance_text.py`: denoise, brightness correction, CLAHE contrast, and text sharpening
-- `ai/openai_client.py`: OpenAI Responses API wrapper for image analysis with friendly app errors
-- `system/offline_retry.py`: durable retry queue that stores retryable OpenAI failures and replays them later from private saved processed images
-- `ai/modes.py`: canonical assistant mode registry, alias handling, and UI metadata
-- `ai/context.py`: hidden backend context builder for mode-specific OpenAI instructions
-- `ai/prompts.py`: compatibility shim for older mode/prompt imports
-- `hardware/status.py`: shared `READY`, `CAPTURING`, `PROCESSING`, `DONE`, and `ERROR` lifecycle helpers for the UI and hardware flows
-- `hardware/button.py`: canonical gpiozero-based short-press capture and long-press clear controller with debounce and duplicate-trigger protection
-- `hardware/led.py`: optional single-color GPIO LED indicator that mirrors the shared device lifecycle
-- `gpio/button.py`: compatibility wrapper that re-exports the new hardware button controller
-- `templates/index.html`: screen-based template for the current landscape touch UI, including live preview, text-only recent results, delete-all-data controls, and queued-retry messaging
-- `static/style.css`: kiosk styles optimized for `480x320` landscape, with health pills, live preview emphasis, scrollable answer content, and classified error screens
+- `pipeline/runner.py`: canonical `run_capture`, `run_preprocess`, `run_analyze`, `run_capture_analyze`, and `save_latest_result`
+- `ai/openai_client.py`: OpenAI Responses API wrapper with explicit timeout, retry, and retryable-error classification
 
-Runtime artifacts:
+Touch and hardware layer:
 
-- `data/private/current/captured.jpg`: latest temporary camera capture for the active job
-- `data/private/current/processed.jpg`: latest temporary preprocessed image for the active job
-- `data/private/current/processed.jpg.meta.json`: preprocessing sidecar metadata used for freshness checks
-- `debug/`: latest advanced screen/document debug images
-- `data/latest_result.txt`: latest readable pipeline result from Flask or standalone GPIO runs
-- `data/ui_state.json`: saved UI mode, current screen, `device_state`, status text, and answer/error state
-- `data/result_history.json`: saved recent successful assistant results as text-only history
-- `data/health_status.json`: latest background health snapshot for CPU, RAM, network, and camera status
-- `data/private/retry_queue.json`: persisted metadata for retryable queued AI failures
-- `data/private/retry/`: copied processed images waiting for automatic background retry
-- `data/private/quarantine/`: malformed or legacy runtime artifacts moved aside during startup/job purge
+- `app.py`: kiosk UI state machine, recent-results history, health bar, delete-all-data flow, and offline retry integration
+- `hardware/status.py`: shared `READY`, `MODE_SELECTED`, `CAPTURING`, `PROCESSING`, `DONE`, and `ERROR` helpers
+- `hardware/button.py`: capture button, mode buttons, and optional back button controller
+- `hardware/led.py`: optional single-color LED that mirrors the shared device state
+- `gpio/button.py`: compatibility wrapper for the current hardware button controller
 
 ## Supported AI Modes
 
-Defined in `ai/modes.py`:
+Canonical backend modes from `ai/modes.py`:
 
 - `document_reader`
 - `math_solver`
@@ -69,224 +83,156 @@ Defined in `ai/modes.py`:
 - `engineering_mode`
 - `general_vision`
 
-Legacy aliases are still accepted:
+Current touch/GPIO presets:
 
-- `read_text`, `summarize`, `summarize_document` -> `document_reader`
+- `read_text` -> `document_reader`
+- `summarize_document` -> `document_reader`
+- `analyze_image` -> `general_vision`
+- `professional_assistant` -> `general_vision`
 - `solve_problem` -> `math_solver`
-- `analyze_image`, `professional_assistant` -> `general_vision`
 
-With `SCREEN_OPTIMIZATION=auto`, the advanced screen/document optimization path is enabled by default only for `document_reader`, `math_solver`, and `meeting_assistant`.
+Notes:
 
-## Web UI Behavior
+- `meeting_assistant` and `engineering_mode` exist today, but they are not exposed as dedicated touchscreen buttons.
+- With `SCREEN_OPTIMIZATION=auto`, advanced screen/document optimization is enabled by default for `document_reader`, `math_solver`, and `meeting_assistant`.
 
-`app.py` uses a small JSON state file instead of storing large answer payloads in Flask session cookies.
+## Flask UI Behavior
 
-Current touchscreen flow:
+The Flask app now stores state in local JSON files instead of relying on large Flask sessions.
 
-- `home` without a selected mode: mode list, direct `Capture` button, and health bar
-- `home` with a selected mode: live MJPEG preview, current mode header, health pills, and capture CTA
-- `processing`: background capture job status with auto-refresh, simplified centered messaging, and a `Thinking...` state during AI-heavy steps
-- `result`: large scrollable answer screen with `Capture Again`, `Recent Results`, and delete-all-data actions
-- `result`: answer-first screen that keeps the full answer area visible instead of showing legacy re-analysis UI or GPIO helper copy
-- `error`: classified camera/network/API/generic error screen with the same touch-friendly action row
-- `history`: recent saved answers list with text-only summaries and retention metadata
-- `history_detail`: full saved answer view for a single previous scan without thumbnails or image reuse actions
+Current screens:
 
-Interaction notes:
+- `home` without a selected mode: mode picker, direct `Capture` button, and health pills
+- `home` with a selected mode: live preview, selected mode label, and `Change Mode`
+- `processing`: auto-refreshing progress screen with `Capturing...`, `Processing...`, and `Thinking...`
+- `result`: answer-first layout with `Capture Again`, `Recent Results`, and delete-all-data actions
+- `error`: short classified failure state with retry actions
+- `history`: text-only recent result list
+- `history_detail`: full text view for one saved result
 
-- `/capture`, `/capture-analyze`, and `/analyze` currently all start the same background `run_capture_analyze` workflow
-- `/back` returns to `home` while preserving the selected mode
-- `/clear` resets the UI to `READY` and clears `data/latest_result.txt`
-- `/retry` re-runs the same shared capture workflow for the currently selected mode
-- `/camera/live-stream.mjpg` serves the current live preview as an MJPEG stream
-- `/reanalyze` remains as a compatibility route but now returns a friendly text-only-retention error instead of reusing saved media
-- when the GPIO listener is started inside Flask, short press triggers capture/analyze and long press clears the visible result or error
-- the `home`, `result`, and `error` screens auto-refresh while the embedded GPIO listener is active so hardware-triggered state changes appear without manual reload
-- retryable OpenAI failures are queued on disk instead of being discarded immediately when the processed image is available
-- the local UI exposes a two-step `Delete All Data` action that clears retained text history, retry data, and private runtime media
+Important routes:
 
-## Setup Notes
+- `/capture`, `/capture-analyze`, `/analyze`: all currently start the same background `run_capture_analyze` job
+- `/camera/live-stream.mjpg`: default live preview stream
+- `/camera/live-frame.jpg`: compatibility and diagnostics frame endpoint
+- `/api/ui-state`: JSON-safe public device state
+- `/api/health`: compact device-health payload
+- `/reanalyze`: compatibility route that now fails gracefully because result history is text-only
+- `/data/delete-all`: explicit two-step delete-all-data action
 
-Python package requirements in `requirements.txt`:
+Device-state flow:
 
-- `openai`
-- `python-dotenv`
-- `pillow`
-- `flask`
-- `gpiozero`
-
-Important Raspberry Pi OS packages are expected from APT, not pip:
-
-- `python3-opencv`
-
-Recommended venv command on Raspberry Pi:
-
-```bash
-python3 -m venv --system-site-packages .venv
-source .venv/bin/activate
-pip install --upgrade pip
-pip install -r requirements.txt
+```text
+READY -> MODE_SELECTED -> CAPTURING -> PROCESSING -> DONE | ERROR
 ```
 
-Environment variables:
+## Current Device Defaults
 
-```env
-OPENAI_API_KEY=your_openai_api_key_here
-OPENAI_MODEL=gpt-5.4-mini
-FLASK_SECRET_KEY=change_this_for_local_flask_sessions
-ENABLE_GPIO_BUTTON=1
-GPIO_BUTTON_PIN=17
-GPIO_BUTTON_DEBOUNCE_SECONDS=0.15
-GPIO_BUTTON_HOLD_SECONDS=1.2
-ENABLE_GPIO_LED=0
-GPIO_LED_PIN=27
-GPIO_LED_ACTIVE_HIGH=1
-VISION_CAMERA_BACKEND=opencv
-VISION_CAMERA_INDEX=0
-VISION_CAPTURE_WIDTH=1280
-VISION_CAPTURE_HEIGHT=720
-VISION_GRAYSCALE=0
-VISION_MAX_DIMENSION=1600
-SCREEN_OPTIMIZATION=auto
-UI_SCREEN_WIDTH=480
-UI_SCREEN_HEIGHT=320
-UI_DISPLAY_ORIENTATION=landscape
-UI_BASE_FONT_SIZE=20
-UI_TITLE_FONT_SIZE=34
-UI_STATUS_FONT_SIZE=28
-UI_BUTTON_FONT_SIZE=24
-UI_TOUCH_TARGET=68
-UI_PROCESSING_REFRESH_MS=1200
-UI_IDLE_REFRESH_MS=2500
-LIVE_PREVIEW_FRAME_INTERVAL_MS=80
-OFFLINE_RETRY_ENABLED=1
-OFFLINE_RETRY_POLL_INTERVAL_SECONDS=30
-APP_HOST=127.0.0.1
-APP_PORT=5000
-FLASK_DEBUG=0
-STORE_IMAGES=0
-TEXT_HISTORY_MAX_ITEMS=100
-TEXT_HISTORY_RETENTION_DAYS=30
-RETRY_MEDIA_RETENTION_HOURS=24
-PURGE_ON_STARTUP=1
-OFFLINE_RETRY_MAX_ITEMS=10
-OFFLINE_RETRY_MAX_ATTEMPTS=3
-OFFLINE_RETRY_INITIAL_DELAY_SECONDS=30
-OFFLINE_RETRY_MAX_DELAY_SECONDS=900
-OFFLINE_RETRY_MIN_FREE_MB=128
-OFFLINE_RETRY_MAX_STORAGE_MB=512
-```
+The committed baseline in `config/device.yaml` currently uses:
 
-Security note: keep `.env` out of git and keep `.env.example` limited to placeholders only.
+- Camera still capture: `1920x1080`
+- Live preview: `640x360`, `30 FPS`, `force_mjpeg: true`
+- Display: `480x320` landscape
+- Main capture button: GPIO17
+- Mode buttons: GPIO5, GPIO6, GPIO13, GPIO19, GPIO26
+- Back button: GPIO22
+- Local-only Flask host: `127.0.0.1:5000`
+- Default AI mode: `document_reader`
+- Screen optimization: `auto`
+- Offline retry poll interval: `5` seconds
+- Retention policy: text history only by default, private working media purged on startup and after success
+
+## Runtime Artifacts
+
+Important generated files and directories:
+
+- `data/latest_result.txt`: latest readable result summary
+- `data/ui_state.json`: current kiosk state and selected mode
+- `data/result_history.json`: text-only recent results
+- `data/health_status.json`: latest health snapshot
+- `data/private/current/`: unique per-job working captures and processed images
+- `data/private/retry_queue.json`: persisted retry queue metadata
+- `data/private/retry/`: copied processed images waiting for background retry
+- `data/private/quarantine/`: malformed or legacy artifacts moved aside during recovery
+- `debug/`: latest advanced-preprocess debug outputs
 
 ## Common Commands
 
-Run OpenAI Vision on an existing image:
+OpenAI test on an existing image:
 
 ```bash
 python test_ai_vision.py --image test_images/document.jpg --mode document_reader
 ```
 
-Capture from camera:
+Camera capture:
 
 ```bash
 python test_camera_capture.py --backend opencv --camera-index 0
 ```
 
-Preprocess latest capture:
+Preprocess:
 
 ```bash
 python test_preprocess.py
 python test_preprocess.py --grayscale
 ```
 
-Run advanced screen/document preprocessing:
+Advanced screen/document optimization:
 
 ```bash
-python test_screen_vision.py --input test_images/screen_photo.jpg --detect-screen --enhance
+python test_screen_vision.py --input test_images/document.jpg --detect-screen --enhance
 ```
 
-Run full terminal pipeline:
+Full terminal pipeline:
 
 ```bash
+python main.py --mode document_reader
 python main.py --mode math_solver
-python main.py --mode engineering_mode
-python main.py --mode general_vision --backend opencv --camera-index 0
 python main.py --mode document_reader --skip-capture --screen-optimization on
-python main.py --mode document_reader --skip-capture --screen-optimization off
 ```
 
-Run Flask touchscreen UI:
+Flask UI:
 
 ```bash
 python app.py
 ```
 
-Local URL:
-
-```text
-http://127.0.0.1:5000
-```
-
-Landscape example:
-
-```bash
-UI_SCREEN_WIDTH=480 UI_SCREEN_HEIGHT=320 UI_DISPLAY_ORIENTATION=landscape python app.py
-```
-
-Run GPIO button listener:
+Standalone GPIO listener:
 
 ```bash
 python test_gpio_button.py
-python test_gpio_button.py --mode document_reader
-python test_gpio_button.py --mode general_vision --backend opencv --camera-index 0
 ```
 
-## Hardware Context
+Device diagnostics:
 
-Required or expected hardware:
-
-- Raspberry Pi 5
-- USB webcam
-- Push button connected to GPIO17 and GND
-- Optional LED connected to a configured GPIO pin and GND
-- Internet connection for OpenAI API access
-- Optional HDMI display, small touchscreen, speaker, buzzer, or power bank for demos
-
-## Deployment
-
-Systemd service template:
-
-- `deployment/ai-vision-assistant.service`
-
-Docs:
-
-- `docs/architecture.md`: current architecture diagram and module notes
-- `docs/demo_checklist.md`: demo preparation and flow
-- `docs/upwork_project_description.md`: portfolio and freelance-oriented project description
-- `hardware_require.txt`: hardware checklist
-
-## Current Worktree State
-
-Observed git status before this file was last updated:
-
-```text
-dirty (live preview, recent results, and offline retry improvements present)
+```bash
+python check_hardware.py
 ```
+
+## Validation Snapshot
+
+Verified on 2026-07-11 in the current local development environment:
+
+- `python -m pytest -q` -> `105 passed, 16 subtests passed`
+
+Latest documented real-device behavior from 2026-07-10:
+
+- End-to-end `Read Text` capture succeeded on Raspberry Pi hardware
+- GPIO-triggered capture path worked after the live-preview handoff fix
+- The kiosk UI displayed recent text-only results and the compact health bar correctly
 
 ## Known Limitations And Follow-ups
 
-- Full camera and GPIO behavior still needs real Raspberry Pi hardware verification
-- OpenAI analysis requires internet access and a valid API key
-- The queued retry worker currently writes recovered answers into latest-result and recent-history storage, but it does not yet surface a dedicated queue-management screen
-- Web-triggered actions still funnel into the same full capture and analyze workflow rather than separate capture-only and analyze-only UI paths
-- The current UI is tuned first for a `480x320` landscape touchscreen and may need further adjustment for other display sizes
-- Exact button feel and LED timing still need final validation on the target Raspberry Pi hardware
+- Same-image reanalysis is intentionally unavailable while result history remains text-only.
+- The offline retry queue has no dedicated queue-management screen yet.
+- More validation is still needed on the exact target Raspberry Pi hardware for button feel, LED timing, and preview smoothness.
+- The current UI is tuned first for a `480x320` landscape display.
+- OpenAI analysis still requires network access and a valid API key.
 
 ## Development Guardrails
 
-- Do not commit `.env` or real secrets
-- Do not change `.env.example` placeholders into real values
-- Keep shared behavior in `pipeline/runner.py` so CLI, Flask, and GPIO stay consistent
-- Keep generated image and result files out of git
-- Prefer small, phase-based tests when changing camera, preprocessing, AI, GPIO, or UI state behavior
+- Do not commit `.env` or real API keys.
+- Keep shared behavior in `pipeline/runner.py` so CLI, Flask, and GPIO stay aligned.
+- Keep runtime artifacts out of git.
+- Prefer updating `config/device.yaml` for committed hardware defaults and use env vars for deployment-specific overrides.
+- Preserve the privacy-first model: result history is text-only by default, working images stay private, and delete-all-data should keep clearing retained user artifacts.

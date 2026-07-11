@@ -2,36 +2,35 @@
 
 ## Before Demo
 
-- Confirm Raspberry Pi 5 is powered on and connected to the network
-- Confirm the camera is connected and working
-- Confirm the push button is wired to the configured GPIO pin and GND
-- Confirm `.env` contains a valid `OPENAI_API_KEY`
+- Confirm the Raspberry Pi 5 is powered on, networked, and using the expected `.env`
+- Confirm the USB webcam is connected and visible to OpenCV
+- Confirm the main capture button, five mode buttons, and optional back button are wired to the configured GPIO pins
 - Run `python check_hardware.py`
+- If you are validating software before the live demo, run `python -m pytest -q`
+- Confirm `http://127.0.0.1:5000` loads and the home screen matches the `480x320` landscape layout
+- Confirm the live preview is updating through `/camera/live-stream.mjpg`
 - Confirm `data/latest_result.txt`, `data/ui_state.json`, `data/result_history.json`, and `data/private/retry_queue.json` are writable
-- Start `python app.py` and open `http://127.0.0.1:5000`
-- If demoing the small display, use the landscape device profile such as `UI_SCREEN_WIDTH=480 UI_SCREEN_HEIGHT=320 UI_DISPLAY_ORIENTATION=landscape`
 - Preselect a useful demo mode such as `Read Text` or `Solve Problem`
+- Have one text-heavy sample and one non-text sample ready
 
 ## Demo Flow
 
-- Show the Raspberry Pi hardware, camera, button, and attached display or browser
-- Show the production small-screen home layout with live camera preview, selected mode, `Click Button to Capture`, and the health pills
-- Change mode and choose the task that matches the demo image
-- Return to the live preview state and frame the subject
-- Trigger `Capture`
-- Narrate the processing screen as it moves through capture, preprocessing, AI analysis, and the `Thinking...` state
-- Show the final answer on the result screen and scroll the answer box if the response is long
-- Open `Recent Results` to show that a successful scan can be reopened almost instantly
-- Open one saved entry from `Recent Results` to show the text-only history detail and retention metadata
-- Use `Capture Again` to show the repeatable flow
-- Press the GPIO button from the home screen to demonstrate the same shared pipeline without touch input
-- Show the updated `data/latest_result.txt`
-- If useful for the demo, briefly explain that transient network or OpenAI outages are now queued automatically for retry instead of being lost immediately
-- If asked about privacy, point out that working images now live only in `data/private/` and are purged after successful jobs
+- Show the Raspberry Pi hardware, webcam, touchscreen, and button panel
+- Start on the `home` screen without a selected mode to show the mode picker and health pills
+- Choose a mode and show the `MODE_SELECTED` idle state with the live preview
+- Frame the subject and trigger `Capture`
+- Narrate the progress screen as it moves through `Capturing...`, `Processing...`, and `Thinking...`
+- Show the final answer in the result view and scroll the answer area if the reply is long
+- Open `Recent Results` to show that successful scans are retained as text-only history
+- Open one saved history entry to show the detail view without storing user images
+- Trigger a second run with the physical capture button to show that GPIO and touch reuse the same shared pipeline
+- If the back button is wired, press it from an idle screen to return to mode selection
+- Mention that retryable OpenAI failures can be queued automatically instead of being lost
+- Mention that working images stay inside `data/private/` and are purged after successful jobs by default
 
 ## Wrap-up
 
-- Explain the shared pipeline: capture -> preprocess -> OpenAI Vision -> readable result
-- Explain that CLI, touchscreen UI, and GPIO all reuse the same pipeline runner
-- Mention that the current product direction is optimized for kiosk-style `480x320` landscape touchscreen use
-- Mention the smoother MJPEG preview, the text-only recent-results recall path, private media retention, and the offline retry queue as production-minded improvements
+- Explain the shared flow: camera capture -> preprocess -> OpenAI Vision -> readable result
+- Explain that CLI, Flask, and GPIO all share `pipeline/runner.py`
+- Call out the production-minded improvements: live MJPEG preview, health bar, text-only recent results, offline retry, rotating logs, and delete-all-data controls
+- Be explicit that the current product profile is a local-only `480x320` landscape kiosk device, not a general-purpose cloud dashboard
