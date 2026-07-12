@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="{{ ui_config.locale or 'en' }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>{% block title %}AI Vision Assistant{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    {% block head_extra %}{% endblock %}
+</head>
+<body
+    class="app-screen-{{ screen }} orientation-{{ ui_config.orientation }}{% if screen == 'setup' %} app-state-setup{% elif screen == 'camera' %} app-state-camera{% elif screen == 'processing' %} app-state-processing{% elif screen == 'result' %} app-state-done{% elif screen == 'error' %} app-state-error{% endif %}"
+    data-current-screen="{{ screen }}"
+    data-ui-state-url="{{ ui_state_api_url }}"
+    data-ui-state-updated-at="{{ ui_state_updated_at }}"
+    data-ui-state-poll-ms="{{ auto_refresh_ms or 0 }}"
+    data-health-url="{{ health_api_url }}"
+    data-health-poll-ms="{{ health_refresh_ms }}"
+    style="
+        --screen-width: {{ ui_config.screen_width }}px;
+        --screen-height: {{ ui_config.screen_height }}px;
+        --base-font-size: {{ ui_config.base_font_size }}px;
+        --title-font-size: {{ ui_config.title_font_size }}px;
+        --status-font-size: {{ ui_config.status_font_size }}px;
+        --button-font-size: {{ ui_config.button_font_size }}px;
+        --touch-target: {{ ui_config.touch_target }}px;
+    "
+>
+    <main class="device-shell" aria-label="AI Vision Assistant">
+        <section class="device-panel">
+            {% block content %}{% endblock %}
+        </section>
+    </main>
+
+    <script type="module" src="{{ url_for('static', filename='js/app.js') }}"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

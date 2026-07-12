@@ -1,0 +1,15 @@
+<header class="panel-header{% if panel_header_class %} {{ panel_header_class }}{% endif %}">
+    <div class="header-copy">
+        <p class="header-title">{{ panel_title }}</p>
+        <p class="header-subtitle">{{ panel_subtitle }}</p>
+    </div>
+    {% if panel_action_label %}
+    <form
+        {% if panel_action_method %}method="{{ panel_action_method }}"{% endif %}
+        {% if panel_action_url %}action="{{ panel_action_url }}"{% endif %}
+        class="header-action-form"
+    >
+        <button type="submit" class="header-capture-link">{{ panel_action_label }}</button>
+    </form>
+    {% endif %}
+</header>

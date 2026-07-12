@@ -1,0 +1,18 @@
+<footer class="kiosk-footer{% if footer_class %} {{ footer_class }}{% endif %}">
+    {% for action in footer_actions %}
+    <form
+        {% if action.method %}method="{{ action.method }}"{% endif %}
+        {% if action.action %}action="{{ action.action }}"{% endif %}
+        class="{{ action.form_class }}"
+        {% if action.form_aria_hidden %}aria-hidden="true"{% endif %}
+    >
+        <button
+            type="{{ action.type or 'submit' }}"
+            class="{{ action.button_class }}"
+            {% if action.disabled %}disabled{% endif %}
+        >
+            {{ action.label }}
+        </button>
+    </form>
+    {% endfor %}
+</footer>

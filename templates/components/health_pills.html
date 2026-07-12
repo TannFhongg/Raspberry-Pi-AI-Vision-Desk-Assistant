@@ -1,0 +1,7 @@
+<div class="system-health-bar kiosk-health-bar{% if health_bar_class %} {{ health_bar_class }}{% endif %}" aria-label="Device health" data-health-bar>
+    <span class="health-pill health-pill-overall" data-label="SYS" data-health-overall data-status="{{ health_summary.overall.status }}" title="{{ health_summary.overall.message }}">SYS</span>
+    <span class="health-pill" data-label="CPU" data-health-cpu data-status="{{ health_summary.cpu.status }}" title="{{ health_summary.cpu.message }}">CPU</span>
+    <span class="health-pill" data-label="RAM" data-health-memory data-status="{{ health_summary.memory.status }}" title="{{ health_summary.memory.message }}">RAM</span>
+    <span class="health-pill" data-label="WIFI" data-health-network data-status="{{ health_summary.network.status }}" title="{{ health_summary.network.message }}">WIFI</span>
+    <span class="health-pill" data-label="CAM" data-health-camera data-status="{{ health_summary.camera.status }}" title="{{ health_summary.camera.message }}">CAM</span>
+</div>

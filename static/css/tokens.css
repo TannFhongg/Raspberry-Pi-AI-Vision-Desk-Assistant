@@ -1,0 +1,66 @@
+:root {
+    --shell-outer: #20132f;
+    --panel-gray: #c4c4c4;
+    --card-white: #ffffff;
+    --text-dark: #111111;
+    --text-soft: #333333;
+    --line-soft: rgba(17, 17, 17, 0.12);
+    --mode-blue: #1f6bff;
+    --mode-blue-dark: #1753c7;
+    --mode-blue-bright: #2d9cff;
+    --mode-blue-logo: #1f46ff;
+    --success-green: #0da252;
+    --error-red: #bf3030;
+    --warning-amber: #b57b00;
+    --shadow-strong: 0 22px 48px rgba(0, 0, 0, 0.32);
+    --focus-ring: #fff16a;
+
+    --color-page-background: #ffffff;
+    --color-surface: #ffffff;
+    --color-surface-muted: #d9d9d9;
+    --color-surface-panel: #c4c4c4;
+    --color-primary: #2d9cff;
+    --color-primary-strong: #1f6bff;
+    --color-primary-dark: #1753c7;
+    --color-text: #111111;
+    --color-text-secondary: #333333;
+    --color-success: #0da252;
+    --color-warning: #b57b00;
+    --color-error: #bf3030;
+    --color-unavailable: #5c6773;
+
+    --font-family-body: Verdana, Tahoma, "Trebuchet MS", sans-serif;
+    --font-family-display: "Arial Narrow", "Liberation Sans Narrow", "Helvetica Neue", sans-serif;
+    --font-weight-regular: 600;
+    --font-weight-strong: 800;
+    --font-weight-heavy: 900;
+    --line-height-tight: 1;
+    --line-height-body: 1.35;
+    --line-height-copy: 1.3;
+
+    --space-2xs: 4px;
+    --space-xs: 8px;
+    --space-sm: 12px;
+    --space-md: 16px;
+    --space-lg: 24px;
+    --space-xl: 32px;
+    --space-2xl: 40px;
+    --section-gap: 24px;
+    --page-padding-x: 24px;
+    --page-padding-y: 20px;
+
+    --radius-shell: 30px;
+    --radius-panel: 24px;
+    --radius-card: 34px;
+    --radius-card-md: 30px;
+    --radius-card-sm: 24px;
+    --radius-pill: 999px;
+    --radius-preview: 34px;
+    --border-strong: 3px;
+    --divider-strong: 4px;
+    --touch-target-min: 48px;
+    --health-pill-height: 50px;
+    --health-pill-width: 118px;
+    --footer-button-width: 164px;
+    --footer-button-height: 54px;
+}

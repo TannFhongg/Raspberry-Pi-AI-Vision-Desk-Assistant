@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+
+{% block title %}VisionDesk Setup{% endblock %}
+
+{% block content %}
+<div class="sr-only" aria-live="polite">
+    Device setup wizard. Current step: {{ setup_state.current_step if setup_state else 'wifi' }}.
+</div>
+
+{% with panel_title='Device Setup', panel_subtitle='Configure Wi-Fi, OpenAI, camera, and GPIO before first use.', panel_action_label='Back' if setup_can_exit else '', panel_action_url=url_for('index'), panel_action_method='get' %}
+{% include "components/panel_header.html" %}
+{% endwith %}
+
+<div class="setup-step-bar" aria-label="Setup progress">
+    {% for step_name in ["wifi", "openai", "camera", "gpio", "finish"] %}
+    <span class="setup-step-pill{% if setup_state and setup_state.current_step == step_name %} setup-step-pill-active{% endif %}">
+        {{ step_name|replace("_", " ")|title }}
+    </span>
+    {% endfor %}
+</div>
+
+<section class="content-box setup-box" aria-label="Device setup">
+    <div class="setup-scroll">
+        {% if setup_finish_message %}
+        <div class="setup-banner setup-banner-warning">{{ setup_finish_message }}</div>
+        {% endif %}
+
+        <article class="setup-card{% if setup_state and setup_state.current_step == 'wifi' %} setup-card-current{% endif %}">
+            <div class="setup-card-head">
+                <div>
+                    <p class="section-title">1. Wi-Fi</p>
+                    <p class="setup-card-copy">Scan nearby SSIDs, or enter one manually for hidden networks.</p>
+                </div>
+                <span class="setup-status setup-status-{{ setup_state.wifi.connect_status if setup_state else 'idle' }}">{{ setup_state.wifi.connect_status|upper if setup_state else 'IDLE' }}</span>
+            </div>
+            <div class="setup-actions-row">
+                <form method="post" action="{{ url_for('setup_wifi_scan') }}" class="setup-inline-form">
+                    <button type="submit" class="secondary-action-link">Scan Wi-Fi</button>
+                </form>
+            </div>
+            {% if setup_state and setup_state.wifi.message %}
+            <p class="setup-feedback">{{ setup_state.wifi.message }}</p>
+            {% endif %}
+            <form method="post" action="{{ url_for('setup_wifi_connect') }}" class="setup-form">
+                <label class="setup-label">
+                    <span>Nearby networks</span>
+                    <select name="ssid" class="setup-input">
+                        <option value="">Select a scanned SSID</option>
+                        {% for network in setup_state.wifi.available_networks if setup_state %}
+                        <option value="{{ network.ssid }}" {% if setup_state.wifi.ssid == network.ssid %}selected{% endif %}>
+                            {{ network.ssid }} {% if network.signal is not none %}({{ network.signal }}%){% endif %}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label class="setup-label">
+                    <span>Manual SSID</span>
+                    <input type="text" name="manual_ssid" class="setup-input" value="" placeholder="Use for hidden networks">
+                </label>
+                <label class="setup-label">
+                    <span>Connection name</span>
+                    <input type="text" name="connection_name" class="setup-input" value="{{ setup_state.wifi.connection_name if setup_state else '' }}" placeholder="Defaults to SSID">
+                </label>
+                <label class="setup-label">
+                    <span>Wi-Fi password</span>
+                    <input type="password" name="password" class="setup-input" value="" placeholder="Leave blank for open networks">
+                </label>
+                <button type="submit" class="mode-button mode-button-capture">Connect Wi-Fi</button>
+            </form>
+        </article>
+
+        <article class="setup-card{% if setup_state and setup_state.current_step == 'openai' %} setup-card-current{% endif %}">
+            <div class="setup-card-head">
+                <div>
+                    <p class="section-title">2. OpenAI API Key</p>
+                    <p class="setup-card-copy">Save the key into the local `.env` file and verify connectivity.</p>
+                </div>
+                <span class="setup-status setup-status-{{ setup_state.openai.status if setup_state else 'idle' }}">{{ setup_state.openai.status|upper if setup_state else 'IDLE' }}</span>
+            </div>
+            {% if setup_state and setup_state.openai.message %}
+            <p class="setup-feedback">{{ setup_state.openai.message }}</p>
+            {% endif %}
+            <form method="post" action="{{ url_for('setup_openai_key') }}" class="setup-form">
+                <label class="setup-label">
+                    <span>OPENAI_API_KEY</span>
+                    <input type="password" name="openai_api_key" class="setup-input" value="" placeholder="Paste your API key">
+                </label>
+                <button type="submit" class="mode-button mode-button-capture">Save And Verify Key</button>
+            </form>
+        </article>
+
+        <article class="setup-card{% if setup_state and setup_state.current_step == 'camera' %} setup-card-current{% endif %}">
+            <div class="setup-card-head">
+                <div>
+                    <p class="section-title">3. Camera Test</p>
+                    <p class="setup-card-copy">Live preview uses the existing preview service; run a one-shot capture diagnostic when ready.</p>
+                </div>
+                <span class="setup-status setup-status-{{ setup_state.camera.status if setup_state else 'idle' }}">{{ setup_state.camera.status|upper if setup_state else 'IDLE' }}</span>
+            </div>
+            {% if setup_state and setup_state.camera.message %}
+            <p class="setup-feedback">{{ setup_state.camera.message }}</p>
+            {% endif %}
+            <div class="setup-preview-wrap">
+                <img
+                    src="{{ live_preview_url }}"
+                    alt="Live camera feed"
+                    class="preview-image"
+                    data-live-preview-image="true"
+                    data-live-preview-base-url="{{ live_preview_base_url }}"
+                    data-live-preview-refresh-ms="{{ live_preview_refresh_ms }}"
+                >
+            </div>
+            <form method="post" action="{{ url_for('setup_camera_test') }}" class="setup-inline-form">
+                <button type="submit" class="mode-button mode-button-capture">Run Camera Test</button>
+            </form>
+        </article>
+
+        <article class="setup-card{% if setup_state and setup_state.current_step == 'gpio' %} setup-card-current{% endif %}">
+            <div class="setup-card-head">
+                <div>
+                    <p class="section-title">4. GPIO Button Test</p>
+                    <p class="setup-card-copy">Press each configured button once while the temporary verifier is running.</p>
+                </div>
+                <span class="setup-status setup-status-{{ setup_state.gpio.status if setup_state else 'idle' }}">{{ setup_state.gpio.status|upper if setup_state else 'IDLE' }}</span>
+            </div>
+            {% if setup_state and setup_state.gpio.message %}
+            <p class="setup-feedback">{{ setup_state.gpio.message }}</p>
+            {% endif %}
+            <div class="setup-actions-row">
+                <form method="post" action="{{ url_for('setup_gpio_test_start') }}" class="setup-inline-form">
+                    <button type="submit" class="secondary-action-link">Start GPIO Test</button>
+                </form>
+                <form method="post" action="{{ url_for('setup_gpio_test_stop') }}" class="setup-inline-form">
+                    <button type="submit" class="secondary-action-link">Stop GPIO Test</button>
+                </form>
+            </div>
+            <div class="setup-button-list" role="list">
+                {% for button in setup_state.gpio.required if setup_state %}
+                <div class="setup-button-row" role="listitem">
+                    <span>{{ {
+                        'capture': 'Capture Button',
+                        'mode_read_text': 'Read Text Button',
+                        'mode_summarize_document': 'Summarize Document Button',
+                        'mode_analyze_image': 'Analyze Image Button',
+                        'mode_professional_assistant': 'Professional Assistant Button',
+                        'mode_solve_problem': 'Solve Problem Button',
+                        'back': 'Back Button'
+                    }[button.label] }}</span>
+                    <span class="setup-button-pill{% if button.pressed %} setup-button-pill-pass{% endif %}">
+                        GPIO{{ button.pin }}{% if button.pressed %} OK{% endif %}
+                    </span>
+                </div>
+                {% endfor %}
+            </div>
+        </article>
+
+        <article class="setup-card{% if setup_state and setup_state.current_step == 'finish' %} setup-card-current{% endif %}">
+            <div class="setup-card-head">
+                <div>
+                    <p class="section-title">5. Finish Setup</p>
+                    <p class="setup-card-copy">You can finish with warnings, but they must be acknowledged first.</p>
+                </div>
+                <span class="setup-status{% if setup_has_warnings %} setup-status-fail{% else %} setup-status-pass{% endif %}">
+                    {% if setup_has_warnings %}WARNINGS{% else %}READY{% endif %}
+                </span>
+            </div>
+            {% if setup_has_warnings %}
+            <div class="setup-warning-list">
+                {% for warning in setup_warnings %}
+                <p class="setup-warning-item">{{ warning }}</p>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="setup-feedback">All setup checks have passed. Finishing will restart the app.</p>
+            {% endif %}
+            <form method="post" action="{{ url_for('setup_finish') }}" class="setup-form">
+                {% if setup_has_warnings %}
+                <label class="setup-checkbox">
+                    <input type="checkbox" name="warnings_acknowledged" value="1" {% if setup_state and setup_state.warnings_acknowledged %}checked{% endif %}>
+                    <span>I understand the warnings and want to finish setup anyway.</span>
+                </label>
+                {% endif %}
+                <button type="submit" class="mode-button mode-button-capture">Finish Setup And Restart</button>
+            </form>
+        </article>
+    </div>
+</section>
+{% endblock %}

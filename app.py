@@ -97,6 +97,16 @@ PROCESSED_IMAGE_PATH = PRIVATE_CURRENT_PATH / "processed.jpg"
 OFFLINE_RETRY_QUEUE_PATH = PRIVATE_DATA_PATH / "retry_queue.json"
 OFFLINE_RETRY_STORAGE_PATH = PRIVATE_RETRY_PATH
 VALID_SCREENS = {"home", "camera", "processing", "result", "error", "history", "history_detail", "setup"}
+SCREEN_TEMPLATE_NAMES = {
+    "home": "home.html",
+    "camera": "camera.html",
+    "processing": "processing.html",
+    "result": "result.html",
+    "setup": "setup.html",
+    "error": "error.html",
+    "history": "history.html",
+    "history_detail": "history_detail.html",
+}
 MJPEG_BOUNDARY = "frame"
 SETUP_STEPS = ("wifi", "openai", "camera", "gpio", "finish")
 SETUP_GPIO_LABELS = {
@@ -725,7 +735,7 @@ def first_boot_setup_gate():
 @app.get("/")
 def index():
     """Render the current device screen."""
-    return render_template("index.html", **_build_template_context())
+    return _render_screen_template()
 
 
 @app.get("/camera")
@@ -738,7 +748,7 @@ def camera_screen():
     )
     if not selected_mode and str(state.get("screen", "home")).strip().lower() == "home":
         return redirect(url_for("index"))
-    return render_template("index.html", **_build_template_context())
+    return _render_screen_template()
 
 
 @app.get("/processing")
@@ -752,7 +762,7 @@ def processing_screen():
     screen = _resolve_render_screen(state.get("screen", "home"), selected_mode)
     if screen != "processing":
         return redirect(url_for("index"))
-    return render_template("index.html", **_build_template_context(screen_override="processing"))
+    return _render_screen_template(screen_override="processing")
 
 
 @app.get("/result")
@@ -766,13 +776,13 @@ def result_screen():
     screen = _resolve_render_screen(state.get("screen", "home"), selected_mode)
     if screen != "result":
         return redirect(url_for("index"))
-    return render_template("index.html", **_build_template_context(screen_override="result"))
+    return _render_screen_template(screen_override="result")
 
 
 @app.get("/setup")
 def setup():
     """Render the first-boot setup wizard."""
-    return render_template("index.html", **_build_template_context(screen_override="setup"))
+    return _render_screen_template(screen_override="setup")
 
 
 @app.get("/admin/setup")
@@ -946,7 +956,7 @@ def delete_all_data():
 @app.get("/history")
 def history():
     """Render the recent-results screen."""
-    return render_template("index.html", **_build_template_context(screen_override="history"))
+    return _render_screen_template(screen_override="history")
 
 
 @app.get("/history/<entry_id>")
@@ -955,10 +965,7 @@ def history_detail(entry_id: str):
     entry = _get_result_history_entry(entry_id)
     if entry is None:
         return redirect(url_for("history"))
-    return render_template(
-        "index.html",
-        **_build_template_context(screen_override="history_detail", history_entry=entry),
-    )
+    return _render_screen_template(screen_override="history_detail", history_entry=entry)
 
 
 @app.post("/setup/wifi/scan")
@@ -1794,6 +1801,24 @@ def _resolve_render_screen(raw_screen: Any, selected_mode: str) -> str:
     if screen in {"home", "camera"} and selected_mode:
         return "camera"
     return screen
+
+
+def _template_name_for_screen(screen: str) -> str:
+    """Return the template path that renders the requested UI screen."""
+    return SCREEN_TEMPLATE_NAMES.get(screen, "home.html")
+
+
+def _render_screen_template(
+    *,
+    screen_override: str | None = None,
+    history_entry: dict[str, Any] | None = None,
+):
+    """Render the resolved screen using the shared template system."""
+    context = _build_template_context(
+        screen_override=screen_override,
+        history_entry=history_entry,
+    )
+    return render_template(_template_name_for_screen(context["screen"]), **context)
 
 
 def _build_ui_state_api_payload() -> dict[str, Any]:

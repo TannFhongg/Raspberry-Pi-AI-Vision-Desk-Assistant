@@ -141,6 +141,75 @@ class PrivacyFirstAppTests(unittest.TestCase):
         self.assertIn(b"PROFESSIONAL ASSISTANT", response.data)
         self.assertIn(b"CAMERA ANALYSIS", response.data)
 
+    def test_home_route_renders_shared_home_screen_shell(self) -> None:
+        client = app_module.app.test_client()
+
+        response = client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"What would you like to do?", response.data)
+        self.assertIn(b'type="module"', response.data)
+        self.assertIn(b"/static/js/app.js", response.data)
+        self.assertEqual(response.data.count(b'aria-label="VisionDesk"'), 1)
+        self.assertEqual(response.data.count(b"data-health-bar"), 1)
+
+    def test_core_screen_routes_render_shared_header_once(self) -> None:
+        client = app_module.app.test_client()
+        route_expectations = (
+            (
+                "/",
+                b"What would you like to do?",
+                lambda: app_module._reset_ui_state(clear_saved_result=False),
+            ),
+            (
+                "/camera",
+                b"CURRENT MODE",
+                lambda: app_module._set_selected_mode("read_text"),
+            ),
+            (
+                "/processing",
+                b"Processing",
+                lambda: app_module._write_device_state(
+                    DeviceState.PROCESSING,
+                    selected_mode="read_text",
+                    selected_mode_internal="document_reader",
+                    detail="Sending to AI...",
+                    current_step=1,
+                    progress_state="ANALYZING",
+                ),
+            ),
+            (
+                "/result",
+                b"BACK",
+                lambda: app_module._write_device_state(
+                    DeviceState.DONE,
+                    selected_mode="read_text",
+                    selected_mode_internal="document_reader",
+                    answer="Ready",
+                    status="Answer Ready",
+                ),
+            ),
+        )
+
+        for route, expected_copy, prepare_state in route_expectations:
+            with self.subTest(route=route):
+                prepare_state()
+                response = client.get(route)
+                self.assertEqual(response.status_code, 200)
+                self.assertIn(expected_copy, response.data)
+                self.assertEqual(response.data.count(b'aria-label="VisionDesk"'), 1)
+                self.assertEqual(response.data.count(b"data-health-bar"), 1)
+
+    def test_home_route_keeps_mode_selection_forms_on_shared_route(self) -> None:
+        client = app_module.app.test_client()
+
+        response = client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data.count(b'action="/mode/select"'), len(app_module.UI_MODE_OPTIONS))
+        self.assertIn(b'name="mode" value="read_text"', response.data)
+        self.assertIn(b'name="mode" value="solve_problem"', response.data)
+
     def test_camera_route_renders_camera_screen(self) -> None:
         client = app_module.app.test_client()
         app_module._set_selected_mode("read_text")
@@ -151,6 +220,8 @@ class PrivacyFirstAppTests(unittest.TestCase):
         self.assertIn(b"CAPTURE", response.data)
         self.assertIn(b"BACK", response.data)
         self.assertIn(b"/camera/live-stream.mjpg", response.data)
+        self.assertIn(b'action="/analyze"', response.data)
+        self.assertIn(b'action="/back"', response.data)
 
     def test_processing_route_renders_mode_specific_processing_screen(self) -> None:
         client = app_module.app.test_client()
@@ -231,6 +302,7 @@ class PrivacyFirstAppTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"PROFESSIONAL ASSISTANT", response.data)
+        self.assertIn(b'action="/back"', response.data)
 
     def test_result_route_renders_image_preview_from_private_route(self) -> None:
         client = app_module.app.test_client()
@@ -249,6 +321,46 @@ class PrivacyFirstAppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"/result-preview/latest.jpg", response.data)
         self.assertIn(b"Captured image", response.data)
+
+    def test_shared_header_pills_render_server_health_status_values(self) -> None:
+        client = app_module.app.test_client()
+        self.live_preview.recent_frame = True
+        self.health_status_path.write_text(
+            json.dumps(
+                {
+                    "updated_at": "2026-07-11T10:10:00",
+                    "overall_status": "warning",
+                    "cpu": {
+                        "status": "warning",
+                        "temperature_c": 73.4,
+                        "message": "CPU temperature is 73.4 C.",
+                    },
+                    "memory": {
+                        "status": "pass",
+                        "used_percent": 42.0,
+                        "message": "Memory usage is 42.0%.",
+                    },
+                    "network": {
+                        "status": "fail",
+                        "message": "Internet connection check failed.",
+                    },
+                    "camera": {
+                        "status": "unknown",
+                        "message": "Camera probe has not run yet.",
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        response = client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'data-health-overall data-status="fail"', response.data)
+        self.assertIn(b'data-health-cpu data-status="warning"', response.data)
+        self.assertIn(b'data-health-memory data-status="pass"', response.data)
+        self.assertIn(b'data-health-network data-status="fail"', response.data)
+        self.assertIn(b'data-health-camera data-status="pass"', response.data)
 
     def test_result_route_formats_ai_answer_markup(self) -> None:
         client = app_module.app.test_client()
@@ -279,12 +391,53 @@ class PrivacyFirstAppTests(unittest.TestCase):
         )
 
         response = client.get("/result")
-        css = Path("static/style.css").read_text(encoding="utf-8")
+        manifest_css = Path("static/style.css").read_text(encoding="utf-8")
+        result_css = Path("static/css/screens/result.css").read_text(encoding="utf-8")
+        components_css = Path("static/css/components.css").read_text(encoding="utf-8")
+        utilities_css = Path("static/css/utilities.css").read_text(encoding="utf-8")
 
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"result-answer-scroll", response.data)
-        self.assertIn(".result-answer-scroll", css)
-        self.assertIn("overflow-y: auto;", css)
+        self.assertIn('screens/result.css', manifest_css)
+        self.assertIn(".result-answer-scroll", result_css)
+        self.assertIn(".kiosk-scroll-area", components_css)
+        self.assertIn("overflow-y: auto;", components_css)
+        self.assertIn(".kiosk-scroll-area", utilities_css)
+
+    def test_core_screen_templates_extend_base_template(self) -> None:
+        for template_name in ("home.html", "camera.html", "processing.html", "result.html"):
+            template_path = Path("templates") / template_name
+            template_text = template_path.read_text(encoding="utf-8")
+            with self.subTest(template=template_name):
+                self.assertIn('{% extends "base.html" %}', template_text)
+
+    def test_core_screen_templates_keep_semantic_heading_markup(self) -> None:
+        template_expectations = {
+            "home.html": '<h1 class="home-title">',
+            "camera.html": '<h1 class="sr-only">Camera</h1>',
+            "processing.html": '<h1 class="processing-heading"',
+            "result.html": '<h1 class="result-answer-title">',
+        }
+
+        for template_name, heading_markup in template_expectations.items():
+            template_path = Path("templates") / template_name
+            template_text = template_path.read_text(encoding="utf-8")
+            with self.subTest(template=template_name):
+                self.assertIn(heading_markup, template_text)
+
+    def test_shared_component_templates_exist_for_core_kiosk_shell(self) -> None:
+        component_names = (
+            "components/header.html",
+            "components/health_pills.html",
+            "components/clock.html",
+            "components/mode_pill.html",
+            "components/footer_actions.html",
+        )
+
+        for component_name in component_names:
+            component_path = Path("templates") / component_name
+            with self.subTest(component=component_name):
+                self.assertTrue(component_path.is_file())
 
     def test_result_route_shows_empty_answer_state(self) -> None:
         client = app_module.app.test_client()

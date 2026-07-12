@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+
+{% block title %}VisionDesk Processing{% endblock %}
+
+{% block content %}
+<div class="sr-only" aria-live="polite">
+    Processing screen. Current mode: {{ processing_view.mode_label }}. Status: {{ processing_view.status_message }}.
+</div>
+
+<section class="kiosk-layout processing-layout" aria-label="Processing screen">
+    {% with header_class='processing-header', health_bar_class='processing-status-list', divider_class='processing-divider' %}
+    {% include "components/header.html" %}
+    {% endwith %}
+
+    <section class="processing-main">
+        <article class="processing-card" aria-label="Pipeline progress">
+            <div class="processing-copy">
+                <h1 class="processing-heading" data-processing-title>{{ processing_view.title }}</h1>
+                <p class="processing-subtitle" data-processing-subtitle>{{ processing_view.subtitle }}</p>
+            </div>
+            <div class="processing-progress-list" aria-label="Processing steps">
+                {% for step in progress_steps %}
+                <div class="processing-progress-step processing-progress-step-{{ step.state }} progress-step progress-step-{{ step.state }}" data-progress-step="{{ loop.index0 }}">
+                    <span class="processing-progress-indicator" aria-label="{{ step.state_label }}"></span>
+                    <span class="processing-progress-label">{{ step.label }}</span>
+                </div>
+                {% endfor %}
+            </div>
+        </article>
+
+        <aside class="processing-sidebar" aria-label="Processing details">
+            {% with clock_class='processing-clock' %}
+            {% include "components/clock.html" %}
+            {% endwith %}
+
+            <div class="processing-side-divider kiosk-section-divider" aria-hidden="true"></div>
+
+            <section class="processing-mode-section" aria-label="Current mode">
+                <div class="processing-mode-row">
+                    <h2 class="processing-side-heading">CURRENT MODE</h2>
+                    {% with mode_label=processing_view.mode_label, mode_pill_class='processing-mode-pill kiosk-mode-pill-block', mode_pill_extra_attrs='data-processing-mode-value' %}
+                    {% include "components/mode_pill.html" %}
+                    {% endwith %}
+                </div>
+            </section>
+
+            <div class="processing-side-divider kiosk-section-divider" aria-hidden="true"></div>
+
+            <section class="processing-status-section" aria-label="Live processing status">
+                <h2 class="processing-status-label">LIVE STATUS</h2>
+                <div class="processing-status-card" data-processing-status-card data-status="{{ processing_view.status_tone }}">
+                    <p class="processing-status-text" data-processing-status-text>{{ processing_view.status_message }}</p>
+                </div>
+            </section>
+        </aside>
+    </section>
+
+    {% set footer_actions = [
+        {
+            'method': '',
+            'action': '',
+            'form_class': 'processing-action-form kiosk-action-form',
+            'button_class': 'processing-action-button processing-action-button-primary kiosk-button kiosk-action-button',
+            'label': 'CAPTURE',
+            'type': 'button',
+            'disabled': True,
+            'form_aria_hidden': True
+        },
+        {
+            'method': '',
+            'action': '',
+            'form_class': 'processing-action-form processing-action-form-back kiosk-action-form kiosk-action-form-back',
+            'button_class': 'processing-action-button kiosk-button kiosk-action-button',
+            'label': 'BACK',
+            'type': 'button',
+            'disabled': True,
+            'form_aria_hidden': True
+        }
+    ] %}
+    {% with footer_class='kiosk-footer-split' %}
+    {% include "components/footer_actions.html" %}
+    {% endwith %}
+</section>
+{% endblock %}

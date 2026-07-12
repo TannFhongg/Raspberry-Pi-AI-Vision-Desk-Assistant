@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}VisionDesk History Detail{% endblock %}
+
+{% block content %}
+{% with panel_title=history_entry.mode_label, panel_subtitle=history_entry.created_at, panel_action_label='Recent Results', panel_action_url=url_for('history'), panel_action_method='get', panel_header_class='panel-header-compact' %}
+{% include "components/panel_header.html" %}
+{% endwith %}
+{% include "components/panel_health_pills.html" %}
+
+<section class="content-box answer-box answer-box-postcapture" aria-label="Assistant output">
+    <div class="answer-content-wrap answer-content-wrap-full">
+        <div class="history-detail-meta">
+            <span class="history-detail-chip">{{ history_entry.created_at }}</span>
+            {% if history_entry.camera_backend_used %}
+            <span class="history-detail-chip">{{ history_entry.camera_backend_used|upper }}</span>
+            {% endif %}
+            {% if history_entry.camera_resolution %}
+            <span class="history-detail-chip">{{ history_entry.camera_resolution[0] }}x{{ history_entry.camera_resolution[1] }}</span>
+            {% endif %}
+            {% if history_entry.model_used %}
+            <span class="history-detail-chip">{{ history_entry.model_used }}</span>
+            {% endif %}
+            {% if history_entry.duration_seconds is not none %}
+            <span class="history-detail-chip">{{ "%.1f"|format(history_entry.duration_seconds) }}s</span>
+            {% endif %}
+            {% if history_entry.retry_status %}
+            <span class="history-detail-chip">{{ history_entry.retry_status }}</span>
+            {% endif %}
+        </div>
+        <div class="answer-area" tabindex="0">
+            <div class="answer-copy">{{ answer_html }}</div>
+        </div>
+        <div class="answer-toolbar">
+            <form method="post" action="{{ url_for('delete_all_data') }}" class="secondary-action-form delete-all-form">
+                <input type="hidden" name="confirm" value="delete-all">
+                <input type="hidden" name="confirm_stage" value="">
+                <button type="submit" class="secondary-action-link">Delete All Data</button>
+            </form>
+        </div>
+    </div>
+</section>
+{% endblock %}

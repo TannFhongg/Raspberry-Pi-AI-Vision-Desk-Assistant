@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}VisionDesk Error{% endblock %}
+
+{% block content %}
+{% with panel_title=selected_mode_label if has_mode_selected else default_capture_mode_label, panel_subtitle=error or display_status, panel_action_label='Capture Again', panel_action_url=url_for('retry'), panel_action_method='post', panel_header_class='panel-header-compact' %}
+{% include "components/panel_header.html" %}
+{% endwith %}
+{% include "components/panel_health_pills.html" %}
+
+<section class="content-box answer-box answer-box-postcapture" aria-label="Assistant output">
+    <div class="status-panel error-state">
+        <div class="status-copy">
+            <p class="error-title">{{ error or "Something went wrong" }}</p>
+            <p class="error-detail">{{ detail }}</p>
+            {% if show_debug and error_detail %}
+            <p class="debug-text">{{ error_detail }}</p>
+            {% endif %}
+        </div>
+    </div>
+</section>
+{% endblock %}

@@ -1,25 +1,24 @@
-<section class="result-layout" aria-label="Result screen">
-    <header class="home-topbar result-topbar">
-        <div class="home-brand" aria-label="VisionDesk">
-            <span class="home-brand-word">Vision</span><span class="home-brand-word home-brand-word-accent">Desk</span>
-        </div>
-        <div class="system-health-bar home-status-list result-status-list" aria-label="Device health" data-health-bar>
-            <span class="health-pill health-pill-overall" data-label="SYS" data-health-overall data-status="{{ health_summary.overall.status }}" title="{{ health_summary.overall.message }}">SYS</span>
-            <span class="health-pill" data-label="CPU" data-health-cpu data-status="{{ health_summary.cpu.status }}" title="{{ health_summary.cpu.message }}">CPU</span>
-            <span class="health-pill" data-label="RAM" data-health-memory data-status="{{ health_summary.memory.status }}" title="{{ health_summary.memory.message }}">RAM</span>
-            <span class="health-pill" data-label="WIFI" data-health-network data-status="{{ health_summary.network.status }}" title="{{ health_summary.network.message }}">WIFI</span>
-            <span class="health-pill" data-label="CAM" data-health-camera data-status="{{ health_summary.camera.status }}" title="{{ health_summary.camera.message }}">CAM</span>
-        </div>
-    </header>
+{% extends "base.html" %}
 
-    <div class="home-divider result-divider" aria-hidden="true"></div>
+{% block title %}VisionDesk Result{% endblock %}
+
+{% block content %}
+<div class="sr-only" aria-live="polite">
+    Assistant screen. Status: {{ display_status }}. {% if has_mode_selected %}Mode: {{ selected_mode_label }}.{% endif %} Live Camera Feed hidden after capture.
+</div>
+<div class="sr-only" data-live-preview-route="{{ live_preview_url }}">Live Camera Feed</div>
+
+<section class="kiosk-layout result-layout" aria-label="Result screen">
+    {% with header_class='result-header', health_bar_class='result-status-list', divider_class='result-divider' %}
+    {% include "components/header.html" %}
+    {% endwith %}
 
     <section class="result-main">
         <div class="result-panels">
             <aside class="result-preview-column" aria-label="Captured image and additional detail">
                 <article class="result-preview-card" aria-label="Captured image">
                     <div class="result-preview-frame">
-                        <p class="result-preview-title">Captured</p>
+                        <h2 class="result-preview-title">Captured</h2>
                         {% if has_result_preview %}
                         <img src="{{ result_preview_url }}" alt="Captured image" class="result-preview-image">
                         {% else %}
@@ -32,7 +31,7 @@
 
                 <article class="result-support-card kiosk-surface-card" aria-label="Additional detail" data-has-content="{{ 'true' if result_detail_view.has_content else 'false' }}">
                     <div class="result-support-head">
-                        <p class="result-support-title">{{ result_detail_view.title }}</p>
+                        <h2 class="result-support-title">{{ result_detail_view.title }}</h2>
                     </div>
                     <div class="result-support-scroll kiosk-scroll-area" tabindex="0">
                         <div class="answer-copy result-support-copy">{{ result_detail_view.body_html }}</div>
@@ -41,13 +40,15 @@
             </aside>
 
             <aside class="result-detail-column" aria-label="Result details">
-                <span class="result-mode-pill kiosk-pill">{{ result_view.mode_label }}</span>
+                {% with mode_label=result_view.mode_label, mode_pill_class='result-mode-pill kiosk-mode-pill-block' %}
+                {% include "components/mode_pill.html" %}
+                {% endwith %}
 
                 <div class="result-side-divider kiosk-divider" aria-hidden="true"></div>
 
                 <article class="result-answer-card kiosk-surface-card" data-result-state="{{ result_view.state }}">
                     <div class="result-answer-head">
-                        <p class="result-answer-title">{{ result_view.title }}</p>
+                        <h1 class="result-answer-title">{{ result_view.title }}</h1>
                         {% if result_view.note %}
                         <p class="result-answer-note">{{ result_view.note }}</p>
                         {% endif %}
@@ -60,9 +61,18 @@
         </div>
     </section>
 
-    <footer class="result-footer">
-        <form method="post" action="{{ url_for('back') }}" class="result-action-form">
-            <button type="submit" class="result-action-button kiosk-button">BACK</button>
-        </form>
-    </footer>
+    {% set footer_actions = [
+        {
+            'method': 'post',
+            'action': url_for('back'),
+            'form_class': 'result-action-form kiosk-action-form',
+            'button_class': 'result-action-button kiosk-button kiosk-action-button',
+            'label': 'BACK',
+            'type': 'submit',
+            'disabled': False,
+            'form_aria_hidden': False
+        }
+    ] %}
+    {% include "components/footer_actions.html" %}
 </section>
+{% endblock %}

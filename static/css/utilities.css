@@ -1,0 +1,82 @@
+.answer-copy p,
+.answer-copy ul,
+.answer-copy ol {
+    margin: 0 0 12px;
+}
+
+.answer-copy ul,
+.answer-copy ol {
+    padding-left: 1.25em;
+}
+
+.answer-copy li + li {
+    margin-top: 6px;
+}
+
+.answer-empty {
+    color: var(--text-soft);
+}
+
+.preview-placeholder {
+    color: var(--text-soft);
+    font-size: calc(var(--base-font-size) * 0.72);
+    font-weight: 700;
+    text-align: center;
+}
+
+.kiosk-scroll-area::-webkit-scrollbar,
+.answer-area::-webkit-scrollbar,
+.setup-scroll::-webkit-scrollbar,
+.history-list::-webkit-scrollbar {
+    width: 8px;
+}
+
+.kiosk-scroll-area::-webkit-scrollbar-thumb,
+.answer-area::-webkit-scrollbar-thumb,
+.setup-scroll::-webkit-scrollbar-thumb,
+.history-list::-webkit-scrollbar-thumb {
+    background: rgba(31, 107, 255, 0.48);
+    border-radius: 999px;
+}
+
+.kiosk-scroll-area::-webkit-scrollbar-track,
+.answer-area::-webkit-scrollbar-track,
+.setup-scroll::-webkit-scrollbar-track,
+.history-list::-webkit-scrollbar-track {
+    background: rgba(17, 17, 17, 0.08);
+    border-radius: 999px;
+}
+
+.header-capture-link:focus-visible,
+.mode-button:focus-visible,
+.kiosk-button:focus-visible,
+.kiosk-scroll-area:focus-visible,
+.answer-area:focus-visible,
+.secondary-action-link:focus-visible,
+.reanalyze-button:focus-visible {
+    outline: 3px solid var(--focus-ring);
+    outline-offset: 2px;
+}
+
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+    }
+}

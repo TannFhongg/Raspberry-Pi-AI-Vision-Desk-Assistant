@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block title %}VisionDesk History{% endblock %}
+
+{% block content %}
+{% with panel_title='Recent Results', panel_subtitle=display_status, panel_action_label='Back', panel_action_url=url_for('index'), panel_action_method='get', panel_header_class='panel-header-compact' %}
+{% include "components/panel_header.html" %}
+{% endwith %}
+{% include "components/panel_health_pills.html" %}
+
+<section class="content-box answer-box answer-box-postcapture" aria-label="Assistant output">
+    <div class="history-list" role="list">
+        {% if recent_results %}
+        {% for entry in recent_results %}
+        <a class="history-card" href="{{ url_for('history_detail', entry_id=entry.id) }}" role="listitem">
+            <span class="history-card-body">
+            <span class="history-card-head">
+                <span class="history-card-title">{{ entry.mode_label }}</span>
+                <span class="history-card-time">{{ entry.created_at }}</span>
+            </span>
+            <span class="history-card-summary">{{ entry.summary }}</span>
+            <span class="history-card-meta">
+                {% if entry.camera_backend_used %}{{ entry.camera_backend_used|upper }}{% endif %}
+                {% if entry.camera_resolution %} · {{ entry.camera_resolution[0] }}x{{ entry.camera_resolution[1] }}{% endif %}
+                {% if entry.model_used %} · {{ entry.model_used }}{% endif %}
+                {% if entry.retry_status %} · {{ entry.retry_status }}{% endif %}
+            </span>
+            </span>
+        </a>
+        {% endfor %}
+        {% else %}
+        <p class="answer-empty">No saved results yet.</p>
+        {% endif %}
+    </div>
+</section>
+{% endblock %}
