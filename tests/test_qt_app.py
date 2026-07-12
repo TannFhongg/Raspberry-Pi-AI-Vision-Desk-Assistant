@@ -90,7 +90,7 @@ def test_app_controller_reports_backend_busy_while_camera_screen_is_open(qapp, t
     controller.shutdown()
 
 
-def test_pipeline_capture_lock_blocks_parallel_requests(qapp, tmp_path) -> None:
+def test_pipeline_capture_lock_blocks_parallel_requests(qapp, qtbot, tmp_path) -> None:
     runtime = build_runtime(tmp_path, setup_completed=True)
     controller = PipelineController(runtime, result_image_store=CachedImageStore())
     spy = QSignalSpy(controller.payloadReady)
@@ -106,8 +106,8 @@ def test_pipeline_capture_lock_blocks_parallel_requests(qapp, tmp_path) -> None:
 
     assert first_started is True
     assert second_started is False
-    assert spy.wait(3000)
-    assert len(spy) == 1
+    qtbot.waitUntil(lambda: spy.count() == 1, timeout=3000)
+    assert spy.count() == 1
     controller.close()
     runtime.shutdown()
 
@@ -130,7 +130,7 @@ def test_qml_main_loads_with_mock_runtime(qapp, tmp_path) -> None:
     controller.shutdown()
 
 
-def test_gpio_signal_delivery_reaches_qt_main_thread(qapp, tmp_path) -> None:
+def test_gpio_signal_delivery_reaches_qt_main_thread(qapp, qtbot, tmp_path) -> None:
     runtime = build_runtime(tmp_path, setup_completed=True)
     controller = GPIOController(runtime, get_device_state=lambda: "READY")
     spy = QSignalSpy(controller.captureRequested)
@@ -139,8 +139,7 @@ def test_gpio_signal_delivery_reaches_qt_main_thread(qapp, tmp_path) -> None:
     worker.start()
     worker.join(timeout=1.0)
 
-    if len(spy) == 0:
-        assert spy.wait(1000)
-    assert len(spy) == 1
+    qtbot.waitUntil(lambda: spy.count() == 1, timeout=1000)
+    assert spy.count() == 1
     controller.stop()
     runtime.shutdown()

@@ -113,6 +113,10 @@ class SetupController(QObject):
         return str(self._state.get("wifi", {}).get("message", ""))
 
     @Property(str, notify=stateChanged)
+    def wifiScanStatus(self) -> str:
+        return str(self._state.get("wifi", {}).get("scan_status", "idle"))
+
+    @Property(str, notify=stateChanged)
     def wifiStatus(self) -> str:
         return str(self._state.get("wifi", {}).get("connect_status", "idle"))
 

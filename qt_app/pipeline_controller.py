@@ -271,6 +271,7 @@ class PipelineController(QObject):
         worker.finished.connect(thread.quit)
         thread.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(self._clear_worker_refs)
         self._thread = thread
         self._worker = worker
         thread.start()
@@ -279,9 +280,17 @@ class PipelineController(QObject):
     def close(self) -> None:
         """Stop any active worker thread."""
         thread = self._thread
-        if thread is not None and thread.isRunning():
-            thread.quit()
-            thread.wait(1000)
+        self._thread = None
+        self._worker = None
+        if thread is None:
+            return
+        try:
+            if thread.isRunning():
+                thread.quit()
+                thread.wait(1000)
+        except RuntimeError:
+            # Qt already deleted the thread object after a normal worker shutdown.
+            return
 
     def analyze_offline_retry_entry(self, entry) -> PipelineResult:
         """Re-run analysis for a deferred offline retry queue entry."""
@@ -418,3 +427,8 @@ class PipelineController(QObject):
                 progress_error_step=resolved_error_step,
             )
         )
+
+    @Slot()
+    def _clear_worker_refs(self) -> None:
+        self._thread = None
+        self._worker = None

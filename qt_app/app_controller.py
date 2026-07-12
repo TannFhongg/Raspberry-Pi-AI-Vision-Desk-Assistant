@@ -239,6 +239,10 @@ class AppController(QObject):
         return self.setup_controller.wifiMessage
 
     @Property(str, notify=viewStateChanged)
+    def setupWifiScanStatus(self) -> str:
+        return self.setup_controller.wifiScanStatus
+
+    @Property(str, notify=viewStateChanged)
     def setupWifiStatus(self) -> str:
         return self.setup_controller.wifiStatus
 

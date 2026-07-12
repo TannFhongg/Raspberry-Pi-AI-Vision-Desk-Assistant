@@ -6,17 +6,25 @@ Item {
     required property QtObject theme
     required property var controller
 
+    readonly property bool setupMode: root.controller.currentScreen === "setup"
+    readonly property real activeImplicitWidth: root.setupMode
+                                            ? setupRow.implicitWidth
+                                            : contentRow.implicitWidth
+    readonly property real activeImplicitHeight: root.setupMode
+                                             ? setupRow.implicitHeight
+                                             : contentRow.implicitHeight
     readonly property real contentScale: Math.min(
         1.0,
-        width / Math.max(1, contentRow.implicitWidth)
+        width / Math.max(1, root.activeImplicitWidth)
     )
 
-    implicitHeight: Math.ceil(contentRow.implicitHeight * contentScale)
+    implicitHeight: Math.ceil(root.activeImplicitHeight * contentScale)
     height: implicitHeight
     clip: true
 
     Row {
         id: contentRow
+        visible: !root.setupMode
         spacing: 24
         scale: root.contentScale
         transformOrigin: Item.TopLeft
@@ -44,6 +52,35 @@ Item {
 
         ClockCard {
             theme: root.theme
+        }
+    }
+
+    Row {
+        id: setupRow
+        visible: root.setupMode
+        spacing: 26
+        scale: root.contentScale
+        transformOrigin: Item.TopLeft
+        x: 0
+        y: Math.max(0, Math.round((root.height - (height * scale)) / 2))
+
+        BrandLogo {
+            theme: root.theme
+        }
+
+        Repeater {
+            model: root.controller.healthMetricsModel.count
+
+            delegate: SetupHeaderPill {
+                required property int index
+                property var itemData: root.controller.healthMetricsModel.get(index)
+                visible: (itemData.key || "") !== "camera"
+                theme: root.theme
+                label: itemData.label || ""
+                value: itemData.value || ""
+                state: itemData.state || "unavailable"
+                message: itemData.message || ""
+            }
         }
     }
 }

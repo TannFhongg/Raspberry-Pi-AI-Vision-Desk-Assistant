@@ -1,6 +1,19 @@
 import QtQuick
 
-QtObject {
+Item {
+    id: root
+    visible: false
+
+    FontLoader {
+        id: bodyFontLoader
+        source: Qt.resolvedUrl("../fonts/Roboto.ttf")
+    }
+
+    FontLoader {
+        id: displayFontLoader
+        source: Qt.resolvedUrl("../fonts/RobotoCondensed.ttf")
+    }
+
     readonly property color shellOuter: "#20132f"
     readonly property color pageBackground: "#ffffff"
     readonly property color surface: "#ffffff"
@@ -22,8 +35,8 @@ QtObject {
     readonly property color errorFill: "#fdeaea"
     readonly property color errorCardFill: "#fff4f4"
 
-    readonly property string bodyFont: "Verdana"
-    readonly property string displayFont: "Arial Narrow"
+    readonly property string bodyFont: bodyFontLoader.name || displayFontLoader.name || ""
+    readonly property string displayFont: displayFontLoader.name || bodyFontLoader.name || ""
     readonly property int weightRegular: 600
     readonly property int weightStrong: 800
     readonly property int weightHeavy: 900
@@ -48,4 +61,3 @@ QtObject {
     readonly property int footerButtonWidth: 164
     readonly property int footerButtonHeight: 54
 }
-
