@@ -11,10 +11,12 @@ from typing import Any
 from vision.enhance_text import enhance_text_image
 from vision.perspective import four_point_transform
 from vision.screen_detect import detect_screen_region, draw_detected_region
+from visiondesk.paths import resolve_visiondesk_paths
 
-DEFAULT_INPUT_PATH = "data/private/current/captured.jpg"
-DEFAULT_OUTPUT_PATH = "data/private/current/processed.jpg"
-DEFAULT_DEBUG_DIR = "debug"
+_DEFAULT_PATHS = resolve_visiondesk_paths()
+DEFAULT_INPUT_PATH = str(_DEFAULT_PATHS.private_current_path / "captured.jpg")
+DEFAULT_OUTPUT_PATH = str(_DEFAULT_PATHS.private_current_path / "processed.jpg")
+DEFAULT_DEBUG_DIR = str(_DEFAULT_PATHS.debug_dir)
 DEFAULT_MAX_DIMENSION = 1600
 PREPROCESS_METADATA_SUFFIX = ".meta.json"
 OPENCV_INSTALL_HINT = (
@@ -71,7 +73,7 @@ def preprocess_image(
         image = cv2.imread(str(source), cv2.IMREAD_COLOR)
         if image is None:
             raise ImagePreprocessError(
-                f"Could not load image from '{source}'. Make sure data/private/current/captured.jpg exists and is a valid image."
+                f"Could not load image from '{source}'. Make sure the captured image exists and is a valid image."
             )
 
         original_height, original_width = image.shape[:2]
@@ -323,7 +325,7 @@ def _validate_input_path(input_path: str) -> Path:
     source = Path(input_path)
     if not source.exists():
         raise ImagePreprocessError(
-            f"No input image found at '{input_path}'. Capture an image first so data/private/current/captured.jpg exists."
+            f"No input image found at '{input_path}'. Capture an image first so a source image exists."
         )
     if not source.is_file():
         raise ImagePreprocessError(

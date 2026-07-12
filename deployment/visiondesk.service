@@ -1,0 +1,38 @@
+[Unit]
+Description=VisionDesk Native Qt Frontend
+After=systemd-user-sessions.service network-online.target graphical.target lightdm.service
+Wants=network-online.target graphical.target
+RequiresMountsFor=/opt/visiondesk /var/lib/visiondesk /var/log/visiondesk /etc/visiondesk
+ConditionPathExists=/opt/visiondesk/current/.venv/bin/python
+ConditionPathExists=/etc/visiondesk/visiondesk.env
+StartLimitIntervalSec=30
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=visiondesk
+Group=visiondesk
+WorkingDirectory=/opt/visiondesk/current
+EnvironmentFile=/etc/visiondesk/visiondesk.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/visiondesk/current/deployment/visiondesk-launch.sh
+Restart=on-failure
+RestartSec=3
+TimeoutStartSec=90
+TimeoutStopSec=20
+KillSignal=SIGTERM
+UMask=0077
+SupplementaryGroups=video render input gpio dialout netdev
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+ReadWritePaths=/var/lib/visiondesk /var/log/visiondesk /etc/visiondesk
+
+[Install]
+WantedBy=graphical.target

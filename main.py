@@ -11,9 +11,11 @@ from ai.prompts import get_available_modes, normalize_mode
 from config import SettingsError, load_device_settings
 from pipeline import PipelineError, run_analyze, run_capture_analyze, run_preprocess
 from system import configure_logging
+from visiondesk.paths import resolve_visiondesk_paths
 
-CAPTURED_IMAGE_PATH = Path("data/private/current/captured.jpg")
-PROCESSED_IMAGE_PATH = Path("data/private/current/processed.jpg")
+_DEFAULT_PATHS = resolve_visiondesk_paths()
+CAPTURED_IMAGE_PATH = _DEFAULT_PATHS.private_current_path / "captured.jpg"
+PROCESSED_IMAGE_PATH = _DEFAULT_PATHS.private_current_path / "processed.jpg"
 LOGGER = logging.getLogger(__name__)
 
 
@@ -105,7 +107,7 @@ def build_parser(settings) -> argparse.ArgumentParser:
     parser.add_argument(
         "--skip-capture",
         action="store_true",
-        help="Reuse data/private/current/captured.jpg instead of capturing a new image first.",
+        help="Reuse the current captured image instead of capturing a new image first.",
     )
     return parser
 
@@ -121,7 +123,7 @@ def main() -> int:
         )
         return 1
 
-    load_dotenv()
+    load_dotenv(_DEFAULT_PATHS.env_file_path, override=False)
     try:
         settings = load_device_settings()
     except SettingsError as exc:
@@ -140,7 +142,7 @@ def main() -> int:
         if args.skip_capture:
             if not CAPTURED_IMAGE_PATH.is_file():
                 raise PipelineError(
-                    "No captured image found. Please copy a test image to data/private/current/captured.jpg or run camera capture first."
+                    "No captured image found. Please copy a test image to the current capture path or run camera capture first."
                 )
 
             print(f"Using existing captured image: {CAPTURED_IMAGE_PATH}")

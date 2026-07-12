@@ -2,32 +2,37 @@
 
 ## Before the demo
 
-- Install dependencies with `pip install -r requirements.txt`
-- Start the native app with `python -m qt_app.main --windowed --mock-hardware` for desktop demoing or `python -m qt_app.main` on device
-- Confirm `data/latest_result.txt`, `data/result_history.json`, and `data/private/retry_queue.json` are writable
-- Confirm the header metrics render and the main window loads at the expected display size
+- install dependencies with `pip install -r requirements.txt`
+- start the native app with `python -m qt_app.main --windowed --mock-hardware` for desktop demoing or use `visiondesk.service` on an installed device
+- confirm `data/latest_result.txt`, `data/result_history.json`, and `data/private/retry_queue.json` are writable in development
+- if demoing an installed appliance, confirm `/var/lib/visiondesk/latest_result.txt`, `/var/lib/visiondesk/result_history.json`, and `/var/lib/visiondesk/private/retry_queue.json` are writable
+- confirm the header metrics render and the main window loads at the expected display size
 
 ## Core flow to show
 
-- Open `Home`
-- Select a mode
-- Show the camera preview
-- Trigger a capture
-- Wait through `Processing`
-- Show the final `Result`
-- Open `Recent Results`
-- Open one `History Detail` item
+- open `Home`
+- select a mode
+- show the camera preview
+- trigger a capture
+- wait through `Processing`
+- show the final `Result`
+- open `Recent Results`
+- open one `History Detail` item
 
 ## Setup flow to show
 
-- Scan nearby Wi-Fi networks
-- Connect to Wi-Fi
-- Verify an OpenAI key
-- Finish setup and explain that the app restarts into the native kiosk flow
+- show the welcome/device-check step
+- scan nearby Wi-Fi networks
+- connect to Wi-Fi
+- verify an OpenAI key
+- run the camera test
+- run the GPIO test
+- finish setup and explain that the app restarts directly into the native kiosk flow
 
 ## Privacy and reliability talking points
 
-- History is text-only by default
-- Retry media stays private under `data/private/`
-- `Clear History` and `Delete All Data` are separate actions
-- Corrupt persisted history is quarantined and recovered safely
+- history is text-only by default
+- retry media stays private under the shared private storage tree
+- `Clear History`, `User-Data Reset`, `Configuration Reset`, and `Full Factory Reset` are separate actions
+- corrupt persisted setup or history state is quarantined and recovered safely
+- production secrets live in `/etc/visiondesk/visiondesk.env`; user data lives under `/var/lib/visiondesk/`

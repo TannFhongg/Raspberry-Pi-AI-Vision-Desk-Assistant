@@ -11,6 +11,7 @@ from unittest.mock import patch
 from hardware.button import GPIOButtonTrigger
 from hardware.status import DeviceState
 from pipeline.runner import PipelineResult
+from visiondesk.paths import resolve_visiondesk_paths
 
 
 class GPIOButtonTriggerTests(unittest.TestCase):
@@ -203,8 +204,9 @@ class GPIOButtonTriggerTests(unittest.TestCase):
         called_kwargs = run_capture_analyze.call_args.kwargs
         captured_path = Path(called_kwargs["captured_path"])
         processed_path = Path(called_kwargs["processed_path"])
-        self.assertEqual(captured_path.parent, Path("data/private/current"))
-        self.assertEqual(processed_path.parent, Path("data/private/current"))
+        expected_current_dir = resolve_visiondesk_paths().private_current_path
+        self.assertEqual(captured_path.parent, expected_current_dir)
+        self.assertEqual(processed_path.parent, expected_current_dir)
         self.assertTrue(captured_path.name.startswith("captured-"))
         self.assertTrue(processed_path.name.startswith("processed-"))
 

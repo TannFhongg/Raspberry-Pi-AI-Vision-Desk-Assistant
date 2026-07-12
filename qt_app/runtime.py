@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 import logging
 import os
@@ -24,6 +24,7 @@ from system import (
     safe_unlink,
 )
 from system.device_setup import has_configured_openai_key
+from system.factory_reset import resume_pending_factory_reset
 from system.result_history import ResultHistoryStore
 from system.setup_flow import SetupStateStore
 from system.ui_catalog import (
@@ -34,6 +35,8 @@ from system.ui_catalog import (
     default_ui_mode_for_internal,
     resolve_mode_pair,
 )
+from visiondesk.paths import VisionDeskPaths, resolve_visiondesk_paths
+from visiondesk.version import __version__
 
 from qt_app.mock_backend import MockLivePreviewService
 
@@ -44,12 +47,18 @@ LOGGER = logging.getLogger(__name__)
 class RuntimePaths:
     """Filesystem paths used by the Qt frontend runtime."""
 
-    setup_state_path: Path = Path("data/setup_state.json")
-    health_status_path: Path = Path("data/health_status.json")
-    latest_result_path: Path = Path("data/latest_result.txt")
-    result_history_path: Path = Path("data/result_history.json")
-    private_data_path: Path = Path("data/private")
-    env_file_path: Path = Path(".env")
+    path_mode: str = field(default_factory=lambda: resolve_visiondesk_paths().path_mode)
+    repo_root: Path = field(default_factory=lambda: resolve_visiondesk_paths().repo_root)
+    releases_dir: Path = field(default_factory=lambda: resolve_visiondesk_paths().releases_dir)
+    setup_state_path: Path = field(default_factory=lambda: resolve_visiondesk_paths().setup_state_path)
+    health_status_path: Path = field(default_factory=lambda: resolve_visiondesk_paths().health_status_path)
+    latest_result_path: Path = field(default_factory=lambda: resolve_visiondesk_paths().latest_result_path)
+    result_history_path: Path = field(default_factory=lambda: resolve_visiondesk_paths().result_history_path)
+    private_data_path: Path = field(default_factory=lambda: resolve_visiondesk_paths().private_data_path)
+    env_file_path: Path = field(default_factory=lambda: resolve_visiondesk_paths().env_file_path)
+    config_path: Path = field(default_factory=lambda: resolve_visiondesk_paths().config_path)
+    logs_dir: Path = field(default_factory=lambda: resolve_visiondesk_paths().logs_dir)
+    app_root: Path = field(default_factory=lambda: resolve_visiondesk_paths().app_root)
 
     @property
     def private_current_path(self) -> Path:
@@ -64,12 +73,61 @@ class RuntimePaths:
         return self.private_data_path / "quarantine"
 
     @property
+    def private_cache_path(self) -> Path:
+        return self.private_data_path / "cache"
+
+    @property
     def offline_retry_queue_path(self) -> Path:
         return self.private_data_path / "retry_queue.json"
+
+    @property
+    def data_dir(self) -> Path:
+        return self.private_data_path.parent
+
+    @property
+    def reset_marker_path(self) -> Path:
+        return self.data_dir / "factory_reset_state.json"
+
+    def to_visiondesk_paths(self) -> VisionDeskPaths:
+        """Convert the runtime-specific view into the shared path resolver schema."""
+        current_release_link = self.app_root if self.path_mode == "production" else self.repo_root
+        return VisionDeskPaths(
+            path_mode=self.path_mode,
+            repo_root=self.repo_root,
+            app_root=self.app_root,
+            releases_dir=self.releases_dir,
+            current_release_link=current_release_link,
+            config_dir=self.config_path.parent,
+            config_path=self.config_path,
+            data_dir=self.data_dir,
+            logs_dir=self.logs_dir,
+            env_file_path=self.env_file_path,
+        )
+
+    @classmethod
+    def from_environment(cls) -> "RuntimePaths":
+        """Build runtime paths from the active environment."""
+        paths = resolve_visiondesk_paths()
+        return cls(
+            path_mode=paths.path_mode,
+            repo_root=paths.repo_root,
+            releases_dir=paths.releases_dir,
+            setup_state_path=paths.setup_state_path,
+            health_status_path=paths.health_status_path,
+            latest_result_path=paths.latest_result_path,
+            result_history_path=paths.result_history_path,
+            private_data_path=paths.private_data_path,
+            env_file_path=paths.env_file_path,
+            config_path=paths.config_path,
+            logs_dir=paths.logs_dir,
+            app_root=paths.app_root,
+        )
 
 
 class VisionDeskRuntime:
     """Own shared settings, services, and persistence used by the Qt app."""
+
+    RESTART_EXIT_CODE = 75
 
     def __init__(
         self,
@@ -79,11 +137,20 @@ class VisionDeskRuntime:
         settings=None,
         purge_on_startup: bool | None = None,
     ) -> None:
-        load_dotenv()
         self.mock_hardware = bool(mock_hardware)
-        self.paths = paths or RuntimePaths()
-        self.settings = settings or load_device_settings()
-        configure_logging(settings=self.settings)
+        initial_paths = paths or RuntimePaths.from_environment()
+        load_dotenv(initial_paths.env_file_path, override=False)
+        self.paths = paths or RuntimePaths.from_environment()
+        self.settings = settings or load_device_settings(config_path=self.paths.config_path)
+        recovered_reset = resume_pending_factory_reset(
+            paths=self.paths.to_visiondesk_paths(),
+            settings=self.settings,
+        )
+        if recovered_reset is not None:
+            self.settings = load_device_settings(config_path=self.paths.config_path)
+        configure_logging(settings=self.settings, logs_dir=self.paths.logs_dir)
+        self.app_version = __version__
+        self._requested_exit_code = 0
         self.default_capture_internal_mode = self.settings.ai.default_mode
         self.default_capture_mode = default_ui_mode_for_internal(
             self.default_capture_internal_mode,
@@ -116,9 +183,11 @@ class VisionDeskRuntime:
             state_path=self.paths.setup_state_path,
             quarantine_dir=self.paths.private_quarantine_path,
             timestamp_provider=self.timestamp,
+            app_version=self.app_version,
             setup_steps=SETUP_STEPS,
             build_gpio_requirements=self.build_setup_gpio_requirements,
-            setup_is_complete=self.setup_is_complete,
+            legacy_setup_is_complete=self._legacy_setup_is_complete,
+            legacy_setup_completed_at=lambda: self.settings.setup.completed_at,
             current_wifi_ssid=lambda: self.settings.network.wifi.ssid,
             current_wifi_connection_name=lambda: self.settings.network.wifi.connection_name,
             current_wifi_auto_connect=lambda: self.settings.network.wifi.auto_connect,
@@ -162,9 +231,14 @@ class VisionDeskRuntime:
 
         return datetime.now().isoformat(timespec="seconds")
 
+    def _legacy_setup_is_complete(self) -> bool:
+        return bool(getattr(self.settings.setup, "completed", False))
+
     def setup_is_complete(self) -> bool:
         """Return True when first-boot setup is complete."""
-        return bool(getattr(self.settings.setup, "completed", False))
+        if hasattr(self, "setup_state_store"):
+            return self.setup_state_store.is_setup_complete()
+        return self._legacy_setup_is_complete()
 
     def resolve_mode_pair(self, selected_mode: Any, selected_mode_internal: Any = None) -> tuple[str, str]:
         """Resolve the UI mode id plus internal pipeline mode."""
@@ -218,6 +292,21 @@ class VisionDeskRuntime:
         self.settings.setup.completed_at = completion_timestamp
         self.settings.setup.version = 1
         self.settings.localization.locale = "en"
+
+    def mark_setup_incomplete(self) -> None:
+        """Apply in-memory setup reset so the next launch re-enters the wizard."""
+        self.settings.setup.completed = False
+        self.settings.setup.completed_at = ""
+        self.settings.setup.version = 0
+
+    def request_restart(self, exit_code: int | None = None) -> None:
+        """Ask the Qt entrypoint to exit with a restart-triggering code."""
+        self._requested_exit_code = self.RESTART_EXIT_CODE if exit_code is None else int(exit_code)
+
+    @property
+    def requested_exit_code(self) -> int:
+        """Return the pending process exit code requested by the runtime."""
+        return self._requested_exit_code
 
     def load_health_snapshot(self) -> dict[str, Any] | None:
         """Return the most recent health snapshot from memory or disk."""
@@ -330,7 +419,6 @@ class VisionDeskRuntime:
             safe_unlink(self.paths.offline_retry_queue_path)
         self.result_history_store.clear()
         safe_unlink(self.paths.latest_result_path)
-        self.setup_state_store.clear_state()
         safe_rmtree(self.paths.private_quarantine_path)
         self.result_history_store.invalidate_cache()
         self.paths.private_data_path.mkdir(parents=True, exist_ok=True)

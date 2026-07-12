@@ -6,7 +6,7 @@ from typing import Any
 
 from ai.modes import normalize_mode
 
-SETUP_STEPS = ("wifi", "openai", "camera", "gpio", "finish")
+SETUP_STEPS = ("welcome", "wifi", "openai", "camera", "gpio", "finish")
 SETUP_GPIO_LABELS = {
     "capture": "Capture Button",
     "mode_read_text": "Read Text Button",

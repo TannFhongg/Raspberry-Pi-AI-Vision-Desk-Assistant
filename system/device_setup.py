@@ -59,6 +59,23 @@ def upsert_env_value(env_path: str | Path, key: str, value: str) -> Path:
     return written_path
 
 
+def remove_env_value(env_path: str | Path, key: str) -> Path:
+    """Atomically remove a KEY=value line while preserving other content."""
+    destination = Path(env_path)
+    if not destination.is_file():
+        return destination
+
+    lines = destination.read_text(encoding="utf-8").splitlines()
+    prefix = f"{key}="
+    next_lines = [line for line in lines if line.lstrip().startswith("#") or not line.startswith(prefix)]
+    written_path = atomic_write_text(destination, "\n".join(next_lines).rstrip() + "\n", encoding="utf-8")
+    try:
+        os.chmod(written_path, 0o600)
+    except OSError:
+        pass
+    return written_path
+
+
 def scan_wifi_networks(
     *,
     runner: CommandRunner | None = None,

@@ -10,6 +10,9 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 from pipeline.runner import PipelineResult
+from visiondesk.paths import resolve_visiondesk_paths
+
+_DEFAULT_PATHS = resolve_visiondesk_paths()
 
 
 def build_mock_preview_bytes(
@@ -98,8 +101,8 @@ def build_mock_pipeline_result(mode: str, *, answer: str | None = None) -> Pipel
         "3. This path is safe for QML and controller tests."
     )
     return PipelineResult(
-        captured_path=Path("data/private/current/mock-captured.jpg"),
-        processed_path=Path("data/private/current/mock-processed.jpg"),
+        captured_path=_DEFAULT_PATHS.private_current_path / "mock-captured.jpg",
+        processed_path=_DEFAULT_PATHS.private_current_path / "mock-processed.jpg",
         answer=normalized_answer,
         mode=mode,
         camera_backend_used="mock-camera",
@@ -109,4 +112,3 @@ def build_mock_pipeline_result(mode: str, *, answer: str | None = None) -> Pipel
         model_used="mock-visiondesk",
         duration_seconds=0.42,
     )
-

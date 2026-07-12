@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from typing import Any
 
 from PySide6.QtCore import QObject, Property, QCoreApplication, QDateTime, QTimer, Qt, Signal, Slot
@@ -17,6 +18,12 @@ from qt_app.navigation_controller import NavigationController
 from qt_app.pipeline_controller import PipelineController
 from qt_app.runtime import VisionDeskRuntime
 from qt_app.setup_controller import SetupController
+from system.factory_reset import (
+    CONFIGURATION_RESET,
+    FULL_FACTORY_RESET,
+    USER_DATA_RESET,
+    perform_factory_reset,
+)
 from system.ui_catalog import MODE_SELECTED_DETAIL, READY_DETAIL, UI_MODE_OPTIONS
 from system.ui_presenters import build_processing_view, build_result_detail_view, build_result_view
 
@@ -37,6 +44,8 @@ class AppController(QObject):
     errorDetailChanged = Signal()
     setupReadyToFinishChanged = Signal()
     viewStateChanged = Signal()
+    deviceActionsChanged = Signal()
+    factoryResetWorkerFinished = Signal()
 
     def __init__(
         self,
@@ -62,6 +71,12 @@ class AppController(QObject):
         self._mode_cards_model.set_items(list(UI_MODE_OPTIONS))
         self._camera_store = camera_store
         self._result_store = result_store
+        self._device_actions_busy = False
+        self._device_actions_status = ""
+        self._device_actions_tone = "neutral"
+        self._factory_reset_result = None
+        self._factory_reset_error = ""
+        self.factoryResetWorkerFinished.connect(self._handle_factory_reset_worker_finished)
 
         self.camera_controller = CameraController(runtime, image_store=camera_store, parent=self)
         self.pipeline_controller = PipelineController(runtime, result_image_store=result_store, parent=self)
@@ -103,6 +118,10 @@ class AppController(QObject):
     @Property(QObject, constant=True)
     def gpioRequirementsModel(self) -> DictListModel:
         return self.setup_controller.gpioRequirementsModel
+
+    @Property(QObject, constant=True)
+    def deviceChecksModel(self) -> DictListModel:
+        return self.setup_controller.deviceChecksModel
 
     @Property(QObject, constant=True)
     def historyEntriesModel(self) -> DictListModel:
@@ -241,6 +260,26 @@ class AppController(QObject):
         return self.setup_controller.maskedOpenAiKey
 
     @Property(str, notify=viewStateChanged)
+    def setupMaskedApiKey(self) -> str:
+        return self.setup_controller.maskedApiKey
+
+    @Property(bool, notify=viewStateChanged)
+    def setupHasApiKey(self) -> bool:
+        return self.setup_controller.hasApiKey
+
+    @Property(bool, notify=viewStateChanged)
+    def setupApiKeyVerified(self) -> bool:
+        return self.setup_controller.apiKeyVerified
+
+    @Property(str, notify=viewStateChanged)
+    def setupDeviceChecksStatus(self) -> str:
+        return self.setup_controller.deviceChecksStatus
+
+    @Property(str, notify=viewStateChanged)
+    def setupDeviceChecksMessage(self) -> str:
+        return self.setup_controller.deviceChecksMessage
+
+    @Property(str, notify=viewStateChanged)
     def setupWifiMessage(self) -> str:
         return self.setup_controller.wifiMessage
 
@@ -269,6 +308,10 @@ class AppController(QObject):
         return self.setup_controller.cameraStatus
 
     @Property(str, notify=viewStateChanged)
+    def setupCameraAutofocusMode(self) -> str:
+        return self.setup_controller.cameraAutofocusMode
+
+    @Property(str, notify=viewStateChanged)
     def setupGpioMessage(self) -> str:
         return self.setup_controller.gpioMessage
 
@@ -279,6 +322,18 @@ class AppController(QObject):
     @Property(bool, notify=viewStateChanged)
     def setupGpioActive(self) -> bool:
         return self.setup_controller.gpioActive
+
+    @Property(bool, notify=deviceActionsChanged)
+    def deviceActionsBusy(self) -> bool:
+        return self._device_actions_busy
+
+    @Property(str, notify=deviceActionsChanged)
+    def deviceActionsStatus(self) -> str:
+        return self._device_actions_status
+
+    @Property(str, notify=deviceActionsChanged)
+    def deviceActionsTone(self) -> str:
+        return self._device_actions_tone
 
     @Property(str, notify=viewStateChanged)
     def historyState(self) -> str:
@@ -439,11 +494,66 @@ class AppController(QObject):
     def deleteAllData(self) -> None:
         if self.pipeline_controller.busy:
             return
-        self.history_controller.deleteAllData()
+        self.runFactoryReset(USER_DATA_RESET, False)
+
+    @Slot()
+    def runConfigurationReset(self) -> None:
+        self.runFactoryReset(CONFIGURATION_RESET, False)
+
+    @Slot(bool)
+    def runFullFactoryReset(self, removeWifiProfile: bool = False) -> None:
+        self.runFactoryReset(FULL_FACTORY_RESET, removeWifiProfile)
+
+    @Slot(str, bool)
+    def runFactoryReset(self, mode: str, removeWifiProfile: bool = False) -> None:
+        if self.pipeline_controller.busy or self._device_actions_busy:
+            return
+        normalized_mode = str(mode or "").strip().lower()
+        if normalized_mode not in {CONFIGURATION_RESET, USER_DATA_RESET, FULL_FACTORY_RESET}:
+            self._set_device_actions_state(
+                busy=False,
+                status="Unsupported device reset action.",
+                tone="error",
+            )
+            return
+
+        self._factory_reset_result = None
+        self._factory_reset_error = ""
+        self._set_device_actions_state(
+            busy=True,
+            status=self._factory_reset_start_message(normalized_mode, bool(removeWifiProfile)),
+            tone="active",
+        )
+        self.camera_controller.setActive(False)
+        self.health_controller.stop()
+        self.gpio_controller.stop()
+        worker = threading.Thread(
+            target=self._run_factory_reset_worker,
+            args=(normalized_mode, bool(removeWifiProfile)),
+            daemon=True,
+            name=f"factory-reset-{normalized_mode}",
+        )
+        worker.start()
 
     @Slot()
     def scanWifi(self) -> None:
         self.setup_controller.scanWifi()
+
+    @Slot()
+    def runSetupDeviceChecks(self) -> None:
+        self.setup_controller.runDeviceChecks()
+
+    @Slot()
+    def goToSetupNextStep(self) -> None:
+        self.setup_controller.goToNextStep()
+
+    @Slot()
+    def goToSetupPreviousStep(self) -> None:
+        self.setup_controller.goToPreviousStep()
+
+    @Slot(str)
+    def goToSetupStep(self, step: str) -> None:
+        self.setup_controller.goToStep(step)
 
     @Slot(str, str, str)
     def connectWifi(self, selectedSsid: str, manualSsid: str, password: str) -> None:
@@ -452,6 +562,10 @@ class AppController(QObject):
     @Slot(str)
     def verifyApiKey(self, apiKey: str) -> None:
         self.setup_controller.verifyApiKey(apiKey)
+
+    @Slot()
+    def clearApiKey(self) -> None:
+        self.setup_controller.clearApiKey()
 
     @Slot()
     def runCameraTest(self) -> None:
@@ -633,15 +747,102 @@ class AppController(QObject):
             write_latest_result_placeholder=False,
         )
 
+    def _handle_factory_reset_worker_finished(self) -> None:
+        summary = self._factory_reset_result
+        error_message = self._factory_reset_error
+        self._factory_reset_result = None
+        self._factory_reset_error = ""
+
+        if error_message:
+            self._set_device_actions_state(
+                busy=False,
+                status=error_message,
+                tone="error",
+            )
+            self.health_controller.start()
+            self.gpio_controller.restart_if_needed()
+            self._refresh_health_summary()
+            return
+
+        if summary is None:
+            self._set_device_actions_state(
+                busy=False,
+                status="Device action finished without a result.",
+                tone="error",
+            )
+            self.health_controller.start()
+            self.gpio_controller.restart_if_needed()
+            self._refresh_health_summary()
+            return
+
+        if summary.mode == USER_DATA_RESET:
+            self.runtime.result_history_store.invalidate_cache()
+            self.history_controller._clear_selected_entry()
+            self.history_controller.historyEntriesModel.clear()
+            self.history_controller._entry_lookup = {}
+            self.history_controller._set_history_state("empty", "No saved results yet.")
+            self._set_device_actions_state(
+                busy=False,
+                status="All local data deleted. Device is ready for a new capture.",
+                tone="success",
+            )
+            self.health_controller.start()
+            self.gpio_controller.restart_if_needed()
+            self._handle_delete_all_data_completed(self.deviceActionsStatus)
+            return
+
+        self.runtime.mark_setup_incomplete()
+        self.runtime.request_restart()
+        self._set_device_actions_state(
+            busy=False,
+            status="Reset complete. Restarting VisionDesk into Setup Wizard...",
+            tone="success",
+        )
+        QCoreApplication.quit()
+
     def _mark_camera_ready(self) -> None:
         if self.currentScreen == "camera":
             self._application_state_model.update(
                 application_state="CAMERA_READY",
                 display_status="Live preview ready. Capture when ready.",
                 updated_at=self.runtime.timestamp(),
+        )
+        self.viewStateChanged.emit()
+        self._refresh_health_summary()
+
+    def _run_factory_reset_worker(self, mode: str, remove_wifi_profile: bool) -> None:
+        try:
+            self._factory_reset_result = perform_factory_reset(
+                mode=mode,
+                paths=self.runtime.paths.to_visiondesk_paths(),
+                settings=self.runtime.settings,
+                remove_wifi_profile=remove_wifi_profile,
             )
-            self.viewStateChanged.emit()
-            self._refresh_health_summary()
+        except Exception as exc:  # pragma: no cover - defensive logging path
+            self._factory_reset_error = str(exc)
+        self.factoryResetWorkerFinished.emit()
+
+    def _set_device_actions_state(self, *, busy: bool, status: str, tone: str) -> None:
+        changed = (
+            busy != self._device_actions_busy
+            or status != self._device_actions_status
+            or tone != self._device_actions_tone
+        )
+        self._device_actions_busy = busy
+        self._device_actions_status = str(status or "")
+        self._device_actions_tone = str(tone or "neutral")
+        if changed:
+            self.deviceActionsChanged.emit()
+
+    @staticmethod
+    def _factory_reset_start_message(mode: str, remove_wifi_profile: bool) -> str:
+        if mode == CONFIGURATION_RESET:
+            return "Resetting configuration and returning to Setup Wizard..."
+        if mode == FULL_FACTORY_RESET:
+            if remove_wifi_profile:
+                return "Running full factory reset and removing the saved Wi-Fi profile..."
+            return "Running full factory reset..."
+        return "Clearing saved history, retry queue, and private media..."
 
     def _refresh_processing_view(self) -> None:
         self._processing_view = build_processing_view(

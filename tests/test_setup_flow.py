@@ -34,13 +34,25 @@ if PY_SIDE6_AVAILABLE:
 def build_runtime(tmp_path: Path, *, setup_completed: bool = False) -> VisionDeskRuntime:
     """Create an isolated runtime for setup-flow tests."""
     assert PY_SIDE6_AVAILABLE
+    config_template = Path("config/device.yaml").read_text(encoding="utf-8")
+    config_path = tmp_path / "device.yaml"
+    config_path.write_text(config_template, encoding="utf-8")
+    app_root = tmp_path / "app_root"
+    (app_root / "config").mkdir(parents=True, exist_ok=True)
+    (app_root / "config" / "device.yaml").write_text(config_template, encoding="utf-8")
     paths = RuntimePaths(
+        path_mode="development",
+        repo_root=tmp_path,
+        releases_dir=tmp_path / "releases",
         setup_state_path=tmp_path / "setup_state.json",
         health_status_path=tmp_path / "health_status.json",
         latest_result_path=tmp_path / "latest_result.txt",
         result_history_path=tmp_path / "result_history.json",
         private_data_path=tmp_path / "private",
         env_file_path=tmp_path / ".env",
+        config_path=config_path,
+        logs_dir=tmp_path / "logs",
+        app_root=app_root,
     )
     runtime = VisionDeskRuntime(
         mock_hardware=True,
@@ -53,6 +65,17 @@ def build_runtime(tmp_path: Path, *, setup_completed: bool = False) -> VisionDes
     runtime.settings.config_path = tmp_path / "device.yaml"
     runtime.settings.retention.purge_on_startup = False
     return runtime
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 is not installed")
+def test_setup_state_defaults_to_welcome_when_authoritative_file_is_missing(tmp_path) -> None:
+    runtime = build_runtime(tmp_path)
+
+    state = runtime.setup_state_store.load_state()
+
+    assert state["setup_complete"] is False
+    assert state["current_step"] == "welcome"
+    runtime.shutdown()
 
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 is not installed")
@@ -114,7 +137,7 @@ def test_run_setup_openai_key_rejects_invalid_keys(tmp_path) -> None:
 
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 is not installed")
-def test_finish_setup_marks_config_and_clears_setup_temp_state(tmp_path) -> None:
+def test_finish_setup_marks_config_and_persists_authoritative_setup_state(tmp_path) -> None:
     runtime = build_runtime(tmp_path)
     runtime.setup_state_store.write_state(
         {
@@ -128,7 +151,19 @@ def test_finish_setup_marks_config_and_clears_setup_temp_state(tmp_path) -> None
             "openai": {
                 "status": "pass",
                 "key_present": True,
+                "api_key_verified": True,
                 "message": "OpenAI reachable.",
+            },
+            "camera": {
+                "status": "pass",
+                "message": "Camera ready.",
+            },
+            "gpio": {
+                "status": "pass",
+                "message": "GPIO ready.",
+                "required": [{"label": "capture", "pin": 17, "pressed": True}],
+                "pressed_labels": ["capture"],
+                "all_pressed": True,
             },
         }
     )
@@ -146,7 +181,9 @@ def test_finish_setup_marks_config_and_clears_setup_temp_state(tmp_path) -> None
     assert updated_configs[0]["setup"]["completed"] is True
     assert updated_configs[0]["localization"]["locale"] == "en"
     assert len(completions) == 1
-    assert not runtime.paths.setup_state_path.exists()
+    persisted_state = runtime.setup_state_store.load_state()
+    assert persisted_state["setup_complete"] is True
+    assert persisted_state["app_version"] == runtime.app_version
     runtime.shutdown()
 
 
@@ -213,7 +250,19 @@ def test_setup_controller_finish_setup_emits_completion(qapp, qtbot, tmp_path, m
             "openai": {
                 "status": "pass",
                 "key_present": True,
+                "api_key_verified": True,
                 "message": "OpenAI is reachable.",
+            },
+            "camera": {
+                "status": "pass",
+                "message": "Camera ready.",
+            },
+            "gpio": {
+                "status": "pass",
+                "message": "GPIO ready.",
+                "required": [{"label": "capture", "pin": 17, "pressed": True}],
+                "pressed_labels": ["capture"],
+                "all_pressed": True,
             },
         }
     )

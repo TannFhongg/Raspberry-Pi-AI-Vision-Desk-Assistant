@@ -15,10 +15,12 @@ from config import load_device_settings
 from camera import CameraCaptureError, capture_image
 from system.storage import atomic_write_text
 from vision import ImagePreprocessError, preprocess_image, preprocess_output_matches
+from visiondesk.paths import resolve_visiondesk_paths
 
-DEFAULT_CAPTURED_PATH = Path("data/private/current/captured.jpg")
-DEFAULT_PROCESSED_PATH = Path("data/private/current/processed.jpg")
-DEFAULT_RESULT_PATH = Path("data/latest_result.txt")
+_DEFAULT_PATHS = resolve_visiondesk_paths()
+DEFAULT_CAPTURED_PATH = _DEFAULT_PATHS.private_current_path / "captured.jpg"
+DEFAULT_PROCESSED_PATH = _DEFAULT_PATHS.private_current_path / "processed.jpg"
+DEFAULT_RESULT_PATH = _DEFAULT_PATHS.latest_result_path
 TEXT_HEAVY_MODES = frozenset({"document_reader", "math_solver", "meeting_assistant"})
 VALID_SCREEN_OPTIMIZATIONS = ("auto", "on", "off")
 StatusCallback = Callable[[str], None]

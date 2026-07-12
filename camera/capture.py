@@ -16,8 +16,10 @@ from hardware.camera_config import (
     read_image_resolution,
     resolve_opencv_config,
 )
+from visiondesk.paths import resolve_visiondesk_paths
 
 VALID_BACKENDS = ("opencv",)
+DEFAULT_CAPTURE_OUTPUT_PATH = resolve_visiondesk_paths().private_current_path / "captured.jpg"
 OPENCV_INSTALL_HINT = (
     "OpenCV is not available. On Raspberry Pi OS, install it with: "
     "sudo apt install -y python3-opencv and create the virtual environment with: "
@@ -53,7 +55,7 @@ class CapturedFrame:
 
 
 def capture_image(
-    output_path: str = "data/private/current/captured.jpg",
+    output_path: str = str(DEFAULT_CAPTURE_OUTPUT_PATH),
     backend: str | None = None,
     camera_index: int | None = None,
     width: int | None = None,

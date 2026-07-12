@@ -9,6 +9,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 from config import DeviceSettings, load_device_settings
+from visiondesk.paths import resolve_visiondesk_paths
 
 APP_LOG_HANDLER_NAME = "vision-app-log"
 ERROR_LOG_HANDLER_NAME = "vision-error-log"
@@ -25,14 +26,15 @@ _ORIGINAL_THREAD_EXCEPTHOOK = threading.excepthook
 
 def configure_logging(
     settings: DeviceSettings | None = None,
-    logs_dir: str | Path = "logs",
+    logs_dir: str | Path | None = None,
 ) -> logging.Logger:
     """Configure root logging for file rotation plus console output."""
     resolved_settings = settings or load_device_settings()
     reliability = getattr(resolved_settings, "reliability", None)
     if reliability is None:
         reliability = load_device_settings().reliability
-    directory = Path(logs_dir)
+    resolved_logs_dir = resolve_visiondesk_paths().logs_dir if logs_dir is None else logs_dir
+    directory = Path(resolved_logs_dir)
     directory.mkdir(parents=True, exist_ok=True)
 
     configured_level = getattr(logging, reliability.log_level, logging.INFO)

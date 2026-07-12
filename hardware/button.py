@@ -23,9 +23,11 @@ from pipeline import (
     run_capture_analyze,
     save_latest_result,
 )
+from visiondesk.paths import resolve_visiondesk_paths
 
 ButtonFactory = Callable[..., Any]
 LOGGER = logging.getLogger(__name__)
+DEFAULT_RESULT_PATH = str(resolve_visiondesk_paths().latest_result_path)
 
 
 class GPIOButtonError(Exception):
@@ -52,7 +54,7 @@ class GPIOButtonTrigger:
         exposure: str | int | None = None,
         brightness: float | None = None,
         capture_delay_seconds: float | None = None,
-        result_path: str = "data/latest_result.txt",
+        result_path: str = DEFAULT_RESULT_PATH,
         trigger_action: Callable[[], bool] | None = None,
         clear_action: Callable[[], bool] | None = None,
         back_action: Callable[[], bool] | None = None,

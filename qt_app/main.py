@@ -15,6 +15,7 @@ from PySide6.QtWidgets import QApplication
 from qt_app.app_controller import AppController
 from qt_app.image_provider import CachedImageStore, VisionDeskImageProvider
 from qt_app.runtime import VisionDeskRuntime
+from visiondesk.version import __version__
 
 
 class FullscreenCursorHider(QObject):
@@ -82,6 +83,7 @@ def main(argv: list[str] | None = None) -> int:
     app = QApplication(argv or sys.argv)
     app.setApplicationName("VisionDesk Qt")
     app.setOrganizationName("VisionDesk")
+    app.setApplicationVersion(__version__)
     QGuiApplication.setQuitOnLastWindowClosed(True)
 
     runtime = VisionDeskRuntime(mock_hardware=args.mock_hardware)
@@ -116,7 +118,8 @@ def main(argv: list[str] | None = None) -> int:
     cursor_hider = FullscreenCursorHider(app, enabled=not args.windowed)
     cursor_hider.start()
     app.aboutToQuit.connect(controller.shutdown)
-    return app.exec()
+    app.exec()
+    return runtime.requested_exit_code
 
 
 if __name__ == "__main__":

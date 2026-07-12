@@ -10,16 +10,18 @@ from typing import Any
 from PySide6.QtCore import QObject, Property, QTimer, Signal, Slot
 
 from config import update_device_config
-from hardware.device_check import check_camera
+from hardware.device_check import check_camera, check_gpio_available, check_openai_reachable
 from hardware.setup_gpio import GPIOSetupVerifier, GPIOSetupVerifierError
 from qt_app.models import DictListModel
 from qt_app.runtime import VisionDeskRuntime
 from system.device_setup import (
     DeviceSetupError,
     connect_wifi_network,
+    remove_env_value,
     scan_wifi_networks,
     upsert_env_value,
 )
+from system.diagnostics import run_setup_device_checks
 from system.setup_flow import (
     finish_setup,
     mask_secret_value,
@@ -30,6 +32,7 @@ from system.setup_flow import (
 )
 
 LOGGER = logging.getLogger(__name__)
+SUPPORTED_GPIO_PINS = frozenset({2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27})
 
 
 class _MockSetupVerifier:
@@ -49,12 +52,10 @@ class _MockSetupVerifier:
 
     def snapshot(self) -> dict[str, Any]:
         return {
-            "required": [
-                {**item, "pressed": True}
-                for item in self._required
-            ],
+            "required": [{**item, "pressed": True} for item in self._required],
             "pressed_labels": [item["label"] for item in self._required],
             "all_pressed": True,
+            "validation_issues": [],
         }
 
 
@@ -72,6 +73,7 @@ class SetupController(QObject):
         self._warnings: list[str] = runtime.setup_state_store.build_warnings(self._state)
         self._wifi_networks_model = DictListModel(["ssid", "signal", "security"], self)
         self._gpio_requirements_model = DictListModel(["label", "pin", "pressed"], self)
+        self._device_checks_model = DictListModel(["name", "status", "message", "required"], self)
         self._gpio_verifier: GPIOSetupVerifier | _MockSetupVerifier | None = None
         self._gpio_timer = QTimer(self)
         self._gpio_timer.setInterval(350)
@@ -87,9 +89,13 @@ class SetupController(QObject):
     def gpioRequirementsModel(self) -> DictListModel:
         return self._gpio_requirements_model
 
+    @Property(QObject, constant=True)
+    def deviceChecksModel(self) -> DictListModel:
+        return self._device_checks_model
+
     @Property(str, notify=stateChanged)
     def currentStep(self) -> str:
-        return str(self._state.get("current_step", "wifi"))
+        return str(self._state.get("current_step", "welcome"))
 
     @Property(str, notify=stateChanged)
     def finishMessage(self) -> str:
@@ -99,14 +105,33 @@ class SetupController(QObject):
     def warningsText(self) -> str:
         return "\n".join(self._warnings)
 
+    @Property(bool, notify=stateChanged)
+    def hasApiKey(self) -> bool:
+        return bool(self._state.get("openai", {}).get("key_present", False))
+
+    @Property(bool, notify=stateChanged)
+    def apiKeyVerified(self) -> bool:
+        return bool(self._state.get("openai", {}).get("api_key_verified", False))
+
+    @Property(str, notify=stateChanged)
+    def maskedApiKey(self) -> str:
+        openai_state = self._state.get("openai", {})
+        should_show = bool(openai_state.get("key_present")) or self.runtime.setup_is_complete()
+        return mask_secret_value(os.getenv("OPENAI_API_KEY", "")) if should_show else ""
+
     @Property(str, notify=stateChanged)
     def maskedOpenAiKey(self) -> str:
-        openai_state = self._state.get("openai", {})
-        should_show = (
-            str(openai_state.get("status", "")).strip().lower() != "idle"
-            or self.runtime.setup_is_complete()
-        )
-        return mask_secret_value(os.getenv("OPENAI_API_KEY", "")) if should_show else ""
+        return self.maskedApiKey
+
+    @Property(str, notify=stateChanged)
+    def deviceChecksStatus(self) -> str:
+        welcome = self._state.get("steps", {}).get("welcome", {})
+        return str(welcome.get("status", "idle"))
+
+    @Property(str, notify=stateChanged)
+    def deviceChecksMessage(self) -> str:
+        welcome = self._state.get("steps", {}).get("welcome", {})
+        return str(welcome.get("message", ""))
 
     @Property(str, notify=stateChanged)
     def wifiMessage(self) -> str:
@@ -137,6 +162,10 @@ class SetupController(QObject):
         return str(self._state.get("camera", {}).get("status", "idle"))
 
     @Property(str, notify=stateChanged)
+    def cameraAutofocusMode(self) -> str:
+        return str(self.runtime.settings.camera.autofocus_mode)
+
+    @Property(str, notify=stateChanged)
     def gpioMessage(self) -> str:
         return str(self._state.get("gpio", {}).get("message", ""))
 
@@ -158,7 +187,41 @@ class SetupController(QObject):
         self._warnings = self.runtime.setup_state_store.build_warnings(self._state)
         self._wifi_networks_model.set_items(list(self._state.get("wifi", {}).get("available_networks", [])))
         self._gpio_requirements_model.set_items(list(self._state.get("gpio", {}).get("required", [])))
+        self._device_checks_model.set_items(
+            list(self._state.get("steps", {}).get("welcome", {}).get("checks", []))
+        )
         self.stateChanged.emit()
+
+    @Slot()
+    def runDeviceChecks(self) -> None:
+        self._run_in_thread(self._device_checks_worker, "setup-device-checks")
+
+    @Slot()
+    def goToNextStep(self) -> None:
+        step = self.currentStep
+        step_order = ["welcome", "wifi", "openai", "camera", "gpio", "finish"]
+        try:
+            next_step = step_order[min(step_order.index(step) + 1, len(step_order) - 1)]
+        except ValueError:
+            next_step = step_order[0]
+        self.runtime.setup_state_store.write_state({"current_step": next_step})
+        self.refresh_state()
+
+    @Slot()
+    def goToPreviousStep(self) -> None:
+        step = self.currentStep
+        step_order = ["welcome", "wifi", "openai", "camera", "gpio", "finish"]
+        try:
+            next_step = step_order[max(step_order.index(step) - 1, 0)]
+        except ValueError:
+            next_step = step_order[0]
+        self.runtime.setup_state_store.write_state({"current_step": next_step})
+        self.refresh_state()
+
+    @Slot(str)
+    def goToStep(self, step: str) -> None:
+        self.runtime.setup_state_store.write_state({"current_step": step})
+        self.refresh_state()
 
     @Slot()
     def scanWifi(self) -> None:
@@ -174,6 +237,10 @@ class SetupController(QObject):
     @Slot(str)
     def verifyApiKey(self, api_key: str) -> None:
         self._run_in_thread(lambda: self._verify_api_key_worker(api_key), "setup-openai-key")
+
+    @Slot()
+    def clearApiKey(self) -> None:
+        self._run_in_thread(self._clear_api_key_worker, "setup-openai-clear")
 
     @Slot()
     def runCameraTest(self) -> None:
@@ -206,6 +273,7 @@ class SetupController(QObject):
 
     def _on_setup_completed(self, completion_timestamp: str) -> None:
         self.runtime.mark_setup_complete(completion_timestamp)
+        self.runtime.request_restart()
         self.setupCompleted.emit(completion_timestamp)
 
     def _run_in_thread(self, target, name: str) -> None:
@@ -221,6 +289,10 @@ class SetupController(QObject):
             self.workerCompleted.emit()
 
         return _worker
+
+    def _device_checks_worker(self) -> None:
+        checks = run_setup_device_checks()
+        self.runtime.setup_state_store.write_device_checks([check.__dict__ for check in checks])
 
     def _scan_wifi_worker(self) -> None:
         try:
@@ -268,8 +340,6 @@ class SetupController(QObject):
         )
 
     def _verify_api_key_worker(self, api_key: str) -> None:
-        from hardware.device_check import check_openai_reachable
-
         run_setup_openai_key(
             self.runtime.setup_state_store,
             api_key=api_key,
@@ -278,14 +348,69 @@ class SetupController(QObject):
             check_openai_reachable=check_openai_reachable,
         )
 
+    def _clear_api_key_worker(self) -> None:
+        remove_env_value(self.runtime.paths.env_file_path, "OPENAI_API_KEY")
+        os.environ.pop("OPENAI_API_KEY", None)
+        self.runtime.setup_state_store.write_state(
+            {
+                "current_step": "openai",
+                "openai": {
+                    "status": "idle",
+                    "key_present": False,
+                    "api_key_verified": False,
+                    "message": "OpenAI API key cleared. Enter a new key to continue.",
+                },
+            }
+        )
+
     def _camera_test_worker(self) -> None:
         run_setup_camera_test(
             self.runtime.setup_state_store,
             check_camera=lambda: check_camera(self.runtime.settings),
         )
 
+    def _validate_gpio_setup(self) -> list[str]:
+        issues: list[str] = []
+        seen: dict[int, str] = {}
+        for item in self.runtime.build_setup_gpio_requirements():
+            label = str(item.get("label", "")).strip()
+            pin = int(item.get("pin"))
+            if pin not in SUPPORTED_GPIO_PINS:
+                issues.append(f"GPIO pin {pin} for '{label}' is not supported.")
+            if pin in seen:
+                issues.append(f"GPIO pin {pin} is duplicated between '{label}' and '{seen[pin]}'.")
+            else:
+                seen[pin] = label
+        if self.runtime.settings.led.enabled and self.runtime.settings.led.pin in seen:
+            issues.append(
+                f"GPIO pin {self.runtime.settings.led.pin} conflicts with the configured LED pin."
+            )
+        gpio_availability = check_gpio_available()
+        if gpio_availability.failed:
+            issues.append(gpio_availability.message)
+        return issues
+
     def _start_gpio_test(self) -> None:
         self._stop_gpio_verifier()
+        validation_issues = self._validate_gpio_setup()
+        if validation_issues:
+            self.runtime.setup_state_store.write_state(
+                {
+                    "current_step": "gpio",
+                    "gpio": {
+                        "status": "fail",
+                        "message": validation_issues[0],
+                        "active": False,
+                        "required": self.runtime.build_setup_gpio_requirements(),
+                        "pressed_labels": [],
+                        "all_pressed": False,
+                        "validation_issues": validation_issues,
+                    },
+                }
+            )
+            self.refresh_state()
+            return
+
         verifier_class = _MockSetupVerifier if self.runtime.mock_hardware else GPIOSetupVerifier
         try:
             verifier = verifier_class(
@@ -308,6 +433,7 @@ class SetupController(QObject):
                         ),
                         "pressed_labels": [],
                         "all_pressed": False,
+                        "validation_issues": [],
                     },
                 }
             )
@@ -324,6 +450,7 @@ class SetupController(QObject):
                         "required": self.runtime.build_setup_gpio_requirements(),
                         "pressed_labels": [],
                         "all_pressed": False,
+                        "validation_issues": [str(exc)],
                     },
                 }
             )
@@ -333,22 +460,24 @@ class SetupController(QObject):
         state = self._sync_gpio_state()
         gpio_state = state.get("gpio", {})
         self._stop_gpio_verifier()
+        passed = bool(gpio_state.get("all_pressed")) and not list(gpio_state.get("validation_issues", []))
         self.runtime.setup_state_store.write_state(
             {
-                "current_step": "finish" if gpio_state.get("all_pressed") else "gpio",
+                "current_step": "finish" if passed else "gpio",
                 "finish_message": "",
                 "gpio": {
-                    "status": "pass" if gpio_state.get("all_pressed") else "fail",
+                    "status": "pass" if passed else "fail",
                     "message": gpio_state.get(
                         "message",
                         "All configured GPIO setup buttons were pressed successfully."
-                        if gpio_state.get("all_pressed")
+                        if passed
                         else "GPIO button verification is incomplete.",
                     ),
                     "active": False,
                     "required": gpio_state.get("required", self.runtime.build_setup_gpio_requirements()),
                     "pressed_labels": gpio_state.get("pressed_labels", []),
                     "all_pressed": bool(gpio_state.get("all_pressed", False)),
+                    "validation_issues": gpio_state.get("validation_issues", []),
                 },
             }
         )
@@ -370,6 +499,7 @@ class SetupController(QObject):
                 "all_pressed": False,
                 "active": False,
                 "message": "GPIO setup test is not running.",
+                "validation_issues": [],
             }
         snapshot = verifier.snapshot()
         snapshot["active"] = True
@@ -378,6 +508,7 @@ class SetupController(QObject):
             if snapshot.get("all_pressed")
             else "Press each configured GPIO button once to verify it."
         )
+        snapshot.setdefault("validation_issues", [])
         return snapshot
 
     def _sync_gpio_state(self) -> dict[str, Any]:

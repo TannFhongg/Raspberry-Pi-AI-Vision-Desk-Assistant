@@ -14,8 +14,9 @@ from typing import Any, Callable
 from config import DeviceSettings, load_device_settings
 from hardware.device_check import check_camera, check_internet_connection
 from system.storage import atomic_write_json
+from visiondesk.paths import resolve_visiondesk_paths
 
-DEFAULT_HEALTH_STATUS_PATH = Path("data/health_status.json")
+DEFAULT_HEALTH_STATUS_PATH = resolve_visiondesk_paths().health_status_path
 CPU_TEMPERATURE_PATH = Path("/sys/class/thermal/thermal_zone0/temp")
 MEMORY_INFO_PATH = Path("/proc/meminfo")
 CPU_TEMPERATURE_FAIL_C = 80.0

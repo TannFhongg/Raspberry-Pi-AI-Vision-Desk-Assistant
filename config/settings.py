@@ -10,8 +10,9 @@ from typing import Any, Mapping
 
 import yaml
 from ai.modes import get_available_modes, normalize_mode
+from visiondesk.paths import resolve_visiondesk_paths
 
-DEFAULT_CONFIG_PATH = Path("config/device.yaml")
+DEFAULT_CONFIG_PATH = resolve_visiondesk_paths().config_path
 VALID_CAMERA_BACKENDS = ("opencv",)
 VALID_AUTOFOCUS_MODES = ("continuous", "auto", "off")
 VALID_SCREEN_OPTIMIZATIONS = ("auto", "on", "off")

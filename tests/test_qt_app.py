@@ -36,13 +36,25 @@ def qapp():
 
 def build_runtime(tmp_path: Path, *, setup_completed: bool) -> VisionDeskRuntime:
     """Create an isolated mock runtime that never touches repo data paths."""
+    config_template = Path("config/device.yaml").read_text(encoding="utf-8")
+    config_path = tmp_path / "device.yaml"
+    config_path.write_text(config_template, encoding="utf-8")
+    app_root = tmp_path / "app_root"
+    (app_root / "config").mkdir(parents=True, exist_ok=True)
+    (app_root / "config" / "device.yaml").write_text(config_template, encoding="utf-8")
     paths = RuntimePaths(
+        path_mode="development",
+        repo_root=tmp_path,
+        releases_dir=tmp_path / "releases",
         setup_state_path=tmp_path / "setup_state.json",
         health_status_path=tmp_path / "health_status.json",
         latest_result_path=tmp_path / "latest_result.txt",
         result_history_path=tmp_path / "result_history.json",
         private_data_path=tmp_path / "private",
         env_file_path=tmp_path / ".env",
+        config_path=config_path,
+        logs_dir=tmp_path / "logs",
+        app_root=app_root,
     )
     runtime = VisionDeskRuntime(
         mock_hardware=True,
@@ -54,6 +66,38 @@ def build_runtime(tmp_path: Path, *, setup_completed: bool) -> VisionDeskRuntime
     runtime.settings.setup.version = 1 if setup_completed else 0
     runtime.settings.config_path = tmp_path / "device.yaml"
     runtime.settings.retention.purge_on_startup = False
+    if setup_completed:
+        runtime.setup_state_store.write_state(
+            {
+                "setup_complete": True,
+                "completed_at": "2026-07-12T12:00:00",
+                "app_version": runtime.app_version,
+                "current_step": "finish",
+                "wifi": {
+                    "connect_status": "pass",
+                    "ssid": "Office",
+                    "connection_name": "Office",
+                    "message": "Connected.",
+                },
+                "openai": {
+                    "status": "pass",
+                    "key_present": True,
+                    "api_key_verified": True,
+                    "message": "Configured.",
+                },
+                "camera": {
+                    "status": "pass",
+                    "message": "Camera ready.",
+                },
+                "gpio": {
+                    "status": "pass",
+                    "message": "GPIO ready.",
+                    "required": runtime.build_setup_gpio_requirements(),
+                    "pressed_labels": [item["label"] for item in runtime.build_setup_gpio_requirements()],
+                    "all_pressed": True,
+                },
+            }
+        )
     return runtime
 
 
@@ -113,6 +157,37 @@ def test_app_controller_select_mode_opens_camera(qapp, tmp_path) -> None:
     assert controller.selectedMode == "read_text"
     assert controller.currentScreen == "camera"
     assert controller.applicationState in {"CAMERA_PREPARING", "CAMERA_READY"}
+    controller.shutdown()
+
+
+def test_incomplete_setup_routes_to_setup_screen(qapp, tmp_path) -> None:
+    runtime, controller = build_controller(tmp_path, setup_completed=False)
+
+    assert controller.currentScreen == "setup"
+    assert controller.applicationState == "SETUP_REQUIRED"
+    controller.shutdown()
+
+
+def test_completed_setup_routes_home_from_authoritative_state(qapp, tmp_path) -> None:
+    runtime, controller = build_controller(tmp_path, setup_completed=True)
+
+    assert controller.currentScreen == "home"
+    assert controller.applicationState == "READY"
+    controller.shutdown()
+
+
+def test_corrupt_setup_state_routes_to_setup_and_quarantines_file(qapp, tmp_path) -> None:
+    runtime = build_runtime(tmp_path, setup_completed=False)
+    runtime.paths.setup_state_path.write_text("{not-json", encoding="utf-8")
+    controller = AppController(
+        runtime,
+        camera_store=CachedImageStore(),
+        result_store=CachedImageStore(),
+    )
+
+    assert controller.currentScreen == "setup"
+    quarantined_files = list(runtime.paths.private_quarantine_path.glob("setup_state-*-invalid-setup-state.json"))
+    assert quarantined_files
     controller.shutdown()
 
 
@@ -317,7 +392,7 @@ def test_delete_all_data_resets_runtime_artifacts_and_returns_home(qapp, qtbot, 
     )
     assert "All local data deleted" in controller.displayStatus
     assert not runtime.paths.latest_result_path.exists()
-    assert not runtime.paths.setup_state_path.exists()
+    assert runtime.paths.setup_state_path.exists()
     assert not runtime.paths.offline_retry_queue_path.exists()
     assert not runtime.paths.private_current_path.exists()
     assert not runtime.paths.private_retry_path.exists()
