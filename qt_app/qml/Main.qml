@@ -70,29 +70,37 @@ ApplicationWindow {
             x: Math.round((window.viewportWidth - (width * scale)) / 2)
             y: Math.round((window.viewportHeight - (height * scale)) / 2)
 
-            ColumnLayout {
+            Item {
+                id: shell
                 anchors.fill: parent
                 anchors.margins: 20
-                spacing: 0
 
                 HeaderBar {
+                    id: headerBar
                     theme: appTheme
                     controller: appController
-                    Layout.fillWidth: true
+                    anchors.top: parent.top
+                    anchors.left: parent.left
+                    anchors.right: parent.right
                 }
 
                 Rectangle {
-                    Layout.fillWidth: true
+                    id: divider
+                    anchors.top: headerBar.bottom
+                    anchors.topMargin: 16
+                    anchors.left: parent.left
+                    anchors.right: parent.right
                     height: appTheme.dividerStrong
                     color: appTheme.primary
-                    Layout.topMargin: 16
-                    Layout.bottomMargin: 18
                 }
 
                 Loader {
                     id: screenLoader
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
+                    anchors.top: divider.bottom
+                    anchors.topMargin: 18
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
                     sourceComponent: {
                         switch (appController.currentScreen) {
                         case "setup":

@@ -1,40 +1,49 @@
 import QtQuick
-import QtQuick.Layouts
 import QtQuick.Controls
 
-RowLayout {
+Item {
     id: root
     required property QtObject theme
     required property var controller
-    spacing: 24
 
-    BrandLogo {
-        theme: root.theme
-        Layout.alignment: Qt.AlignVCenter
-    }
+    readonly property real contentScale: Math.min(
+        1.0,
+        width / Math.max(1, contentRow.implicitWidth)
+    )
 
-    Item {
-        Layout.fillWidth: true
-    }
+    implicitHeight: Math.ceil(contentRow.implicitHeight * contentScale)
+    height: implicitHeight
+    clip: true
 
-    Repeater {
-        model: root.controller.healthMetricsModel.count
+    Row {
+        id: contentRow
+        spacing: 24
+        scale: root.contentScale
+        transformOrigin: Item.TopLeft
+        x: 0
+        y: Math.max(0, Math.round((root.height - (height * scale)) / 2))
 
-        delegate: HealthPill {
-            required property int index
-            property var itemData: root.controller.healthMetricsModel.get(index)
+        BrandLogo {
             theme: root.theme
-            label: itemData.label || ""
-            value: itemData.value || ""
-            state: itemData.state || "unavailable"
-            message: itemData.message || ""
-            valueSize: itemData.value_size || "normal"
-            Layout.alignment: Qt.AlignVCenter
         }
-    }
 
-    ClockCard {
-        theme: root.theme
-        Layout.alignment: Qt.AlignVCenter
+        Repeater {
+            model: root.controller.healthMetricsModel.count
+
+            delegate: HealthPill {
+                required property int index
+                property var itemData: root.controller.healthMetricsModel.get(index)
+                theme: root.theme
+                label: itemData.label || ""
+                value: itemData.value || ""
+                state: itemData.state || "unavailable"
+                message: itemData.message || ""
+                valueSize: itemData.value_size || "normal"
+            }
+        }
+
+        ClockCard {
+            theme: root.theme
+        }
     }
 }

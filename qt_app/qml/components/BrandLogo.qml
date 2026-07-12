@@ -1,27 +1,34 @@
 import QtQuick
-import QtQuick.Layouts
 
-RowLayout {
+Item {
     id: root
     required property QtObject theme
-    spacing: 0
 
-    Text {
-        text: "Vision"
-        color: root.theme.text
-        font.family: root.theme.displayFont
-        font.pixelSize: 60
-        font.weight: root.theme.weightHeavy
-        renderType: Text.NativeRendering
-    }
+    implicitWidth: logoRow.implicitWidth
+    implicitHeight: logoRow.implicitHeight
+    width: implicitWidth
+    height: implicitHeight
 
-    Text {
-        text: "Desk"
-        color: root.theme.logoBlue
-        font.family: root.theme.displayFont
-        font.pixelSize: 60
-        font.weight: root.theme.weightHeavy
-        renderType: Text.NativeRendering
+    Row {
+        id: logoRow
+        spacing: 0
+
+        Text {
+            text: "Vision"
+            color: root.theme.text
+            font.family: root.theme.displayFont
+            font.pixelSize: 60
+            font.weight: root.theme.weightHeavy
+            renderType: Text.NativeRendering
+        }
+
+        Text {
+            text: "Desk"
+            color: root.theme.logoBlue
+            font.family: root.theme.displayFont
+            font.pixelSize: 60
+            font.weight: root.theme.weightHeavy
+            renderType: Text.NativeRendering
+        }
     }
 }
-
