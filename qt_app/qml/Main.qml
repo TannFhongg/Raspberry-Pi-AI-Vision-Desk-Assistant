@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Window
 
 import "theme"
 import "components"
@@ -13,6 +14,14 @@ ApplicationWindow {
     visible: true
     color: theme.pageBackground
     title: "VisionDesk Qt"
+    readonly property int designWidth: 1200
+    readonly property int designHeight: 800
+    readonly property real viewportWidth: visibility === Window.FullScreen ? Screen.width : width
+    readonly property real viewportHeight: visibility === Window.FullScreen ? Screen.height : height
+    readonly property real contentScale: Math.max(
+        0.1,
+        Math.min(viewportWidth / designWidth, viewportHeight / designHeight)
+    )
 
     Theme {
         id: theme
@@ -52,43 +61,53 @@ ApplicationWindow {
         anchors.fill: parent
         color: theme.pageBackground
 
-        ColumnLayout {
-            anchors.fill: parent
-            anchors.margins: 20
-            spacing: 0
+        Item {
+            id: designCanvas
+            width: window.designWidth
+            height: window.designHeight
+            scale: window.contentScale
+            transformOrigin: Item.TopLeft
+            x: Math.round((window.viewportWidth - (width * scale)) / 2)
+            y: Math.round((window.viewportHeight - (height * scale)) / 2)
 
-            HeaderBar {
-                theme: theme
-                controller: appController
-                Layout.fillWidth: true
-            }
+            ColumnLayout {
+                anchors.fill: parent
+                anchors.margins: 20
+                spacing: 0
 
-            Rectangle {
-                Layout.fillWidth: true
-                height: theme.dividerStrong
-                color: theme.primary
-                Layout.topMargin: 16
-                Layout.bottomMargin: 18
-            }
+                HeaderBar {
+                    theme: theme
+                    controller: appController
+                    Layout.fillWidth: true
+                }
 
-            Loader {
-                id: screenLoader
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                sourceComponent: {
-                    switch (appController.currentScreen) {
-                    case "setup":
-                        return setupScreenComponent
-                    case "camera":
-                        return cameraScreenComponent
-                    case "processing":
-                        return processingScreenComponent
-                    case "result":
-                        return resultScreenComponent
-                    case "error":
-                        return errorScreenComponent
-                    default:
-                        return homeScreenComponent
+                Rectangle {
+                    Layout.fillWidth: true
+                    height: theme.dividerStrong
+                    color: theme.primary
+                    Layout.topMargin: 16
+                    Layout.bottomMargin: 18
+                }
+
+                Loader {
+                    id: screenLoader
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    sourceComponent: {
+                        switch (appController.currentScreen) {
+                        case "setup":
+                            return setupScreenComponent
+                        case "camera":
+                            return cameraScreenComponent
+                        case "processing":
+                            return processingScreenComponent
+                        case "result":
+                            return resultScreenComponent
+                        case "error":
+                            return errorScreenComponent
+                        default:
+                            return homeScreenComponent
+                        }
                     }
                 }
             }
