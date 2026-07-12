@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import os
 from pathlib import Path
 from typing import Any, Callable
 
@@ -50,7 +51,12 @@ def upsert_env_value(env_path: str | Path, key: str, value: str) -> Path:
             next_lines.append("")
         next_lines.append(f"{key}={value}")
 
-    return atomic_write_text(destination, "\n".join(next_lines) + "\n", encoding="utf-8")
+    written_path = atomic_write_text(destination, "\n".join(next_lines) + "\n", encoding="utf-8")
+    try:
+        os.chmod(written_path, 0o600)
+    except OSError:
+        pass
+    return written_path
 
 
 def scan_wifi_networks(

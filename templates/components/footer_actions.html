@@ -5,11 +5,13 @@
         {% if action.action %}action="{{ action.action }}"{% endif %}
         class="{{ action.form_class }}"
         {% if action.form_aria_hidden %}aria-hidden="true"{% endif %}
+        {% if action.form_extra_attrs %} {{ action.form_extra_attrs|safe }}{% endif %}
     >
         <button
             type="{{ action.type or 'submit' }}"
             class="{{ action.button_class }}"
             {% if action.disabled %}disabled{% endif %}
+            {% if action.button_extra_attrs %} {{ action.button_extra_attrs|safe }}{% endif %}
         >
             {{ action.label }}
         </button>

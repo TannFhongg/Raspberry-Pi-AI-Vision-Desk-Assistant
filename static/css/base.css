@@ -16,6 +16,7 @@ body {
 }
 
 body.app-screen-home,
+body.app-screen-setup,
 body.app-screen-camera,
 body.app-screen-processing,
 body.app-screen-result {
@@ -37,6 +38,7 @@ body.app-screen-result {
 }
 
 .app-screen-home .device-shell,
+.app-screen-setup .device-shell,
 .app-screen-camera .device-shell,
 .app-screen-processing .device-shell,
 .app-screen-result .device-shell {
@@ -63,6 +65,7 @@ body.app-screen-result {
 }
 
 .app-screen-home .device-panel,
+.app-screen-setup .device-panel,
 .app-screen-camera .device-panel,
 .app-screen-processing .device-panel,
 .app-screen-result .device-panel {

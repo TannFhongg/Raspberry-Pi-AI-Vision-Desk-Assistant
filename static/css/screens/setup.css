@@ -1,0 +1,218 @@
+body.app-screen-setup {
+    background: var(--color-page-background);
+}
+
+.setup-layout {
+    padding: 20px 32px 0;
+}
+
+.setup-divider {
+    width: calc(100% + 64px);
+    margin: 16px -32px 20px;
+}
+
+.setup-main {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.setup-columns {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 72px;
+}
+
+.setup-column {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+}
+
+.setup-section-head,
+.setup-fieldset,
+.setup-status-message,
+.setup-saved-key,
+.setup-finish-note,
+.setup-finish-message {
+    margin: 0;
+}
+
+.setup-section-title,
+.setup-field-title,
+.setup-field-label,
+.setup-primary-button,
+.setup-finish-button,
+.setup-back-button {
+    margin: 0;
+    font-family: var(--font-family-display);
+    color: var(--color-text);
+}
+
+.setup-section-title {
+    font-size: clamp(30px, 2.2vw, 38px);
+    font-weight: var(--font-weight-strong);
+    line-height: 1;
+    letter-spacing: -0.03em;
+}
+
+.setup-section-copy {
+    margin-top: 18px;
+    max-width: 520px;
+    font-family: var(--font-family-display);
+    font-size: clamp(24px, 1.95vw, 32px);
+    font-weight: 700;
+    line-height: 1.15;
+    letter-spacing: -0.03em;
+}
+
+.setup-fieldset {
+    display: grid;
+    gap: 12px;
+}
+
+.setup-field-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.setup-field-title {
+    font-size: clamp(24px, 1.8vw, 30px);
+    font-weight: var(--font-weight-strong);
+    line-height: 1;
+    letter-spacing: -0.03em;
+    text-transform: uppercase;
+}
+
+.setup-status-message,
+.setup-saved-key,
+.setup-finish-note,
+.setup-finish-message {
+    font-size: clamp(17px, 1.3vw, 22px);
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+.setup-status-message[data-tone="neutral"],
+.setup-finish-note[data-tone="neutral"] {
+    color: #6a7480;
+}
+
+.setup-status-message[data-tone="pass"],
+.setup-saved-key,
+.setup-finish-note[data-tone="pass"] {
+    color: #16713e;
+}
+
+.setup-status-message[data-tone="fail"],
+.setup-finish-message,
+.setup-finish-note[data-tone="fail"] {
+    color: #ac2b2b;
+}
+
+.setup-field-label {
+    font-size: clamp(22px, 1.7vw, 28px);
+    font-weight: var(--font-weight-strong);
+    line-height: 1;
+    letter-spacing: -0.03em;
+    text-transform: uppercase;
+}
+
+.setup-primary-button {
+    width: fit-content;
+    min-width: 178px;
+    min-height: 54px;
+    padding: 0 28px;
+    font-size: clamp(18px, 1.55vw, 28px);
+}
+
+.setup-connect-button {
+    margin-top: 8px;
+}
+
+.setup-key-button {
+    margin-top: 10px;
+}
+
+.setup-finish-area {
+    display: grid;
+    justify-items: center;
+    gap: 10px;
+    padding: 8px 0 16px;
+}
+
+.setup-finish-button {
+    width: min(580px, 100%);
+    min-height: 56px;
+    padding: 0 32px;
+    font-size: clamp(28px, 2vw, 38px);
+}
+
+.setup-finish-note,
+.setup-finish-message {
+    text-align: center;
+}
+
+.setup-footer {
+    justify-content: flex-end;
+}
+
+.setup-back-button {
+    min-width: 146px;
+    min-height: 56px;
+    font-size: 28px;
+}
+
+@media (max-width: 1100px), (max-height: 760px) {
+    .setup-layout {
+        padding: 18px 24px 0;
+    }
+
+    .setup-divider {
+        width: calc(100% + 48px);
+        margin: 14px -24px 18px;
+    }
+
+    .setup-columns {
+        gap: 40px;
+    }
+}
+
+@media (max-width: 820px) {
+    .setup-columns {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 28px;
+    }
+
+    .setup-finish-button {
+        width: 100%;
+    }
+}
+
+@media (max-width: 560px) {
+    .setup-layout {
+        padding: 16px 18px 0;
+    }
+
+    .setup-divider {
+        width: calc(100% + 36px);
+        margin: 12px -18px 18px;
+    }
+
+    .setup-field-head {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .setup-primary-button,
+    .setup-back-button {
+        width: 100%;
+    }
+}

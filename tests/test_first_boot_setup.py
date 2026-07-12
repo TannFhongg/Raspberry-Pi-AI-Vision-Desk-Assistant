@@ -39,6 +39,7 @@ class FirstBootSetupTests(unittest.TestCase):
         self.original_setup_version = app_module.SETTINGS.setup.version
         self.original_config_path = app_module.SETTINGS.config_path
         self.original_locale = app_module.SETTINGS.localization.locale
+        self.original_openai_key = os.environ.get("OPENAI_API_KEY")
         self.original_wifi_ssid = app_module.SETTINGS.network.wifi.ssid
         self.original_wifi_connection_name = app_module.SETTINGS.network.wifi.connection_name
         self.original_wifi_auto_connect = app_module.SETTINGS.network.wifi.auto_connect
@@ -89,6 +90,10 @@ class FirstBootSetupTests(unittest.TestCase):
         app_module.SETTINGS.setup.version = self.original_setup_version
         app_module.SETTINGS.config_path = self.original_config_path
         app_module.SETTINGS.localization.locale = self.original_locale
+        if self.original_openai_key is None:
+            os.environ.pop("OPENAI_API_KEY", None)
+        else:
+            os.environ["OPENAI_API_KEY"] = self.original_openai_key
         app_module.SETTINGS.network.wifi.ssid = self.original_wifi_ssid
         app_module.SETTINGS.network.wifi.connection_name = self.original_wifi_connection_name
         app_module.SETTINGS.network.wifi.auto_connect = self.original_wifi_auto_connect
@@ -114,11 +119,22 @@ class FirstBootSetupTests(unittest.TestCase):
         response = client.get("/setup")
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn(b"Connect Wi-Fi", response.data)
-        self.assertIn(b"Save And Verify Key", response.data)
-        self.assertIn(b"Run Camera Test", response.data)
-        self.assertIn(b"Start GPIO Test", response.data)
-        self.assertIn(b"Finish Setup And Restart", response.data)
+        self.assertIn(b"1/ WIFI", response.data)
+        self.assertIn(b"2/ OPENAI KEY", response.data)
+        self.assertIn(b"Connect WIFI", response.data)
+        self.assertIn(b"Save and verify the key", response.data)
+        self.assertIn(b"FINISH SETUP AND RESTART", response.data)
+        self.assertNotIn(b"Run Camera Test", response.data)
+        self.assertNotIn(b"Start GPIO Test", response.data)
+
+    def test_setup_screen_keeps_finish_disabled_until_wifi_and_key_pass(self) -> None:
+        client = app_module.app.test_client()
+
+        response = client.get("/setup")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"disabled>FINISH SETUP AND RESTART</button>", response.data)
+        self.assertIn(b"Connect to Wi-Fi before finishing setup.", response.data)
 
     def test_services_do_not_start_until_setup_is_complete(self) -> None:
         fake_queue = Mock()
@@ -204,7 +220,28 @@ class FirstBootSetupTests(unittest.TestCase):
         state = app_module._load_setup_state()
         self.assertEqual(state["openai"]["status"], "pass")
         self.assertTrue(state["openai"]["key_present"])
-        self.assertEqual(state["current_step"], "camera")
+        self.assertEqual(state["current_step"], "openai")
+
+    def test_openai_key_route_advances_to_finish_when_wifi_is_already_connected(self) -> None:
+        client = app_module.app.test_client()
+        result = HardwareCheckResult(name="openai", status="pass", message="OpenAI API reachable.")
+        app_module._write_setup_state(
+            {
+                "wifi": {
+                    "connect_status": "pass",
+                    "ssid": "Office",
+                    "connection_name": "Office",
+                    "message": "Connected.",
+                }
+            }
+        )
+
+        with patch.object(app_module, "check_openai_reachable", return_value=result):
+            response = client.post("/setup/openai-key", data={"openai_api_key": "sk-live-test"})
+
+        self.assertEqual(response.status_code, 302)
+        state = app_module._load_setup_state()
+        self.assertEqual(state["current_step"], "finish")
 
     def test_camera_test_route_records_failure(self) -> None:
         client = app_module.app.test_client()
@@ -279,7 +316,7 @@ class FirstBootSetupTests(unittest.TestCase):
         self.assertFalse(state["gpio"]["all_pressed"])
         self.assertEqual(state["current_step"], "gpio")
 
-    def test_finish_requires_warning_acknowledgement(self) -> None:
+    def test_finish_requires_completed_wifi_and_verified_key(self) -> None:
         client = app_module.app.test_client()
 
         with patch.object(app_module, "_schedule_process_restart") as restart_mock:
@@ -288,12 +325,11 @@ class FirstBootSetupTests(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         restart_mock.assert_not_called()
         state = app_module._load_setup_state()
-        self.assertIn("Acknowledge the setup warnings", state["finish_message"])
+        self.assertIn("Connect to Wi-Fi before finishing setup.", state["finish_message"])
         self.assertIn("completed: false", self.config_path.read_text(encoding="utf-8"))
 
     def test_finish_updates_yaml_clears_state_and_schedules_restart(self) -> None:
         client = app_module.app.test_client()
-        required = app_module._build_setup_gpio_requirements()
         app_module._write_setup_state(
             {
                 "current_step": "finish",
@@ -307,18 +343,6 @@ class FirstBootSetupTests(unittest.TestCase):
                     "status": "pass",
                     "key_present": True,
                     "message": "OpenAI API reachable.",
-                },
-                "camera": {
-                    "status": "pass",
-                    "message": "Camera capture succeeded.",
-                },
-                "gpio": {
-                    "status": "pass",
-                    "message": "All configured GPIO setup buttons were pressed successfully.",
-                    "active": False,
-                    "required": [{**item, "pressed": True} for item in required],
-                    "pressed_labels": [item["label"] for item in required],
-                    "all_pressed": True,
                 },
             }
         )
@@ -334,6 +358,25 @@ class FirstBootSetupTests(unittest.TestCase):
         self.assertIn("locale: en", config_text)
         self.assertFalse(self.setup_state_path.exists())
         self.assertTrue(app_module.SETTINGS.setup.completed)
+
+    def test_manual_setup_reopen_masks_saved_key_and_keeps_root_on_home(self) -> None:
+        client = app_module.app.test_client()
+        app_module.SETTINGS.setup.completed = True
+        app_module.SETTINGS.setup.completed_at = "2026-07-12T11:00:00"
+        app_module.SETTINGS.setup.version = 1
+        app_module.SETTINGS.network.wifi.ssid = "Office"
+        app_module.SETTINGS.network.wifi.connection_name = "Office"
+        os.environ["OPENAI_API_KEY"] = "sk-proj-secret-value"
+
+        root_response = client.get("/")
+        setup_response = client.get("/setup")
+
+        self.assertEqual(root_response.status_code, 200)
+        self.assertIn(b"What would you like to do?", root_response.data)
+        self.assertEqual(setup_response.status_code, 200)
+        self.assertIn(b"Saved key: sk-proj-", setup_response.data)
+        self.assertNotIn(b"sk-proj-secret-value", setup_response.data)
+        self.assertIn(b"data-setup-back", setup_response.data)
 
     def _write_config(self) -> None:
         self.config_path.write_text(

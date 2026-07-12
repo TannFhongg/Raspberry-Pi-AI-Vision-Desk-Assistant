@@ -2,6 +2,7 @@ import { initLiveClock } from "./clock.js";
 import { initHealthPolling } from "./health.js";
 import { initLivePreview } from "./camera.js";
 import { initUiStatePolling } from "./processing.js";
+import { initSetupScreen } from "./setup.js";
 
 function initDeleteAllConfirmation(root) {
     const deleteForms = root.querySelectorAll(".delete-all-form");
@@ -39,4 +40,5 @@ if (root) {
     initHealthPolling(root);
     initLivePreview(root);
     initLiveClock(root);
+    initSetupScreen(root);
 }

@@ -26,6 +26,7 @@
 }
 
 .home-status-list,
+.setup-status-list,
 .camera-status-list,
 .processing-status-list,
 .result-status-list {
@@ -147,6 +148,21 @@
     font-size: 24px;
 }
 
+.kiosk-button-primary {
+    background: #38c653;
+    border-color: var(--color-text);
+    color: var(--color-text);
+}
+
+.kiosk-button-primary:disabled,
+.kiosk-button:disabled {
+    border-color: #bbc4ce;
+    background: #f2f4f7;
+    color: #5c6773;
+    opacity: 1;
+    cursor: not-allowed;
+}
+
 .kiosk-action-button {
     min-width: 146px;
     min-height: 56px;
@@ -215,6 +231,92 @@
     -webkit-overflow-scrolling: touch;
 }
 
+.kiosk-field-label {
+    margin: 0;
+    font-family: var(--font-family-display);
+    font-size: clamp(22px, 1.8vw, 30px);
+    font-weight: var(--font-weight-strong);
+    line-height: 1;
+    letter-spacing: -0.03em;
+}
+
+.kiosk-input-shell {
+    min-height: 56px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 22px;
+    border: var(--border-strong) solid var(--color-text);
+    border-radius: var(--radius-pill);
+    background: var(--color-surface);
+}
+
+.kiosk-input-shell:focus-within {
+    outline: 3px solid var(--focus-ring);
+    outline-offset: 2px;
+}
+
+.kiosk-input-control {
+    width: 100%;
+    min-height: 42px;
+    border: 0;
+    background: transparent;
+    color: var(--color-text);
+    font-family: var(--font-family-display);
+    font-size: clamp(18px, 1.55vw, 26px);
+    font-weight: 700;
+    line-height: 1.1;
+    outline: none;
+}
+
+.kiosk-input-control::placeholder {
+    color: #b3b6be;
+    opacity: 1;
+}
+
+.kiosk-select-shell {
+    position: relative;
+}
+
+.kiosk-select-shell::after {
+    content: "";
+    position: absolute;
+    right: 22px;
+    top: 50%;
+    width: 12px;
+    height: 12px;
+    border-right: 3px solid var(--color-text);
+    border-bottom: 3px solid var(--color-text);
+    transform: translateY(-65%) rotate(45deg);
+    pointer-events: none;
+}
+
+.kiosk-select-control {
+    appearance: none;
+    padding-right: 34px;
+}
+
+.kiosk-input-toggle,
+.kiosk-inline-action {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    font-family: var(--font-family-display);
+    font-size: clamp(15px, 1.2vw, 20px);
+    font-weight: var(--font-weight-strong);
+    line-height: 1;
+    letter-spacing: -0.02em;
+    text-transform: uppercase;
+}
+
+.kiosk-input-toggle {
+    color: #6a7480;
+}
+
+.kiosk-inline-action {
+    color: var(--color-primary-dark);
+}
+
 @media (max-width: 1100px), (max-height: 760px) {
     .kiosk-health-bar {
         gap: 12px;
@@ -261,6 +363,7 @@
     }
 
     .home-status-list,
+    .setup-status-list,
     .camera-status-list,
     .processing-status-list,
     .result-status-list {

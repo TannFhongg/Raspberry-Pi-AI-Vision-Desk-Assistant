@@ -261,25 +261,33 @@ def _coerce_setup_step(value: Any) -> str:
 def _default_setup_state() -> dict[str, Any]:
     """Return the default persisted setup-wizard state."""
     required_buttons = _build_setup_gpio_requirements()
+    wifi_connected = _setup_is_complete() and bool(str(SETTINGS.network.wifi.ssid or "").strip())
+    openai_key_present = has_configured_openai_key(os.getenv("OPENAI_API_KEY"))
+    openai_verified = _setup_is_complete() and openai_key_present
+    current_step = "finish" if wifi_connected and openai_verified else "openai" if wifi_connected else "wifi"
     return {
-        "current_step": SETUP_STEPS[0],
+        "current_step": current_step,
         "warnings_acknowledged": False,
         "finish_message": "",
         "updated_at": _timestamp(),
         "wifi": {
             "scan_status": "idle",
-            "connect_status": "idle",
+            "connect_status": "pass" if wifi_connected else "idle",
             "available_networks": [],
             "ssid": SETTINGS.network.wifi.ssid,
             "connection_name": SETTINGS.network.wifi.connection_name,
-            "message": "",
+            "message": (
+                f"Connected to Wi-Fi network '{SETTINGS.network.wifi.ssid}'."
+                if wifi_connected
+                else ""
+            ),
             "auto_connect": SETTINGS.network.wifi.auto_connect,
             "managed_by": SETTINGS.network.wifi.managed_by,
         },
         "openai": {
-            "status": "idle",
-            "key_present": has_configured_openai_key(os.getenv("OPENAI_API_KEY")),
-            "message": "",
+            "status": "pass" if openai_verified else "idle",
+            "key_present": openai_key_present,
+            "message": "OpenAI API key is already configured." if openai_verified else "",
         },
         "camera": {
             "status": "idle",
@@ -490,24 +498,54 @@ def _setup_gpio_complete(state: dict[str, Any]) -> bool:
     return bool(required_labels) and required_labels.issubset(pressed_labels)
 
 
+def _setup_wifi_connected(state: dict[str, Any]) -> bool:
+    """Return True when setup has a successful Wi-Fi connection state."""
+    wifi = state.get("wifi", {}) if isinstance(state, dict) else {}
+    return str(wifi.get("connect_status", "")).strip().lower() == "pass"
+
+
+def _setup_openai_verified(state: dict[str, Any]) -> bool:
+    """Return True when setup has a verified OpenAI key state."""
+    openai = state.get("openai", {}) if isinstance(state, dict) else {}
+    return str(openai.get("status", "")).strip().lower() == "pass"
+
+
+def _setup_ready_to_finish(state: dict[str, Any] | None = None) -> bool:
+    """Return True when the setup wizard has everything required to finish."""
+    current_state = _load_setup_state() if state is None else state
+    return _setup_wifi_connected(current_state) and _setup_openai_verified(current_state)
+
+
 def _build_setup_warnings(state: dict[str, Any] | None = None) -> list[str]:
     """Return the unresolved warnings shown on the finish step."""
     current_state = _load_setup_state() if state is None else state
     warnings: list[str] = []
-    wifi = current_state["wifi"]
-    openai = current_state["openai"]
-    camera = current_state["camera"]
-    gpio = current_state["gpio"]
-
-    if wifi.get("connect_status") != "pass":
-        warnings.append("Wi-Fi setup has not completed successfully.")
-    if openai.get("status") != "pass":
-        warnings.append("OpenAI API key has not been verified successfully.")
-    if camera.get("status") != "pass":
-        warnings.append("Camera test has not completed successfully.")
-    if not _setup_gpio_complete(current_state):
-        warnings.append("GPIO button test has not completed successfully.")
+    if not _setup_wifi_connected(current_state):
+        warnings.append("Connect to Wi-Fi before finishing setup.")
+    if not _setup_openai_verified(current_state):
+        warnings.append("Verify the OpenAI API key before finishing setup.")
     return warnings
+
+
+def _looks_like_openai_api_key(value: str) -> bool:
+    """Return True when a key matches the supported setup input formats."""
+    normalized = value.strip()
+    return normalized.startswith("sk-")
+
+
+def _mask_secret_value(value: str | None) -> str:
+    """Return a commercially safe masked representation of a secret value."""
+    normalized = str(value or "").strip()
+    if not normalized:
+        return ""
+    if normalized.startswith("sk-proj-"):
+        prefix = "sk-proj-"
+    elif normalized.startswith("sk-"):
+        prefix = "sk-"
+    else:
+        prefix = normalized[: min(4, len(normalized))]
+    masked_count = max(8, len(normalized) - len(prefix))
+    return f"{prefix}{'*' * masked_count}"
 
 
 def _stop_setup_gpio_verifier(*, restart_main_listener: bool) -> None:
@@ -1129,9 +1167,10 @@ def _run_setup_wifi_connect(
             },
             config_path=_current_config_path(),
         )
+        next_step = "finish" if _setup_openai_verified(state) else "openai"
         _write_setup_state(
             {
-                "current_step": "openai",
+                "current_step": next_step,
                 "finish_message": "",
                 "wifi": {
                     "connect_status": "pass",
@@ -1162,7 +1201,7 @@ def _run_setup_wifi_connect(
 def _run_setup_openai_key(api_key: str) -> None:
     """Persist and verify the OpenAI API key for the device."""
     normalized_key = api_key.strip()
-    if not has_configured_openai_key(normalized_key):
+    if not has_configured_openai_key(normalized_key) or not _looks_like_openai_api_key(normalized_key):
         _write_setup_state(
             {
                 "current_step": "openai",
@@ -1170,7 +1209,7 @@ def _run_setup_openai_key(api_key: str) -> None:
                 "openai": {
                     "status": "fail",
                     "key_present": False,
-                    "message": "Enter a real OPENAI_API_KEY before continuing.",
+                    "message": "Enter a valid OPENAI_API_KEY starting with sk- before continuing.",
                 },
             }
         )
@@ -1178,8 +1217,9 @@ def _run_setup_openai_key(api_key: str) -> None:
 
     upsert_env_value(ENV_FILE_PATH, "OPENAI_API_KEY", normalized_key)
     os.environ["OPENAI_API_KEY"] = normalized_key
+    state = _load_setup_state()
     result = check_openai_reachable()
-    next_step = "camera" if result.passed else "openai"
+    next_step = "finish" if result.passed and _setup_wifi_connected(state) else "openai"
     _write_setup_state(
         {
             "current_step": next_step,
@@ -1307,12 +1347,12 @@ def _finish_setup(*, warnings_acknowledged: bool) -> None:
     """Persist setup completion and restart the app when the wizard finishes."""
     state = _sync_setup_gpio_state()
     warnings = _build_setup_warnings(state)
-    if warnings and not warnings_acknowledged:
+    if warnings:
         _write_setup_state(
             {
                 "current_step": "finish",
                 "warnings_acknowledged": False,
-                "finish_message": "Acknowledge the setup warnings before finishing.",
+                "finish_message": warnings[0],
             }
         )
         return
@@ -2557,6 +2597,15 @@ def _build_template_context(
         detail=state["detail"],
         error=state["error"],
     )
+    masked_openai_key = _mask_secret_value(os.getenv("OPENAI_API_KEY", ""))
+    if not (
+        setup_state
+        and (
+            str(setup_state["openai"].get("status", "")).strip().lower() != "idle"
+            or _setup_is_complete()
+        )
+    ):
+        masked_openai_key = ""
     result_view = _build_result_view(
         selected_mode,
         selected_mode_label=selected_mode_label,
@@ -2618,9 +2667,11 @@ def _build_template_context(
         "setup_state": setup_state,
         "setup_warnings": setup_warnings,
         "setup_has_warnings": bool(setup_warnings),
+        "setup_ready_to_finish": _setup_ready_to_finish(setup_state) if setup_state else False,
         "setup_finish_message": setup_state.get("finish_message", "") if setup_state else "",
         "setup_gpio_running": bool(setup_state and setup_state["gpio"].get("active")),
         "setup_can_exit": _setup_is_complete(),
+        "setup_masked_openai_key": masked_openai_key,
         "show_debug": UI_DEBUG,
         "ui_config": {
             "screen_width": UI_SCREEN_WIDTH,
