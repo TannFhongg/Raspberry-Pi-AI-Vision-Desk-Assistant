@@ -32,6 +32,8 @@ DEFAULT_PREVIEW_STREAM_RESOLUTION = (640, 360)
 DEFAULT_RECENT_PREVIEW_FRAME_WINDOW_SECONDS = 10.0
 PERSISTENT_PREVIEW_READ_ATTEMPTS = 1
 SNAPSHOT_PREVIEW_MIN_FRAME_INTERVAL_SECONDS = 0.25
+SNAPSHOT_PREVIEW_MIN_WARMUP_SECONDS = 0.18
+SNAPSHOT_PREVIEW_MAX_WARMUP_SECONDS = 0.35
 
 
 class LivePreviewError(Exception):
@@ -53,6 +55,7 @@ class LivePreviewService:
         autofocus_mode: str | None = None,
         exposure: str | int | None = None,
         brightness: float | None = None,
+        capture_delay_seconds: float | None = None,
         force_mjpeg: bool = True,
         target_fps: float = 0.0,
         frame_interval_seconds: float = 0.15,
@@ -66,7 +69,7 @@ class LivePreviewService:
             autofocus_mode=autofocus_mode,
             exposure=exposure,
             brightness=brightness,
-            capture_delay_seconds=0.0,
+            capture_delay_seconds=capture_delay_seconds,
             force_mjpeg=force_mjpeg,
             target_fps=target_fps,
         )
@@ -87,16 +90,22 @@ class LivePreviewService:
             max_height=preview_max_height,
         )
 
-        self._request = replace(
+        preview_request = replace(
             request,
             width=preview_width,
             height=preview_height,
             capture_delay_seconds=0.0,
             autofocus_mode="continuous" if request.autofocus_mode == "auto" else request.autofocus_mode,
         )
+        self._linux_mode = sys.platform.startswith("linux")
+        if prefer_snapshot_on_linux and self._linux_mode:
+            preview_request = _build_relaxed_snapshot_request(
+                preview_request,
+                warmup_hint_seconds=request.capture_delay_seconds,
+            )
+        self._request = preview_request
         self._frame_interval_seconds = max(0.02, frame_interval_seconds)
         self._preview_size = (preview_width, preview_height)
-        self._linux_mode = sys.platform.startswith("linux")
         self._linux_snapshot_fallback = bool(prefer_snapshot_on_linux and self._linux_mode)
         self._condition = threading.Condition()
         self._latest_frame = _build_placeholder_frame(
@@ -422,6 +431,20 @@ def _build_preview_resolution(
     return (preview_width, preview_height)
 
 
+def _build_relaxed_snapshot_request(request, *, warmup_hint_seconds: float) -> Any:
+    """Return a Linux-safe snapshot-preview request closer to the still-capture path."""
+    warmup_seconds = max(
+        SNAPSHOT_PREVIEW_MIN_WARMUP_SECONDS,
+        min(SNAPSHOT_PREVIEW_MAX_WARMUP_SECONDS, float(warmup_hint_seconds or 0.0)),
+    )
+    return replace(
+        request,
+        force_mjpeg=False,
+        target_fps=0.0,
+        capture_delay_seconds=warmup_seconds,
+    )
+
+
 def _normalize_even_dimension(value: int) -> int:
     """Prefer even preview dimensions so common webcam formats stay happy."""
     normalized = max(1, int(value))
@@ -587,8 +610,15 @@ class _OpenCVSnapshotFrameSource(_BaseFrameSource):
                     self._cv2,
                     error_cls=LivePreviewError,
                 )
-                _configure_opencv_camera(camera, self._request, self._resolved_config, self._cv2)
-                time.sleep(0.05)
+                _configure_opencv_camera(
+                    camera,
+                    self._request,
+                    self._resolved_config,
+                    self._cv2,
+                    apply_stream_preferences=False,
+                    apply_resolution=False,
+                )
+                time.sleep(max(0.05, float(self._request.capture_delay_seconds or 0.0)))
                 frame = _read_latest_valid_frame(
                     camera,
                     attempts=6,

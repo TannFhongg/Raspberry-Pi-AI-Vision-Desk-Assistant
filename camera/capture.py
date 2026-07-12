@@ -320,16 +320,29 @@ def _apply_opencv_controls(camera, resolved_config, cv2_module) -> list[str]:
     return warnings
 
 
-def _configure_opencv_camera(camera, request, resolved_config, cv2_module) -> list[str]:
+def _configure_opencv_camera(
+    camera,
+    request,
+    resolved_config,
+    cv2_module,
+    *,
+    apply_stream_preferences: bool = True,
+    apply_resolution: bool = True,
+) -> list[str]:
     """Apply stream preferences, resolution, and controls to an opened camera."""
-    warnings = _apply_opencv_stream_preferences(
-        camera,
-        cv2_module,
-        force_mjpeg=bool(getattr(request, "force_mjpeg", False)),
-        target_fps=float(getattr(request, "target_fps", 0.0) or 0.0),
-    )
-    camera.set(cv2_module.CAP_PROP_FRAME_WIDTH, float(request.width))
-    camera.set(cv2_module.CAP_PROP_FRAME_HEIGHT, float(request.height))
+    warnings: list[str] = []
+    if apply_stream_preferences:
+        warnings.extend(
+            _apply_opencv_stream_preferences(
+                camera,
+                cv2_module,
+                force_mjpeg=bool(getattr(request, "force_mjpeg", False)),
+                target_fps=float(getattr(request, "target_fps", 0.0) or 0.0),
+            )
+        )
+    if apply_resolution:
+        camera.set(cv2_module.CAP_PROP_FRAME_WIDTH, float(request.width))
+        camera.set(cv2_module.CAP_PROP_FRAME_HEIGHT, float(request.height))
     warnings.extend(_apply_opencv_controls(camera, resolved_config, cv2_module))
     return warnings
 
