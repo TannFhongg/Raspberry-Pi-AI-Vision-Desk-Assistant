@@ -8,9 +8,11 @@ ColumnLayout {
     spacing: 28
 
     Repeater {
-        model: root.model
+        model: root.model.count
 
         delegate: RowLayout {
+            required property int index
+            property var itemData: root.model.get(index)
             spacing: 18
             Layout.fillWidth: true
 
@@ -19,7 +21,7 @@ ColumnLayout {
                 height: 38
                 radius: 19
                 border.width: root.theme.borderStrong
-                border.color: model.state === "error" ? root.theme.error : root.theme.text
+                border.color: itemData.state === "error" ? root.theme.error : root.theme.text
                 color: "transparent"
 
                 Rectangle {
@@ -27,14 +29,14 @@ ColumnLayout {
                     width: 18
                     height: 18
                     radius: 9
-                    visible: model.state === "active" || model.state === "error"
-                    color: model.state === "error" ? root.theme.error : root.theme.primary
+                    visible: itemData.state === "active" || itemData.state === "error"
+                    color: itemData.state === "error" ? root.theme.error : root.theme.primary
                 }
 
                 Text {
                     anchors.centerIn: parent
-                    visible: model.state === "complete"
-                    text: "✓"
+                    visible: itemData.state === "complete"
+                    text: "OK"
                     color: root.theme.success
                     font.family: root.theme.displayFont
                     font.pixelSize: 20
@@ -43,7 +45,7 @@ ColumnLayout {
             }
 
             Text {
-                text: model.label
+                text: itemData.label || ""
                 color: root.theme.text
                 font.family: root.theme.displayFont
                 font.pixelSize: 32
@@ -53,4 +55,3 @@ ColumnLayout {
         }
     }
 }
-

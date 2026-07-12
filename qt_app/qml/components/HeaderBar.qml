@@ -18,15 +18,17 @@ RowLayout {
     }
 
     Repeater {
-        model: root.controller.healthMetricsModel
+        model: root.controller.healthMetricsModel.count
 
         delegate: HealthPill {
+            required property int index
+            property var itemData: root.controller.healthMetricsModel.get(index)
             theme: root.theme
-            label: model.label
-            value: model.value
-            state: model.state
-            message: model.message
-            valueSize: model.value_size
+            label: itemData.label || ""
+            value: itemData.value || ""
+            state: itemData.state || "unavailable"
+            message: itemData.message || ""
+            valueSize: itemData.value_size || "normal"
             Layout.alignment: Qt.AlignVCenter
         }
     }
@@ -36,4 +38,3 @@ RowLayout {
         Layout.alignment: Qt.AlignVCenter
     }
 }
-

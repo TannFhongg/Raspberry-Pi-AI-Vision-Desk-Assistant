@@ -121,13 +121,15 @@ Item {
                     }
 
                     Repeater {
-                        model: root.controller.cameraAnalysisModel
+                        model: root.controller.cameraAnalysisModel.count
 
                         delegate: StatusPill {
+                            required property int index
+                            property var itemData: root.controller.cameraAnalysisModel.get(index)
                             theme: root.theme
-                            label: model.key
-                            value: model.label
-                            tone: model.status
+                            label: itemData.key || ""
+                            value: itemData.label || ""
+                            tone: itemData.status || "unknown"
                             Layout.fillWidth: true
                         }
                     }
@@ -161,4 +163,3 @@ Item {
         }
     }
 }
-

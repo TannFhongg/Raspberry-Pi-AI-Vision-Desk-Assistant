@@ -39,14 +39,14 @@ Item {
             }
 
             GridLayout {
-                columns: 2
+                columns: 1
                 columnSpacing: 26
                 rowSpacing: 22
                 Layout.fillWidth: true
 
                 Rectangle {
                     Layout.fillWidth: true
-                    Layout.fillHeight: true
+                    Layout.preferredHeight: 520
                     radius: root.theme.radiusCard
                     border.width: root.theme.borderStrong
                     border.color: root.theme.text
@@ -92,25 +92,27 @@ Item {
                             Layout.fillWidth: true
                             Layout.preferredHeight: 150
                             clip: true
-                            model: root.controller.wifiNetworksModel
+                            model: root.controller.wifiNetworksModel.count
                             spacing: 8
 
                             delegate: Rectangle {
+                                required property int index
+                                property var itemData: root.controller.wifiNetworksModel.get(index)
                                 width: ListView.view.width
                                 height: 46
                                 radius: 18
                                 border.width: 2
-                                border.color: root.selectedSsid === model.ssid ? root.theme.primary : "#bbc4ce"
-                                color: root.selectedSsid === model.ssid ? "#eef7ff" : root.theme.mutedFill
+                                border.color: root.selectedSsid === (itemData.ssid || "") ? root.theme.primary : "#bbc4ce"
+                                color: root.selectedSsid === (itemData.ssid || "") ? "#eef7ff" : root.theme.mutedFill
 
                                 MouseArea {
                                     anchors.fill: parent
-                                    onClicked: root.selectedSsid = model.ssid
+                                    onClicked: root.selectedSsid = itemData.ssid || ""
                                 }
 
                                 Text {
                                     anchors.centerIn: parent
-                                    text: model.ssid + " • " + model.security
+                                    text: (itemData.ssid || "") + " - " + (itemData.security || "")
                                     color: root.theme.text
                                     font.family: root.theme.displayFont
                                     font.pixelSize: 20
@@ -148,7 +150,7 @@ Item {
 
                 Rectangle {
                     Layout.fillWidth: true
-                    Layout.fillHeight: true
+                    Layout.preferredHeight: 360
                     radius: root.theme.radiusCard
                     border.width: root.theme.borderStrong
                     border.color: root.theme.text
@@ -217,6 +219,7 @@ Item {
 
                 Rectangle {
                     Layout.fillWidth: true
+                    Layout.preferredHeight: 220
                     radius: root.theme.radiusCard
                     border.width: root.theme.borderStrong
                     border.color: root.theme.text
@@ -263,6 +266,7 @@ Item {
 
                 Rectangle {
                     Layout.fillWidth: true
+                    Layout.preferredHeight: 360
                     radius: root.theme.radiusCard
                     border.width: root.theme.borderStrong
                     border.color: root.theme.text
@@ -299,19 +303,21 @@ Item {
                         }
 
                         Repeater {
-                            model: root.controller.gpioRequirementsModel
+                            model: root.controller.gpioRequirementsModel.count
 
                             delegate: Rectangle {
+                                required property int index
+                                property var itemData: root.controller.gpioRequirementsModel.get(index)
                                 Layout.fillWidth: true
                                 implicitHeight: 42
                                 radius: 16
                                 border.width: 2
-                                border.color: model.pressed ? "#2d9b5d" : "#bbc4ce"
-                                color: model.pressed ? root.theme.successFill : root.theme.mutedFill
+                                border.color: itemData.pressed ? "#2d9b5d" : "#bbc4ce"
+                                color: itemData.pressed ? root.theme.successFill : root.theme.mutedFill
 
                                 Text {
                                     anchors.centerIn: parent
-                                    text: model.label + " • GPIO " + model.pin
+                                    text: (itemData.label || "") + " - GPIO " + (itemData.pin || "")
                                     color: root.theme.text
                                     font.family: root.theme.displayFont
                                     font.pixelSize: 18
@@ -345,6 +351,7 @@ Item {
 
             Rectangle {
                 Layout.fillWidth: true
+                Layout.preferredHeight: 180
                 radius: root.theme.radiusCard
                 border.width: root.theme.borderStrong
                 border.color: root.controller.setupReadyToFinish ? root.theme.success : root.theme.text

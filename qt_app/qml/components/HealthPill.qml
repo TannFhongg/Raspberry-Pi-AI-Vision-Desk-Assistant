@@ -55,7 +55,7 @@ Rectangle {
         }
     }
 
-    ToolTip.visible: pillArea.containsMouse
+    ToolTip.visible: pillArea.hovered
     ToolTip.text: root.message
 
     HoverHandler {

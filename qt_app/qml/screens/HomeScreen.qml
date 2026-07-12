@@ -9,6 +9,13 @@ Item {
     required property QtObject theme
     required property var controller
 
+    function cardWidthFor(index, availableWidth) {
+        if (index >= 3) {
+            return Math.max(280, (availableWidth - 26) / 2)
+        }
+        return Math.max(240, (availableWidth - (26 * 2)) / 3)
+    }
+
     ColumnLayout {
         anchors.fill: parent
         spacing: 24
@@ -22,28 +29,27 @@ Item {
             Layout.fillWidth: true
         }
 
-        GridLayout {
-            columns: 6
-            columnSpacing: 26
-            rowSpacing: 28
+        Flow {
+            id: modeFlow
             Layout.fillWidth: true
             Layout.fillHeight: true
+            spacing: 26
 
             Repeater {
-                model: root.controller.modeCardsModel
+                model: root.controller.modeCardsModel.count
 
                 delegate: ModeCard {
+                    required property int index
+                    property var itemData: root.controller.modeCardsModel.get(index)
                     theme: root.theme
-                    title: model.name
-                    description: model.description
-                    selected: model.id === root.controller.selectedMode
-                    Layout.columnSpan: index >= 3 ? 3 : 2
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    onClicked: root.controller.selectMode(model.id)
+                    title: itemData.name || ""
+                    description: itemData.description || ""
+                    selected: (itemData.id || "") === root.controller.selectedMode
+                    width: root.cardWidthFor(index, modeFlow.width)
+                    height: 170
+                    onClicked: root.controller.selectMode(itemData.id || "")
                 }
             }
         }
     }
 }
-

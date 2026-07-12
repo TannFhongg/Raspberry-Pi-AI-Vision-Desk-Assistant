@@ -8,6 +8,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QEvent, QObject, QTimer, Qt, QUrl
 from PySide6.QtGui import QCursor, QGuiApplication
+from PySide6.QtQuickControls2 import QQuickStyle
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtWidgets import QApplication
 
@@ -77,6 +78,7 @@ def build_argument_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     """Bootstrap the Qt runtime, controllers, image providers, and QML engine."""
     args = build_argument_parser().parse_args(argv)
+    QQuickStyle.setStyle("Basic")
     app = QApplication(argv or sys.argv)
     app.setApplicationName("VisionDesk Qt")
     app.setOrganizationName("VisionDesk")

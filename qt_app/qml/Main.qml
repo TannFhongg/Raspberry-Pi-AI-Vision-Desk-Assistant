@@ -12,7 +12,7 @@ ApplicationWindow {
     width: appController.windowWidth
     height: appController.windowHeight
     visible: true
-    color: theme.pageBackground
+    color: appTheme.pageBackground
     title: "VisionDesk Qt"
     readonly property int designWidth: 1200
     readonly property int designHeight: 800
@@ -24,42 +24,42 @@ ApplicationWindow {
     )
 
     Theme {
-        id: theme
+        id: appTheme
     }
 
     Component {
         id: homeScreenComponent
-        HomeScreen { theme: theme; controller: appController }
+        HomeScreen { theme: appTheme; controller: appController }
     }
 
     Component {
         id: setupScreenComponent
-        SetupScreen { theme: theme; controller: appController }
+        SetupScreen { theme: appTheme; controller: appController }
     }
 
     Component {
         id: cameraScreenComponent
-        CameraScreen { theme: theme; controller: appController }
+        CameraScreen { theme: appTheme; controller: appController }
     }
 
     Component {
         id: processingScreenComponent
-        ProcessingScreen { theme: theme; controller: appController }
+        ProcessingScreen { theme: appTheme; controller: appController }
     }
 
     Component {
         id: resultScreenComponent
-        ResultScreen { theme: theme; controller: appController }
+        ResultScreen { theme: appTheme; controller: appController }
     }
 
     Component {
         id: errorScreenComponent
-        ErrorScreen { theme: theme; controller: appController }
+        ErrorScreen { theme: appTheme; controller: appController }
     }
 
     Rectangle {
         anchors.fill: parent
-        color: theme.pageBackground
+        color: appTheme.pageBackground
 
         Item {
             id: designCanvas
@@ -76,15 +76,15 @@ ApplicationWindow {
                 spacing: 0
 
                 HeaderBar {
-                    theme: theme
+                    theme: appTheme
                     controller: appController
                     Layout.fillWidth: true
                 }
 
                 Rectangle {
                     Layout.fillWidth: true
-                    height: theme.dividerStrong
-                    color: theme.primary
+                    height: appTheme.dividerStrong
+                    color: appTheme.primary
                     Layout.topMargin: 16
                     Layout.bottomMargin: 18
                 }
