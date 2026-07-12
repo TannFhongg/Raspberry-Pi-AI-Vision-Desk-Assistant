@@ -184,7 +184,7 @@
 }
 
 .result-answer-copy {
-    font-size: clamp(19px, 1.55vw, 24px);
+    font-size: clamp(30px, 1.8vw, 35px);
     font-weight: 600;
     line-height: 1.34;
 }
