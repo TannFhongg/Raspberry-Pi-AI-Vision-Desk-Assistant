@@ -31,6 +31,7 @@ Camera capture -> OpenCV preprocess / screen optimization -> OpenAI Vision -> CL
 
 - `main.py` runs the full camera -> preprocess -> OpenAI workflow from the terminal.
 - `app.py` exposes a touchscreen-first Flask UI with `setup`, `home`, `processing`, `result`, `error`, `history`, and `history_detail` screens.
+- `qt_app/` now contains the native `PySide6 + Qt Quick/QML` migration shell for `setup`, `home`, `camera`, `processing`, `result`, and `error`.
 - `test_gpio_button.py` and the embedded Flask GPIO listener both trigger the same shared capture pipeline.
 - Live framing is available through `/camera/live-stream.mjpg`, with `/camera/live-frame.jpg` kept as a diagnostic and compatibility endpoint.
 - Compact device-health data is available through `/api/health`, and the UI state is exposed through `/api/ui-state`.
@@ -56,6 +57,7 @@ raspberry-pi-ai-vision-assistant/
 |-- gpio/
 |-- hardware/
 |-- pipeline/
+|-- qt_app/
 |-- static/
 |-- system/
 |-- templates/
@@ -67,6 +69,7 @@ raspberry-pi-ai-vision-assistant/
 |-- PROJECT_CONTEXT.md
 |-- README.md
 |-- requirements.txt
+|-- requirements-qt.txt
 |-- test_ai_vision.py
 |-- test_camera_capture.py
 |-- test_gpio_button.py
@@ -81,6 +84,7 @@ Key directories:
 - `config/`: typed settings loader plus the committed `config/device.yaml` baseline
 - `hardware/`: button, LED, camera request, setup GPIO verifier, device-state, and diagnostics helpers
 - `pipeline/`: shared capture, preprocess, analyze, and result-writing orchestration
+- `qt_app/`: native Qt runtime, controllers, QML screens, and image providers for the v1 migration
 - `system/`: logging, storage helpers, first-boot setup helpers, health monitor, and offline retry queue
 - `templates/` and `static/`: the kiosk-oriented Flask UI
 - `vision/`: preprocessing, screen detection, perspective correction, and text enhancement
@@ -339,6 +343,26 @@ python test_gpio_button.py --mode general_vision
 python check_hardware.py
 ```
 
+### Native Qt UI preview
+
+Install the extra UI dependencies once:
+
+```bash
+pip install -r requirements-qt.txt
+```
+
+Run the native Qt shell in a desktop window:
+
+```bash
+python -m qt_app.main --windowed --mock-hardware
+```
+
+Run against real hardware and use fullscreen by default:
+
+```bash
+python -m qt_app.main
+```
+
 ## Web and Hardware Flow
 
 The first-boot gate now sits in front of the normal device state machine:
@@ -362,6 +386,12 @@ Current UI behavior:
 - `result`: a two-panel answer screen with status, current mode, processed preview, answer text, `Capture Again`, and `Back`
 - `error`: short classified camera/network/API/generic failure screen with retry actions
 - `history` and `history_detail`: recent text-only results without retained source images
+
+Qt v1 notes:
+
+- `qt_app.main` does not open an HTTP port for UI state or health polling.
+- The Qt shell reuses shared Python presenters, setup helpers, and result-history helpers directly.
+- `history` and `history_detail` remain Flask-only in the current migration milestone.
 
 Route notes:
 
@@ -425,6 +455,7 @@ Reliability behavior:
 The project ships with:
 
 - [deployment/ai-vision-assistant.service](deployment/ai-vision-assistant.service)
+- [deployment/visiondesk-qt.service](deployment/visiondesk-qt.service)
 - [deployment/kiosk-launch.sh](deployment/kiosk-launch.sh)
 - [deployment/labwc-autostart.example](deployment/labwc-autostart.example)
 
@@ -445,6 +476,25 @@ For fullscreen kiosk startup on Raspberry Pi OS Bookworm with `labwc`:
 2. Update the repo path in that file if needed
 3. Make `deployment/kiosk-launch.sh` executable
 4. Reboot and verify Chromium opens `http://127.0.0.1:5000`
+
+To switch the device to the native Qt kiosk service instead:
+
+```bash
+sudo cp deployment/visiondesk-qt.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl disable --now ai-vision-assistant.service
+sudo systemctl enable --now visiondesk-qt.service
+sudo systemctl status visiondesk-qt.service
+journalctl -u visiondesk-qt.service -f
+```
+
+Qt v1 Raspberry Pi validation checklist:
+
+- confirm the app opens fullscreen at `1200x800`
+- verify the live preview keeps the expected aspect ratio on the camera and setup screens
+- test capture, retry, and back actions from both touch and GPIO buttons
+- confirm setup completion exits the process and that systemd relaunches it cleanly
+- confirm no API keys or Wi-Fi passwords appear in the visible UI or logs
 
 ## Troubleshooting
 

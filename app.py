@@ -55,12 +55,57 @@ from system import (
     safe_rmtree,
     safe_unlink,
 )
+from system.result_history import ResultHistoryStore
 from system.device_setup import (
     DeviceSetupError,
     connect_wifi_network,
     has_configured_openai_key,
     scan_wifi_networks,
     upsert_env_value,
+)
+from system.setup_flow import (
+    SetupStateStore,
+    finish_setup as shared_finish_setup,
+    looks_like_openai_api_key as shared_looks_like_openai_api_key,
+    mask_secret_value as shared_mask_secret_value,
+    merge_nested_state as shared_merge_nested_state,
+    run_setup_camera_test as shared_run_setup_camera_test,
+    run_setup_openai_key as shared_run_setup_openai_key,
+    run_setup_wifi_connect as shared_run_setup_wifi_connect,
+    sync_setup_gpio_state as shared_sync_setup_gpio_state,
+)
+from system.ui_catalog import (
+    INTERNAL_TO_UI_MODE,
+    MODE_LABELS,
+    MODE_SELECTED_DETAIL,
+    PIPELINE_PROGRESS_DETAILS,
+    PIPELINE_PROGRESS_STATES,
+    PROCESSING_MODE_COPY,
+    PROGRESS_STEPS,
+    READY_DETAIL,
+    RESULT_MODE_TITLES,
+    SETUP_GPIO_LABELS,
+    SETUP_STEPS,
+    UI_MODE_BY_ID,
+    UI_MODE_OPTIONS,
+    UI_MODE_TO_INTERNAL_MODE,
+    default_ui_mode_for_internal,
+    normalize_internal_mode as shared_normalize_internal_mode,
+    normalize_progress_state as shared_normalize_progress_state,
+    normalize_ui_mode as shared_normalize_ui_mode,
+    resolve_mode_pair as shared_resolve_mode_pair,
+)
+from system.ui_presenters import (
+    HealthSummaryBuilder,
+    build_processing_view as shared_build_processing_view,
+    build_progress_steps as shared_build_progress_steps,
+    build_result_detail_view as shared_build_result_detail_view,
+    build_result_view as shared_build_result_view,
+    format_answer_html as shared_format_answer_html,
+    humanize_error as shared_humanize_error,
+    pipeline_progress_to_step_index as shared_pipeline_progress_to_step_index,
+    processing_error_step as shared_processing_error_step,
+    processing_progress_for_message as shared_processing_progress_for_message,
 )
 
 load_dotenv()
@@ -123,120 +168,8 @@ APP_STYLESHEET_FILES = (
     Path("static/css/legacy.css"),
 )
 MJPEG_BOUNDARY = "frame"
-SETUP_STEPS = ("wifi", "openai", "camera", "gpio", "finish")
-SETUP_GPIO_LABELS = {
-    "capture": "Capture Button",
-    "mode_read_text": "Read Text Button",
-    "mode_summarize_document": "Summarize Document Button",
-    "mode_analyze_image": "Analyze Image Button",
-    "mode_professional_assistant": "Professional Assistant Button",
-    "mode_solve_problem": "Solve Problem Button",
-    "back": "Back Button",
-}
 SETUP_RESTART_DELAY_SECONDS = 0.75
-UI_MODE_OPTIONS = (
-    {
-        "id": "read_text",
-        "name": "Read Text",
-        "description": "Hear printed text clearly",
-        "button_label": "BUTTON 1",
-        "internal_mode": "document_reader",
-    },
-    {
-        "id": "summarize_document",
-        "name": "Summarize Document",
-        "description": "Get the key points quickly",
-        "button_label": "BUTTON 2",
-        "internal_mode": "document_reader",
-    },
-    {
-        "id": "analyze_image",
-        "name": "Analyze Image",
-        "description": "Understand what you see",
-        "button_label": "BUTTON 3",
-        "internal_mode": "general_vision",
-    },
-    {
-        "id": "professional_assistant",
-        "name": "Professional Assistant",
-        "description": "Write, plan, and organize",
-        "button_label": "BUTTON 4",
-        "internal_mode": "general_vision",
-    },
-    {
-        "id": "solve_problem",
-        "name": "Solve Problem",
-        "description": "Work through questions step by step",
-        "button_label": "BUTTON 5",
-        "internal_mode": "math_solver",
-    },
-)
-UI_MODE_BY_ID = {mode["id"]: mode for mode in UI_MODE_OPTIONS}
-MODE_LABELS = {mode["id"]: mode["name"] for mode in UI_MODE_OPTIONS}
-UI_MODE_TO_INTERNAL_MODE = {
-    mode["id"]: mode["internal_mode"] for mode in UI_MODE_OPTIONS
-}
-INTERNAL_TO_UI_MODE = {
-    "document_reader": "read_text",
-    "math_solver": "solve_problem",
-    "engineering_mode": "analyze_image",
-    "general_vision": "analyze_image",
-}
-PROGRESS_STEPS = ("Image captured", "Processing", "Result")
-PIPELINE_PROGRESS_STATES = frozenset(
-    {
-        "IDLE",
-        "CAPTURING",
-        "PREPROCESSING",
-        "ANALYZING",
-        "RETRY_QUEUED",
-        "DONE",
-        "ERROR",
-    }
-)
-PIPELINE_PROGRESS_DETAILS = {
-    "CAPTURING": "Capturing image...",
-    "PREPROCESSING": "Preprocessing image...",
-    "ANALYZING": "Sending to AI...",
-    "RETRY_QUEUED": "Saved for retry",
-    "DONE": "Result ready",
-    "ERROR": "Error",
-}
-PROCESSING_MODE_COPY = {
-    "read_text": {
-        "title": "Reading Text",
-        "subtitle": "Reading printed text",
-    },
-    "summarize_document": {
-        "title": "Summarizing Document",
-        "subtitle": "Analyzing structure and text",
-    },
-    "summarize": {
-        "title": "Summarizing Document",
-        "subtitle": "Analyzing structure and text",
-    },
-    "analyze_image": {
-        "title": "Analyzing Image",
-        "subtitle": "Understanding the captured image",
-    },
-    "professional_assistant": {
-        "title": "Professional Assistant",
-        "subtitle": "Organizing a professional response",
-    },
-    "solve_problem": {
-        "title": "Solving Problem",
-        "subtitle": "Working through the problem step by step",
-    },
-}
 PROCESSING_TRANSITION_SECONDS = 1.0
-RESULT_MODE_TITLES = {
-    "read_text": "Extracted Text",
-    "summarize_document": "Key Takeaways",
-    "summarize": "Key Takeaways",
-    "analyze_image": "Image Analysis",
-    "professional_assistant": "Recommendations",
-    "solve_problem": "Solution",
-}
 
 STATE_LOCK = threading.Lock()
 SETUP_STATE_LOCK = threading.Lock()
@@ -253,6 +186,9 @@ HEALTH_MONITOR: HealthMonitor | None = None
 RESULT_HISTORY_CACHE: list[dict[str, Any]] | None = None
 RESULT_HISTORY_THUMBNAIL_CACHE: dict[str, str] = {}
 OFFLINE_RETRY_QUEUE: OfflineRetryQueue | None = None
+SETUP_STATE_STORE: SetupStateStore | None = None
+RESULT_HISTORY_STORE: ResultHistoryStore | None = None
+HEALTH_SUMMARY_BUILDER: HealthSummaryBuilder | None = None
 
 
 def _current_config_path() -> Path:
@@ -263,6 +199,76 @@ def _current_config_path() -> Path:
 def _setup_is_complete() -> bool:
     """Return True when the first-boot flow has been completed."""
     return bool(getattr(SETTINGS.setup, "completed", False))
+
+
+def _get_setup_state_store() -> SetupStateStore:
+    """Return the shared setup-state persistence service."""
+    global SETUP_STATE_STORE
+    if (
+        SETUP_STATE_STORE is None
+        or SETUP_STATE_STORE.state_path != SETUP_STATE_PATH
+        or SETUP_STATE_STORE.quarantine_dir != PRIVATE_QUARANTINE_PATH
+    ):
+        SETUP_STATE_STORE = SetupStateStore(
+            state_path=SETUP_STATE_PATH,
+            quarantine_dir=PRIVATE_QUARANTINE_PATH,
+            timestamp_provider=_timestamp,
+            setup_steps=SETUP_STEPS,
+            build_gpio_requirements=_build_setup_gpio_requirements,
+            setup_is_complete=_setup_is_complete,
+            current_wifi_ssid=lambda: SETTINGS.network.wifi.ssid,
+            current_wifi_connection_name=lambda: SETTINGS.network.wifi.connection_name,
+            current_wifi_auto_connect=lambda: SETTINGS.network.wifi.auto_connect,
+            current_wifi_managed_by=lambda: SETTINGS.network.wifi.managed_by,
+            has_configured_openai_key=has_configured_openai_key,
+            current_openai_key=lambda: os.getenv("OPENAI_API_KEY"),
+        )
+    return SETUP_STATE_STORE
+
+
+def _get_result_history_store() -> ResultHistoryStore:
+    """Return the shared text-only result-history service."""
+    global RESULT_HISTORY_STORE
+    if (
+        RESULT_HISTORY_STORE is None
+        or RESULT_HISTORY_STORE.history_path != RESULT_HISTORY_PATH
+        or RESULT_HISTORY_STORE.quarantine_dir != PRIVATE_QUARANTINE_PATH
+        or RESULT_HISTORY_STORE.retention_days != TEXT_HISTORY_RETENTION_DAYS
+        or RESULT_HISTORY_STORE.result_limit != RESULT_HISTORY_LIMIT
+    ):
+        RESULT_HISTORY_STORE = ResultHistoryStore(
+            history_path=RESULT_HISTORY_PATH,
+            quarantine_dir=PRIVATE_QUARANTINE_PATH,
+            retention_days=TEXT_HISTORY_RETENTION_DAYS,
+            result_limit=RESULT_HISTORY_LIMIT,
+            resolve_mode_pair=_resolve_mode_pair,
+            mode_label_resolver=_history_mode_label,
+            timestamp_provider=_timestamp,
+        )
+    return RESULT_HISTORY_STORE
+
+
+def _get_health_summary_builder() -> HealthSummaryBuilder:
+    """Return the shared live-header presenter service."""
+    global HEALTH_SUMMARY_BUILDER
+    if HEALTH_SUMMARY_BUILDER is None:
+        HEALTH_SUMMARY_BUILDER = HealthSummaryBuilder(
+            load_ui_state=_load_ui_state,
+            resolve_mode_pair=_resolve_mode_pair,
+            resolve_render_screen=_resolve_render_screen,
+            load_health_snapshot=_load_health_snapshot,
+            load_setup_state=_load_setup_state,
+            setup_is_complete=_setup_is_complete,
+            live_preview_runtime_status=_live_preview_runtime_status,
+            is_live_preview_screen=_is_live_preview_screen,
+            camera_autofocus_mode=CAMERA_AUTOFOCUS_MODE,
+            cpu_warning_threshold=UI_CPU_WARNING_C,
+            cpu_error_threshold=UI_CPU_ERROR_C,
+            memory_warning_threshold=UI_MEMORY_WARNING_PERCENT,
+            memory_error_threshold=UI_MEMORY_ERROR_PERCENT,
+            offline_retry_enabled=OFFLINE_RETRY_ENABLED,
+        )
+    return HEALTH_SUMMARY_BUILDER
 
 
 def _coerce_setup_step(value: Any) -> str:
@@ -417,54 +423,26 @@ def _coerce_setup_required_buttons(value: Any) -> list[dict[str, Any]]:
 
 def _load_setup_state() -> dict[str, Any]:
     """Read the persisted setup-wizard state file."""
-    default_state = _default_setup_state()
     with SETUP_STATE_LOCK:
-        if not SETUP_STATE_PATH.is_file():
-            return default_state
-        try:
-            raw_state = json.loads(SETUP_STATE_PATH.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            quarantine_file(
-                SETUP_STATE_PATH,
-                quarantine_dir=PRIVATE_QUARANTINE_PATH,
-                reason="invalid-setup-state",
-            )
-            return default_state
-    return _coerce_setup_state(raw_state)
+        return _get_setup_state_store().load_state()
 
 
 def _write_setup_state(updates: dict[str, Any] | None = None) -> dict[str, Any]:
     """Persist merged setup-wizard state to disk."""
-    next_state = _load_setup_state()
-    if updates:
-        _merge_nested_state(next_state, updates)
-    next_state["current_step"] = _coerce_setup_step(next_state.get("current_step"))
-    next_state["updated_at"] = _timestamp()
-    next_state = _coerce_setup_state(next_state)
-    SETUP_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
     with SETUP_STATE_LOCK:
-        atomic_write_json(
-            SETUP_STATE_PATH,
-            next_state,
-            ensure_ascii=False,
-            indent=2,
-        )
-    return next_state
+        return _get_setup_state_store().write_state(updates)
 
 
 def _clear_setup_state() -> None:
     """Delete the persisted setup state and stop any temporary GPIO verifier."""
     _stop_setup_gpio_verifier(restart_main_listener=False)
-    safe_unlink(SETUP_STATE_PATH)
+    with SETUP_STATE_LOCK:
+        _get_setup_state_store().clear_state()
 
 
 def _merge_nested_state(target: dict[str, Any], updates: dict[str, Any]) -> None:
     """Recursively merge nested state dictionaries in-place."""
-    for key, value in updates.items():
-        if isinstance(value, dict) and isinstance(target.get(key), dict):
-            _merge_nested_state(target[key], value)
-        else:
-            target[key] = value
+    shared_merge_nested_state(target, updates)
 
 
 def _build_setup_gpio_requirements() -> list[dict[str, Any]]:
@@ -527,40 +505,22 @@ def _setup_openai_verified(state: dict[str, Any]) -> bool:
 
 def _setup_ready_to_finish(state: dict[str, Any] | None = None) -> bool:
     """Return True when the setup wizard has everything required to finish."""
-    current_state = _load_setup_state() if state is None else state
-    return _setup_wifi_connected(current_state) and _setup_openai_verified(current_state)
+    return _get_setup_state_store().setup_ready_to_finish(state)
 
 
 def _build_setup_warnings(state: dict[str, Any] | None = None) -> list[str]:
     """Return the unresolved warnings shown on the finish step."""
-    current_state = _load_setup_state() if state is None else state
-    warnings: list[str] = []
-    if not _setup_wifi_connected(current_state):
-        warnings.append("Connect to Wi-Fi before finishing setup.")
-    if not _setup_openai_verified(current_state):
-        warnings.append("Verify the OpenAI API key before finishing setup.")
-    return warnings
+    return _get_setup_state_store().build_warnings(state)
 
 
 def _looks_like_openai_api_key(value: str) -> bool:
     """Return True when a key matches the supported setup input formats."""
-    normalized = value.strip()
-    return normalized.startswith("sk-")
+    return shared_looks_like_openai_api_key(value)
 
 
 def _mask_secret_value(value: str | None) -> str:
     """Return a commercially safe masked representation of a secret value."""
-    normalized = str(value or "").strip()
-    if not normalized:
-        return ""
-    if normalized.startswith("sk-proj-"):
-        prefix = "sk-proj-"
-    elif normalized.startswith("sk-"):
-        prefix = "sk-"
-    else:
-        prefix = normalized[: min(4, len(normalized))]
-    masked_count = max(8, len(normalized) - len(prefix))
-    return f"{prefix}{'*' * masked_count}"
+    return shared_mask_secret_value(value)
 
 
 def _stop_setup_gpio_verifier(*, restart_main_listener: bool) -> None:
@@ -704,9 +664,7 @@ else:
 UI_PROCESSING_REFRESH_MS = _read_int_env("UI_PROCESSING_REFRESH_MS", 800, minimum=400, maximum=5000)
 UI_IDLE_REFRESH_MS = _read_int_env("UI_IDLE_REFRESH_MS", 2500, minimum=1000, maximum=10000)
 DEFAULT_CAPTURE_INTERNAL_MODE = SETTINGS.ai.default_mode
-DEFAULT_CAPTURE_MODE = INTERNAL_TO_UI_MODE.get(DEFAULT_CAPTURE_INTERNAL_MODE, "read_text")
-READY_DETAIL = "Press button to select the mode."
-MODE_SELECTED_DETAIL = "Selected mode ready. Press Button Main to capture."
+DEFAULT_CAPTURE_MODE = default_ui_mode_for_internal(DEFAULT_CAPTURE_INTERNAL_MODE, "read_text")
 HARDWARE_IDLE_SCREENS = {"home", "camera", "result", "error"}
 MODE_BUTTON_PINS = {
     "read_text": MODE_BUTTON_1_PIN,
@@ -1123,25 +1081,9 @@ def _sync_setup_gpio_state() -> dict[str, Any]:
         and bool(state["gpio"].get("all_pressed")) == bool(snapshot["all_pressed"])
     ):
         return state
-    required = [
-        {
-            "label": item["label"],
-            "pin": item["pin"],
-            "pressed": item["label"] in set(snapshot["pressed_labels"]),
-        }
-        for item in snapshot["required"]
-    ]
-    return _write_setup_state(
-        {
-            "gpio": {
-                "status": "pass" if snapshot["all_pressed"] else "running",
-                "message": snapshot["message"],
-                "active": True,
-                "required": required,
-                "pressed_labels": snapshot["pressed_labels"],
-                "all_pressed": snapshot["all_pressed"],
-            }
-        }
+    return shared_sync_setup_gpio_state(
+        _get_setup_state_store(),
+        _snapshot_setup_gpio_progress,
     )
 
 
@@ -1187,113 +1129,39 @@ def _run_setup_wifi_connect(
     connection_name: str,
 ) -> None:
     """Connect to Wi-Fi, persist YAML metadata, and update setup state."""
-    state = _load_setup_state()
-    requested_ssid = manual_ssid.strip() or selected_ssid.strip()
-    hidden = bool(manual_ssid.strip()) and requested_ssid not in {
-        str(item.get("ssid", "")).strip()
-        for item in state["wifi"].get("available_networks", [])
-        if isinstance(item, dict)
-    }
     try:
-        wifi_details = connect_wifi_network(
-            ssid=requested_ssid,
+        shared_run_setup_wifi_connect(
+            _get_setup_state_store(),
+            selected_ssid=selected_ssid,
+            manual_ssid=manual_ssid,
             password=password,
-            connection_name=connection_name.strip() or requested_ssid,
-            hidden=hidden,
-            auto_connect=True,
-        )
-        update_device_config(
-            {
-                "network": {
-                    "wifi": {
-                        "ssid": wifi_details["ssid"],
-                        "connection_name": wifi_details["connection_name"],
-                        "auto_connect": True,
-                        "managed_by": "nmcli",
-                    }
-                }
-            },
-            config_path=_current_config_path(),
-        )
-        next_step = "finish" if _setup_openai_verified(state) else "openai"
-        _write_setup_state(
-            {
-                "current_step": next_step,
-                "finish_message": "",
-                "wifi": {
-                    "connect_status": "pass",
-                    "ssid": wifi_details["ssid"],
-                    "connection_name": wifi_details["connection_name"],
-                    "message": wifi_details["message"],
-                    "auto_connect": True,
-                    "managed_by": "nmcli",
-                },
-            }
+            connection_name=connection_name,
+            connect_wifi_network=connect_wifi_network,
+            update_device_config=lambda payload: update_device_config(
+                payload,
+                config_path=_current_config_path(),
+            ),
         )
     except (DeviceSetupError, SettingsError) as exc:
         LOGGER.warning("Wi-Fi connect failed: %s", exc)
-        _write_setup_state(
-            {
-                "current_step": "wifi",
-                "finish_message": "",
-                "wifi": {
-                    "connect_status": "fail",
-                    "ssid": requested_ssid,
-                    "connection_name": connection_name.strip() or requested_ssid,
-                    "message": str(exc),
-                },
-            }
-        )
 
 
 def _run_setup_openai_key(api_key: str) -> None:
     """Persist and verify the OpenAI API key for the device."""
-    normalized_key = api_key.strip()
-    if not has_configured_openai_key(normalized_key) or not _looks_like_openai_api_key(normalized_key):
-        _write_setup_state(
-            {
-                "current_step": "openai",
-                "finish_message": "",
-                "openai": {
-                    "status": "fail",
-                    "key_present": False,
-                    "message": "Enter a valid OPENAI_API_KEY starting with sk- before continuing.",
-                },
-            }
-        )
-        return
-
-    upsert_env_value(ENV_FILE_PATH, "OPENAI_API_KEY", normalized_key)
-    os.environ["OPENAI_API_KEY"] = normalized_key
-    state = _load_setup_state()
-    result = check_openai_reachable()
-    next_step = "finish" if result.passed and _setup_wifi_connected(state) else "openai"
-    _write_setup_state(
-        {
-            "current_step": next_step,
-            "finish_message": "",
-            "openai": {
-                "status": "pass" if result.passed else "fail",
-                "key_present": True,
-                "message": result.message,
-            },
-        }
+    shared_run_setup_openai_key(
+        _get_setup_state_store(),
+        api_key=api_key,
+        env_file_path=ENV_FILE_PATH,
+        upsert_env_value=upsert_env_value,
+        check_openai_reachable=check_openai_reachable,
     )
 
 
 def _run_setup_camera_test() -> None:
     """Run the configured one-shot camera diagnostic."""
-    result = check_camera(SETTINGS)
-    next_step = "gpio" if result.passed else "camera"
-    _write_setup_state(
-        {
-            "current_step": next_step,
-            "finish_message": "",
-            "camera": {
-                "status": "pass" if result.passed else "fail",
-                "message": result.message,
-            },
-        }
+    shared_run_setup_camera_test(
+        _get_setup_state_store(),
+        check_camera=lambda: check_camera(SETTINGS),
     )
 
 
@@ -1393,37 +1261,24 @@ def _stop_setup_gpio_test() -> None:
 
 def _finish_setup(*, warnings_acknowledged: bool) -> None:
     """Persist setup completion and restart the app when the wizard finishes."""
-    state = _sync_setup_gpio_state()
-    warnings = _build_setup_warnings(state)
-    if warnings:
-        _write_setup_state(
-            {
-                "current_step": "finish",
-                "warnings_acknowledged": False,
-                "finish_message": warnings[0],
-            }
-        )
-        return
-
-    completion_timestamp = datetime.now().isoformat(timespec="seconds")
-    update_device_config(
-        {
-            "setup": {
-                "completed": True,
-                "completed_at": completion_timestamp,
-                "version": 1,
-            },
-            "localization": {
-                "locale": "en",
-            },
-        },
-        config_path=_current_config_path(),
+    _sync_setup_gpio_state()
+    _write_setup_state({"warnings_acknowledged": bool(warnings_acknowledged)})
+    shared_finish_setup(
+        _get_setup_state_store(),
+        update_device_config=lambda payload: update_device_config(
+            payload,
+            config_path=_current_config_path(),
+        ),
+        on_completed=_complete_setup_and_restart,
     )
+
+
+def _complete_setup_and_restart(completion_timestamp: str) -> None:
+    """Update in-memory setup flags and restart the Flask process."""
     SETTINGS.setup.completed = True
     SETTINGS.setup.completed_at = completion_timestamp
     SETTINGS.setup.version = 1
     SETTINGS.localization.locale = "en"
-    _clear_setup_state()
     _schedule_process_restart()
 
 
@@ -1443,36 +1298,12 @@ def _schedule_process_restart(delay_seconds: float = SETUP_RESTART_DELAY_SECONDS
 
 def _normalize_internal_mode(mode: Any) -> str:
     """Resolve a UI mode id or legacy mode into a supported internal pipeline mode."""
-    if not isinstance(mode, str):
-        return ""
-
-    normalized_mode = mode.strip().lower()
-    if not normalized_mode:
-        return ""
-    if normalized_mode in UI_MODE_TO_INTERNAL_MODE:
-        return UI_MODE_TO_INTERNAL_MODE[normalized_mode]
-
-    try:
-        return normalize_mode(normalized_mode)
-    except ValueError:
-        return ""
+    return shared_normalize_internal_mode(mode)
 
 
 def _normalize_ui_mode(mode: Any) -> str:
     """Resolve saved mode values into one of the current five Raspberry Pi UI modes."""
-    if not isinstance(mode, str):
-        return ""
-
-    normalized_mode = mode.strip().lower()
-    if not normalized_mode:
-        return ""
-    if normalized_mode in UI_MODE_BY_ID:
-        return normalized_mode
-
-    internal_mode = _normalize_internal_mode(normalized_mode)
-    if not internal_mode:
-        return ""
-    return INTERNAL_TO_UI_MODE.get(internal_mode, "")
+    return shared_normalize_ui_mode(mode)
 
 
 def _resolve_mode_pair(
@@ -1482,25 +1313,18 @@ def _resolve_mode_pair(
     fallback_to_default: bool = False,
 ) -> tuple[str, str]:
     """Return the UI mode id and canonical internal mode for the current state."""
-    ui_mode = _normalize_ui_mode(selected_mode)
-    internal_mode = _normalize_internal_mode(selected_mode_internal)
-
-    if ui_mode and not internal_mode:
-        internal_mode = UI_MODE_TO_INTERNAL_MODE[ui_mode]
-    if internal_mode and not ui_mode:
-        ui_mode = INTERNAL_TO_UI_MODE.get(internal_mode, "")
-
-    if fallback_to_default and not internal_mode:
-        return DEFAULT_CAPTURE_MODE, DEFAULT_CAPTURE_INTERNAL_MODE
-    return ui_mode, internal_mode
+    return shared_resolve_mode_pair(
+        selected_mode,
+        selected_mode_internal,
+        fallback_to_default=fallback_to_default,
+        default_capture_mode=DEFAULT_CAPTURE_MODE,
+        default_capture_internal_mode=DEFAULT_CAPTURE_INTERNAL_MODE,
+    )
 
 
 def _normalize_progress_state(value: Any, *, default: str = "IDLE") -> str:
     """Normalize any persisted pipeline-progress marker into a supported value."""
-    normalized = str(value or "").strip().upper()
-    if normalized in PIPELINE_PROGRESS_STATES:
-        return normalized
-    return default
+    return shared_normalize_progress_state(value, default=default)
 
 
 def _default_progress_state_for_device_state(device_state: DeviceState | str) -> str:
@@ -1552,19 +1376,14 @@ def _build_processing_view(
     error: str,
 ) -> dict[str, str]:
     """Return the processing-screen copy derived from the selected mode and stage."""
-    mode_copy = _processing_copy_for_mode(selected_mode)
-    mode_label = selected_mode_label or MODE_LABELS.get(DEFAULT_CAPTURE_MODE, "Read Text")
-    return {
-        "title": mode_copy["title"],
-        "subtitle": mode_copy["subtitle"],
-        "mode_label": mode_label.upper(),
-        "status_message": _processing_status_message(
-            progress_state,
-            detail=detail,
-            error=error,
-        ),
-        "status_tone": _processing_status_tone(progress_state),
-    }
+    return shared_build_processing_view(
+        selected_mode,
+        selected_mode_label=selected_mode_label,
+        progress_state=progress_state,
+        detail=detail,
+        error=error,
+        default_capture_mode=DEFAULT_CAPTURE_MODE,
+    )
 
 
 def _result_title_for_mode(selected_mode: str) -> str:
@@ -1593,40 +1412,14 @@ def _build_result_view(
     error_text: str = "",
 ) -> dict[str, Any]:
     """Return the result-screen title and content derived from the current UI state."""
-    result_state = _result_state_for_payload(status, answer_text, error_text)
-    normalized_status = status.strip()
-    body_text = answer_text.strip()
-    note = ""
-
-    if result_state == "RETRY_PENDING":
-        if "queued" in normalized_status.lower() or "retry" in normalized_status.lower():
-            title = "Retry queued"
-            note = "Waiting for retry."
-            if not body_text:
-                body_text = "This capture was saved for automatic retry."
-        else:
-            title = "Retry queued"
-            note = "Waiting for retry."
-    elif result_state == "ERROR":
-        title = "Analysis failed"
-        if not body_text:
-            body_text = error_text.strip() or "Analysis failed. Please go back and try again."
-    elif result_state == "NO_RESULT":
-        title = "No answer received"
-        note = "No result available."
-        if not body_text:
-            body_text = "No answer was received for this capture."
-    else:
-        title = _result_title_for_mode(selected_mode)
-
-    return {
-        "state": result_state,
-        "mode_label": (selected_mode_label or MODE_LABELS.get(DEFAULT_CAPTURE_MODE, "Read Text")).upper(),
-        "title": title,
-        "note": note,
-        "body_text": body_text,
-        "body_html": _format_answer_html(body_text),
-    }
+    return shared_build_result_view(
+        selected_mode,
+        selected_mode_label=selected_mode_label,
+        status=status,
+        answer_text=answer_text,
+        error_text=error_text,
+        default_capture_mode=DEFAULT_CAPTURE_MODE,
+    )
 
 
 def _load_latest_result_summary() -> dict[str, Any]:
@@ -1721,119 +1514,32 @@ def _build_result_detail_view(
     history_entry: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the supplementary detail card using existing backend data only."""
-    latest_result_summary = _load_latest_result_summary()
-    entry = history_entry or {}
-    detail_sections: list[str] = []
-
-    technical_detail = error_text.strip()
-    if technical_detail and result_state in {"ERROR", "RETRY_PENDING"}:
-        detail_sections.extend(
-            [
-                "### Technical Detail",
-                technical_detail,
-            ]
-        )
-
-    metadata_items: list[str] = []
-    model_used = str(entry.get("model_used") or latest_result_summary.get("model_used", "")).strip()
-    if model_used:
-        metadata_items.append(f"Model: {model_used}")
-
-    duration_label = _format_result_duration(
-        entry.get("duration_seconds", latest_result_summary.get("duration_seconds"))
+    return shared_build_result_detail_view(
+        result_state=result_state,
+        detail_text=detail_text,
+        error_text=error_text,
+        latest_result_path=LATEST_RESULT_PATH,
+        history_entry=history_entry,
+        history_entry_camera_resolution=_history_entry_camera_resolution,
     )
-    if duration_label:
-        metadata_items.append(f"Processing time: {duration_label}")
-
-    camera_backend = str(
-        entry.get("camera_backend_used") or latest_result_summary.get("camera_backend", "")
-    ).strip()
-    if camera_backend:
-        metadata_items.append(f"Camera backend: {camera_backend}")
-
-    camera_resolution = ""
-    if entry:
-        resolution = _history_entry_camera_resolution(entry)
-        if resolution is not None:
-            camera_resolution = f"{resolution[0]} x {resolution[1]}"
-    if not camera_resolution:
-        camera_resolution = str(latest_result_summary.get("camera_resolution", "")).strip()
-    if camera_resolution:
-        metadata_items.append(f"Camera resolution: {camera_resolution}")
-
-    retry_status = str(entry.get("retry_status", "")).strip().replace("_", " ")
-    if retry_status:
-        metadata_items.append(f"Retry status: {retry_status.title()}")
-
-    error_summary = str(entry.get("error_summary", "")).strip()
-    if error_summary and error_summary != technical_detail:
-        metadata_items.append(f"Error summary: {error_summary}")
-
-    if metadata_items:
-        detail_sections.append("### Processing Metadata")
-        detail_sections.extend(f"- {item}" for item in metadata_items)
-
-    warnings = latest_result_summary.get("warnings", [])
-    if warnings:
-        detail_sections.append("### Warnings")
-        detail_sections.extend(f"- {warning}" for warning in warnings if str(warning).strip())
-
-    detail_body_text = "\n".join(section for section in detail_sections if section).strip()
-    if not detail_body_text and detail_text.strip() not in {
-        "",
-        PIPELINE_PROGRESS_DETAILS["DONE"],
-        PIPELINE_PROGRESS_DETAILS["RETRY_QUEUED"],
-        PIPELINE_PROGRESS_DETAILS["ERROR"],
-    }:
-        detail_body_text = detail_text.strip()
-
-    return {
-        "title": "Additional Detail",
-        "has_content": bool(detail_body_text),
-        "body_html": (
-            _format_answer_html(detail_body_text)
-            if detail_body_text
-            else Markup("<p class='answer-empty'>No additional detail available.</p>")
-        ),
-    }
 
 
 def _processing_error_step(progress_state: str, current_step: int) -> int:
     """Return which visual step should show an error for a failed pipeline stage."""
-    normalized_state = _normalize_progress_state(progress_state)
-    if normalized_state == "CAPTURING" or current_step <= 0:
-        return 0
-    return 1
+    return shared_processing_error_step(progress_state, current_step)
 
 
 def _pipeline_progress_to_step_index(progress_state: str, *, progress_error_step: int = -1) -> int:
     """Return the legacy numeric progress index used by the persisted UI state."""
-    normalized_state = _normalize_progress_state(progress_state)
-    if normalized_state == "CAPTURING":
-        return 0
-    if normalized_state in {"PREPROCESSING", "ANALYZING"}:
-        return 1
-    if normalized_state == "DONE":
-        return len(PROGRESS_STEPS)
-    if normalized_state in {"RETRY_QUEUED", "ERROR"}:
-        if 0 <= progress_error_step < len(PROGRESS_STEPS):
-            return progress_error_step
-        return 1
-    return -1
+    return shared_pipeline_progress_to_step_index(
+        progress_state,
+        progress_error_step=progress_error_step,
+    )
 
 
 def _processing_progress_for_message(pipeline_message: str) -> tuple[str, int, str]:
     """Map shared pipeline callback text into UI-safe stage metadata."""
-    normalized_message = pipeline_message.strip()
-    message_lookup = {
-        "Capturing image...": ("CAPTURING", 0, PIPELINE_PROGRESS_DETAILS["CAPTURING"]),
-        "Preprocessing image...": ("PREPROCESSING", 1, PIPELINE_PROGRESS_DETAILS["PREPROCESSING"]),
-        "Sending image to OpenAI Vision...": ("ANALYZING", 1, PIPELINE_PROGRESS_DETAILS["ANALYZING"]),
-    }
-    return message_lookup.get(
-        normalized_message,
-        ("ANALYZING", 1, PIPELINE_PROGRESS_DETAILS["ANALYZING"]),
-    )
+    return shared_processing_progress_for_message(pipeline_message)
 
 
 def _build_idle_state_payload(
@@ -2091,57 +1797,7 @@ def _build_camera_analysis_summary(*, render_screen: str | None = None) -> dict[
 
 def _build_health_summary(*, render_screen: str | None = None) -> dict[str, Any]:
     """Return the shared header health summary for every device screen."""
-    ui_state = _load_ui_state()
-    selected_mode, _selected_mode_internal = _resolve_mode_pair(
-        ui_state.get("selected_mode"),
-        ui_state.get("selected_mode_internal"),
-    )
-    if render_screen is None:
-        render_screen = _resolve_render_screen(ui_state.get("screen", "home"), selected_mode)
-
-    snapshot = _load_health_snapshot()
-    setup_state = _load_setup_state() if render_screen == "setup" or not _setup_is_complete() else None
-    cpu_metric = _build_cpu_health_metric(snapshot)
-    ram_metric = _build_ram_health_metric(snapshot)
-    wifi_metric = _build_wifi_health_metric(
-        snapshot,
-        render_screen=render_screen,
-        setup_state=setup_state,
-    )
-    camera_metric = _build_camera_health_metric(
-        snapshot,
-        render_screen=render_screen,
-        ui_state=ui_state,
-    )
-    system_metric = _build_system_health_metric(
-        snapshot=snapshot,
-        ui_state=ui_state,
-        render_screen=render_screen,
-        cpu_metric=cpu_metric,
-        ram_metric=ram_metric,
-        wifi_metric=wifi_metric,
-        camera_metric=camera_metric,
-    )
-    metrics = [
-        system_metric,
-        cpu_metric,
-        ram_metric,
-        wifi_metric,
-        camera_metric,
-    ]
-    updated_at = str(snapshot.get("updated_at", "")) if snapshot else str(ui_state.get("updated_at", ""))
-
-    return {
-        "updated_at": updated_at,
-        "metrics": metrics,
-        "system": system_metric,
-        "cpu": cpu_metric,
-        "ram": ram_metric,
-        "wifi": wifi_metric,
-        "camera": camera_metric,
-        "camera_preview": _build_camera_preview_summary(render_screen=render_screen),
-        "camera_analysis": _build_camera_analysis_summary(render_screen=render_screen),
-    }
+    return _get_health_summary_builder().build_summary(render_screen=render_screen)
 
 
 def _load_health_snapshot() -> dict[str, Any] | None:
@@ -2575,63 +2231,22 @@ def _normalize_metric_state(value: Any) -> str:
 def _load_result_history() -> list[dict[str, Any]]:
     """Return the recent result history from memory or disk."""
     global RESULT_HISTORY_CACHE
-
+    store = _get_result_history_store()
     with RESULT_HISTORY_LOCK:
-        if RESULT_HISTORY_CACHE is not None:
-            return [entry.copy() for entry in RESULT_HISTORY_CACHE]
-
-        if not RESULT_HISTORY_PATH.is_file():
-            RESULT_HISTORY_CACHE = []
-            return []
-
-        try:
-            raw_entries = json.loads(RESULT_HISTORY_PATH.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            quarantine_file(
-                RESULT_HISTORY_PATH,
-                quarantine_dir=PRIVATE_QUARANTINE_PATH,
-                reason="invalid-history-json",
-            )
-            RESULT_HISTORY_CACHE = []
-            return []
-
-        parsed_entries: list[dict[str, Any]] = []
-        if not isinstance(raw_entries, list):
-            quarantine_file(
-                RESULT_HISTORY_PATH,
-                quarantine_dir=PRIVATE_QUARANTINE_PATH,
-                reason="invalid-history-shape",
-            )
-            RESULT_HISTORY_CACHE = []
-            return []
-
-        for raw_entry in raw_entries:
-            entry = _coerce_result_history_entry(raw_entry)
-            if entry is not None:
-                parsed_entries.append(entry)
-
-        RESULT_HISTORY_CACHE = _apply_history_retention(parsed_entries)
-        return [entry.copy() for entry in RESULT_HISTORY_CACHE]
+        if RESULT_HISTORY_CACHE is None:
+            store._cache = None
+        entries = store.load_entries()
+        RESULT_HISTORY_CACHE = [entry.copy() for entry in entries]
+        return [entry.copy() for entry in entries]
 
 
 def _write_result_history(entries: list[dict[str, Any]]) -> None:
     """Persist recent result history and refresh the in-memory cache."""
     global RESULT_HISTORY_CACHE
-
-    normalized_entries = _apply_history_retention([
-        entry.copy() for entry in entries[:RESULT_HISTORY_LIMIT]
-        if _coerce_result_history_entry(entry) is not None
-    ])
-    RESULT_HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
-
+    store = _get_result_history_store()
     with RESULT_HISTORY_LOCK:
-        RESULT_HISTORY_CACHE = normalized_entries
-        atomic_write_json(
-            RESULT_HISTORY_PATH,
-            normalized_entries,
-            ensure_ascii=False,
-            indent=2,
-        )
+        store.write_entries(entries)
+        RESULT_HISTORY_CACHE = store.load_entries()
 
 
 def _append_result_history(
@@ -2640,41 +2255,17 @@ def _append_result_history(
     selected_mode_internal: str,
 ) -> dict[str, Any] | None:
     """Save a successful assistant response into recent-results history."""
-    answer = (result.answer or "").strip()
-    if not answer:
-        return None
-
-    ui_mode, internal_mode = _resolve_mode_pair(selected_mode, selected_mode_internal)
-    history_entries = _load_result_history()
-    created_at = _timestamp()
-    entry_id = str(int(datetime.now().timestamp() * 1000))
-    history_entry = {
-        "id": entry_id,
-        "created_at": created_at,
-        "selected_mode": ui_mode,
-        "selected_mode_internal": internal_mode,
-        "mode_label": _history_mode_label(ui_mode, internal_mode),
-        "status": result.status,
-        "answer": answer,
-        "summary": _history_summary(answer),
-        "camera_backend_used": result.camera_backend_used or "",
-        "camera_resolution": list(result.camera_resolution) if result.camera_resolution else [],
-        "model_used": result.model_used or "",
-        "duration_seconds": result.duration_seconds,
-        "retry_status": result.retry_status or "",
-        "error_summary": result.error_summary or "",
-    }
-    history_entries.insert(0, history_entry)
-    _write_result_history(history_entries)
-    return history_entry
+    global RESULT_HISTORY_CACHE
+    store = _get_result_history_store()
+    with RESULT_HISTORY_LOCK:
+        history_entry = store.append_result(result, selected_mode, selected_mode_internal)
+        RESULT_HISTORY_CACHE = store.load_entries()
+        return history_entry
 
 
 def _get_result_history_entry(entry_id: str) -> dict[str, Any] | None:
     """Return a single saved result history entry by identifier."""
-    for entry in _load_result_history():
-        if entry.get("id") == entry_id:
-            return entry
-    return None
+    return _get_result_history_store().get_entry(entry_id)
 
 
 def _coerce_result_history_entry(raw_entry: Any) -> dict[str, Any] | None:
@@ -2735,22 +2326,12 @@ def _history_mode_label(selected_mode: str, selected_mode_internal: str) -> str:
 
 def _history_summary(answer: str, max_chars: int = 160) -> str:
     """Return a compact one-line summary for the recent-results list."""
-    cleaned = " ".join(answer.split())
-    if len(cleaned) <= max_chars:
-        return cleaned
-    return cleaned[: max_chars - 3].rstrip() + "..."
+    return _get_result_history_store().history_summary(answer, max_chars=max_chars)
 
 
 def _history_entry_camera_resolution(entry: dict[str, Any]) -> tuple[int, int] | None:
     """Return the saved capture resolution for a history entry when available."""
-    raw_resolution = entry.get("camera_resolution", [])
-    if (
-        isinstance(raw_resolution, (list, tuple))
-        and len(raw_resolution) == 2
-        and all(isinstance(value, (int, float)) for value in raw_resolution)
-    ):
-            return (int(raw_resolution[0]), int(raw_resolution[1]))
-    return None
+    return _get_result_history_store().history_entry_camera_resolution(entry)
 
 
 def _result_history_entry_has_reanalyze_assets(entry: dict[str, Any]) -> bool:
@@ -2760,16 +2341,12 @@ def _result_history_entry_has_reanalyze_assets(entry: dict[str, Any]) -> bool:
 
 def _decorate_result_history_entry(entry: dict[str, Any]) -> dict[str, Any]:
     """Add non-persisted fields used by the touchscreen templates."""
-    decorated_entry = entry.copy()
-    decorated_entry["has_thumbnail"] = False
-    decorated_entry["has_reanalyze_assets"] = False
-    decorated_entry["thumbnail_data_url"] = ""
-    return decorated_entry
+    return _get_result_history_store().decorate_entry(entry)
 
 
 def _decorate_result_history_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Decorate a full list of persisted history entries for template rendering."""
-    return [_decorate_result_history_entry(entry) for entry in entries]
+    return _get_result_history_store().decorate_entries(entries)
 
 
 def _build_reanalyze_mode_options(current_mode: str) -> list[dict[str, str]]:
@@ -3444,178 +3021,20 @@ def _build_progress_steps(
     progress_error_step: int = -1,
 ) -> list[dict[str, str]]:
     """Return Figma-style processing steps for the current pipeline state."""
-    steps: list[dict[str, str]] = []
-    normalized_state = _normalize_progress_state(progress_state)
-    visual_states = ["pending"] * len(PROGRESS_STEPS)
-
-    if normalized_state == "CAPTURING":
-        visual_states[0] = "active"
-    elif normalized_state in {"PREPROCESSING", "ANALYZING"}:
-        visual_states[0] = "complete"
-        visual_states[1] = "active"
-    elif normalized_state == "DONE":
-        visual_states = ["complete"] * len(PROGRESS_STEPS)
-    elif normalized_state in {"RETRY_QUEUED", "ERROR"}:
-        resolved_error_step = progress_error_step
-        if resolved_error_step < 0 or resolved_error_step >= len(PROGRESS_STEPS):
-            resolved_error_step = 1
-        for index in range(resolved_error_step):
-            visual_states[index] = "complete"
-        visual_states[resolved_error_step] = "error"
-
-    for index, label in enumerate(PROGRESS_STEPS):
-        state = visual_states[index]
-        steps.append(
-            {
-                "label": label,
-                "state": state,
-                "state_label": state.replace("_", " ").title(),
-            }
-        )
-    return steps
+    return shared_build_progress_steps(
+        progress_state,
+        progress_error_step=progress_error_step,
+    )
 
 
 def _format_answer_html(answer: str) -> Markup:
     """Render plain-text answers as readable headings, paragraphs, and lists."""
-    if not answer.strip():
-        return Markup("<p class='answer-empty'>No answer yet.</p>")
-
-    parts: list[str] = []
-    list_items: list[str] = []
-    list_kind = ""
-
-    def flush_list() -> None:
-        nonlocal list_items, list_kind
-        if not list_items:
-            return
-        items = "".join(f"<li>{item}</li>" for item in list_items)
-        tag_name = "ol" if list_kind == "ol" else "ul"
-        parts.append(f"<{tag_name}>{items}</{tag_name}>")
-        list_items = []
-        list_kind = ""
-
-    def format_inline(text: str) -> str:
-        rendered: list[str] = []
-        tokens = re.split(r"(\*\*.*?\*\*|__.*?__)", text)
-        for token in tokens:
-            if not token:
-                continue
-            if (token.startswith("**") and token.endswith("**")) or (
-                token.startswith("__") and token.endswith("__")
-            ):
-                rendered.append(f"<strong>{escape(token[2:-2])}</strong>")
-            else:
-                rendered.append(str(escape(token)))
-        return "".join(rendered)
-
-    def split_plain_paragraphs(text: str) -> list[str]:
-        normalized_text = text.strip()
-        if len(normalized_text) < 220:
-            return [normalized_text]
-
-        sentences = [
-            sentence.strip()
-            for sentence in re.split(r"(?<=[.!?])\s+(?=[A-Z0-9])", normalized_text)
-            if sentence.strip()
-        ]
-        if len(sentences) < 2:
-            return [normalized_text]
-
-        paragraphs: list[str] = []
-        current: list[str] = []
-        current_length = 0
-        for sentence in sentences:
-            projected_length = current_length + len(sentence) + (1 if current else 0)
-            if current and (projected_length > 220 or len(current) >= 2):
-                paragraphs.append(" ".join(current))
-                current = [sentence]
-                current_length = len(sentence)
-                continue
-
-            current.append(sentence)
-            current_length = projected_length
-
-        if current:
-            paragraphs.append(" ".join(current))
-        return paragraphs or [normalized_text]
-
-    for raw_line in answer.splitlines():
-        line = raw_line.strip()
-        if not line:
-            flush_list()
-            continue
-
-        heading_match = re.match(r"^(#{1,3})\s+(.*)$", line)
-        if heading_match:
-            flush_list()
-            heading_level = min(5, 2 + len(heading_match.group(1)))
-            parts.append(f"<h{heading_level}>{format_inline(heading_match.group(2))}</h{heading_level}>")
-            continue
-
-        numbered_match = re.match(r"^\d+[.)]\s+(.*)$", line)
-        if numbered_match:
-            if list_kind not in {"", "ol"}:
-                flush_list()
-            list_kind = "ol"
-            list_items.append(format_inline(numbered_match.group(1)))
-            continue
-
-        bullet_match = re.match(r"^(?:[-*]|\u2022)\s+(.*)$", line)
-        if bullet_match:
-            if list_kind not in {"", "ul"}:
-                flush_list()
-            list_kind = "ul"
-            list_items.append(format_inline(bullet_match.group(1)))
-            continue
-
-        flush_list()
-        for paragraph in split_plain_paragraphs(line):
-            parts.append(f"<p>{format_inline(paragraph)}</p>")
-
-    flush_list()
-    return Markup("".join(parts))
+    return shared_format_answer_html(answer)
 
 
 def _humanize_error(error_message: str) -> str:
     """Convert technical errors into short, friendly touchscreen messages."""
-    normalized = error_message.strip().lower()
-    if any(token in normalized for token in ("camera", "opencv", "webcam", "videocapture")):
-        return "Camera disconnected"
-    if "could not connect to openai" in normalized or "internet connection" in normalized:
-        return "Network unavailable"
-    if any(
-        token in normalized
-        for token in (
-            "invalid image",
-            "valid image",
-            "unsupported image extension",
-            "could not load image",
-            "cannot identify image file",
-        )
-    ):
-        return "Invalid image"
-    if "timed out after" in normalized:
-        return "OpenAI request timed out"
-    if any(token in normalized for token in ("timed out", "rate limit", "quota reached")):
-        return "OpenAI request failed"
-    if any(
-        token in normalized
-        for token in (
-            "authentication failed",
-            "missing openai api key",
-            "permission denied",
-            "model '",
-            "openai request",
-            "openai api error",
-            "openai sdk error",
-        )
-    ):
-        return "OpenAI request failed"
-    if "empty response" in normalized:
-        return "No text detected"
-    if "no image available" in normalized:
-        return "No image detected"
-    return error_message.strip() or "Something went wrong"
+    return shared_humanize_error(error_message)
 
 
 def _default_ui_state() -> dict[str, Any]:
