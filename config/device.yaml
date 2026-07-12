@@ -40,11 +40,6 @@ led:
   pin: 27
   active_high: true
 
-app:
-  host: 127.0.0.1
-  port: 5000
-  debug: false
-
 ai:
   default_mode: document_reader
 
@@ -53,10 +48,9 @@ vision:
 
 startup:
   behavior: kiosk
-  url: http://127.0.0.1:5000
 
 setup:
-  completed: true
+  completed: false
   completed_at: "2026-07-11T00:00:00"
   version: 1
 

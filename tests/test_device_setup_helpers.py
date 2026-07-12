@@ -17,7 +17,7 @@ class EnvFileUpsertTests(unittest.TestCase):
         temp_dir = Path(tempfile.mkdtemp(prefix="env-upsert-test-"))
         env_path = temp_dir / ".env"
         env_path.write_text(
-            "# Existing comment\nOPENAI_API_KEY=old-value\nFLASK_DEBUG=0\n",
+            "# Existing comment\nOPENAI_API_KEY=old-value\nGPIO_LED_PIN=27\n",
             encoding="utf-8",
         )
 
@@ -25,7 +25,7 @@ class EnvFileUpsertTests(unittest.TestCase):
 
         self.assertEqual(
             env_path.read_text(encoding="utf-8"),
-            "# Existing comment\nOPENAI_API_KEY=new-value\nFLASK_DEBUG=0\n",
+            "# Existing comment\nOPENAI_API_KEY=new-value\nGPIO_LED_PIN=27\n",
         )
 
 

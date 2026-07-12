@@ -1,4 +1,4 @@
-"""Shared setup-state persistence and setup workflow helpers for Flask and Qt."""
+"""Shared setup-state persistence and setup workflow helpers for the native app."""
 
 from __future__ import annotations
 

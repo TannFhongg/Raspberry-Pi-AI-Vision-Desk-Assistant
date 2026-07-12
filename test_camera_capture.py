@@ -22,7 +22,7 @@ def build_parser(settings) -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--output",
-        default="static/captured.jpg",
+        default="debug/captured.jpg",
         help="Path where the captured image will be saved.",
     )
     parser.add_argument(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import threading
 import time
 import unittest
@@ -19,6 +20,8 @@ from camera.live_preview import (
     _read_persistent_preview_frame,
 )
 from hardware.camera_config import CameraControlRequest
+
+CV2_AVAILABLE = importlib.util.find_spec("cv2") is not None
 
 
 class LivePreviewServiceTests(unittest.TestCase):
@@ -252,6 +255,7 @@ class LivePreviewServiceTests(unittest.TestCase):
             inter_read_delay_seconds=0.0,
         )
 
+    @unittest.skipUnless(CV2_AVAILABLE, "OpenCV Python bindings are not installed")
     def test_snapshot_frame_source_uses_capture_preview_jpeg(self) -> None:
         request = _build_request()
         source = _OpenCVSnapshotFrameSource(request)

@@ -1,4 +1,4 @@
-"""Shared UI presenter helpers for Flask and Qt frontends."""
+"""Shared UI presenter helpers for the native VisionDesk app."""
 
 from __future__ import annotations
 
@@ -133,7 +133,7 @@ def build_result_view(
     }
 
 
-def load_latest_result_summary(latest_result_path: str | Path) -> dict[str, Any]:
+def load_latest_result_summary(latest_result_path: str | Path | None) -> dict[str, Any]:
     """Return the non-sensitive metadata saved in the latest result text file."""
     summary: dict[str, Any] = {
         "status": "",
@@ -143,6 +143,8 @@ def load_latest_result_summary(latest_result_path: str | Path) -> dict[str, Any]
         "camera_resolution": "",
         "warnings": [],
     }
+    if latest_result_path in {None, ""}:
+        return summary
     latest_result_file = Path(latest_result_path)
     if not latest_result_file.is_file():
         return summary
@@ -341,7 +343,7 @@ def build_result_detail_view(
     result_state: str,
     detail_text: str,
     error_text: str,
-    latest_result_path: str | Path,
+    latest_result_path: str | Path | None,
     history_entry: dict[str, Any] | None = None,
     history_entry_camera_resolution: Callable[[dict[str, Any]], tuple[int, int] | None] | None = None,
 ) -> dict[str, Any]:
@@ -719,7 +721,7 @@ def normalize_metric_state(value: Any) -> str:
 
 @dataclass(slots=True)
 class HealthSummaryBuilder:
-    """Build the shared live health/header payload without depending on Flask routes."""
+    """Build the shared live health/header payload for the native UI."""
 
     load_ui_state: Callable[[], dict[str, Any]]
     resolve_mode_pair: Callable[[Any, Any], tuple[str, str]]

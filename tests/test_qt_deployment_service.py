@@ -20,3 +20,10 @@ def test_qt_service_runs_qt_entrypoint_and_restarts() -> None:
     assert "ExecStart=/home/pi/raspberry-pi-ai-vision-assistant/.venv/bin/python -m qt_app.main" in service_text
     assert "Restart=always" in service_text
     assert "RestartSec=3" in service_text
+
+
+def test_qt_deployment_is_the_only_remaining_ui_service_template() -> None:
+    assert Path("deployment/visiondesk-qt.service").is_file()
+    assert not Path("deployment/ai-vision-assistant.service").exists()
+    assert not Path("deployment/kiosk-launch.sh").exists()
+    assert not Path("deployment/labwc-autostart.example").exists()

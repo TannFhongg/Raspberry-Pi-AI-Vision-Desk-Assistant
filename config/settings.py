@@ -20,9 +20,6 @@ VALID_STARTUP_BEHAVIORS = ("kiosk", "service_only", "manual")
 VALID_LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
 VALID_WIFI_MANAGERS = ("nmcli",)
 VALID_LOCALES = ("en",)
-DEFAULT_APP_HOST = "127.0.0.1"
-DEFAULT_APP_PORT = 5000
-DEFAULT_FLASK_DEBUG = False
 DEFAULT_BUTTON_DEBOUNCE_SECONDS = 0.15
 DEFAULT_BUTTON_HOLD_SECONDS = 1.2
 DEFAULT_LED_ENABLED = False
@@ -137,15 +134,6 @@ class LEDSettings:
 
 
 @dataclass(slots=True)
-class AppSettings:
-    """Flask runtime defaults for the local kiosk app."""
-
-    host: str
-    port: int
-    debug: bool
-
-
-@dataclass(slots=True)
 class AISettings:
     """AI-related runtime defaults."""
 
@@ -164,7 +152,6 @@ class StartupSettings:
     """Device startup behavior defaults."""
 
     behavior: str
-    url: str
 
 
 @dataclass(slots=True)
@@ -248,7 +235,6 @@ class DeviceSettings:
     display: DisplaySettings
     button: ButtonSettings
     led: LEDSettings
-    app: AppSettings
     ai: AISettings
     vision: VisionSettings
     startup: StartupSettings
@@ -280,7 +266,6 @@ def load_device_settings(
     display = merged.get("display", {})
     button = merged.get("button", {})
     led = merged.get("led", {})
-    app = merged.get("app", {})
     ai = merged.get("ai", {})
     vision = merged.get("vision", {})
     startup = merged.get("startup", {})
@@ -437,11 +422,6 @@ def load_device_settings(
                 "led.active_high",
             ),
         ),
-        app=AppSettings(
-            host=_parse_text(app.get("host", DEFAULT_APP_HOST), "app.host"),
-            port=_parse_int(app.get("port", DEFAULT_APP_PORT), "app.port", minimum=1),
-            debug=_parse_bool(app.get("debug", DEFAULT_FLASK_DEBUG), "app.debug"),
-        ),
         ai=AISettings(
             default_mode=_parse_mode(ai.get("default_mode"), "ai.default_mode"),
         ),
@@ -458,7 +438,6 @@ def load_device_settings(
                 VALID_STARTUP_BEHAVIORS,
                 "startup.behavior",
             ),
-            url=_parse_text(startup.get("url"), "startup.url"),
         ),
         setup=SetupSettings(
             completed=setup_completed,
@@ -710,7 +689,6 @@ def _apply_environment_overrides(
     merged["display"] = dict(raw_data.get("display", {}))
     merged["button"] = dict(raw_data.get("button", {}))
     merged["led"] = dict(raw_data.get("led", {}))
-    merged["app"] = dict(raw_data.get("app", {}))
     merged["ai"] = dict(raw_data.get("ai", {}))
     merged["vision"] = dict(raw_data.get("vision", {}))
     merged["startup"] = dict(raw_data.get("startup", {}))
@@ -803,10 +781,6 @@ def _apply_environment_overrides(
     _set_if_present(merged["led"], "pin", env, "GPIO_LED_PIN")
     _set_if_present(merged["led"], "active_high", env, "GPIO_LED_ACTIVE_HIGH")
 
-    _set_if_present(merged["app"], "host", env, "APP_HOST")
-    _set_if_present(merged["app"], "port", env, "APP_PORT")
-    _set_if_present(merged["app"], "debug", env, "FLASK_DEBUG")
-
     _set_if_present(merged["ai"], "default_mode", env, "AI_DEFAULT_MODE")
     _set_if_present(
         merged["vision"],
@@ -816,7 +790,6 @@ def _apply_environment_overrides(
     )
 
     _set_if_present(merged["startup"], "behavior", env, "STARTUP_BEHAVIOR")
-    _set_if_present(merged["startup"], "url", env, "STARTUP_URL")
     _set_if_present(merged["localization"], "locale", env, "DEVICE_LOCALE")
     _set_if_present(merged["reliability"], "log_level", env, "RELIABILITY_LOG_LEVEL")
     _set_if_present(merged["reliability"], "log_max_bytes", env, "RELIABILITY_LOG_MAX_BYTES")

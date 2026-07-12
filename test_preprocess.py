@@ -12,16 +12,16 @@ from vision import ImagePreprocessError, preprocess_image
 def build_parser(settings) -> argparse.ArgumentParser:
     """Create the command-line argument parser."""
     parser = argparse.ArgumentParser(
-        description="Load static/captured.jpg, preprocess it, and save static/processed.jpg."
+        description="Load a sample image, preprocess it, and save the output to debug/processed.jpg."
     )
     parser.add_argument(
         "--input",
-        default="static/captured.jpg",
+        default="test_images/document.jpg",
         help="Path to the source image captured from the camera.",
     )
     parser.add_argument(
         "--output",
-        default="static/processed.jpg",
+        default="debug/processed.jpg",
         help="Path where the processed image will be saved.",
     )
     parser.add_argument(

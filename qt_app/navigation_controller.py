@@ -8,11 +8,13 @@ from typing import Any
 class NavigationController:
     """Resolve screen transitions for the Qt kiosk workflow."""
 
-    valid_screens = frozenset({"setup", "home", "camera", "processing", "result", "error"})
+    valid_screens = frozenset(
+        {"setup", "home", "camera", "processing", "result", "error", "history", "history_detail"}
+    )
 
     @classmethod
     def resolve_render_screen(cls, raw_screen: Any, selected_mode: str) -> str:
-        """Match the Flask screen-resolution behavior for the Qt workflow."""
+        """Resolve the active render screen for the Qt workflow."""
         screen = str(raw_screen or "home").strip().lower()
         if screen not in cls.valid_screens:
             screen = "home"
@@ -21,4 +23,3 @@ class NavigationController:
         if screen in {"home", "camera"} and selected_mode:
             return "camera"
         return screen
-

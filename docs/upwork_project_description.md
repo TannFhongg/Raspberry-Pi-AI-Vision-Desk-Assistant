@@ -1,29 +1,24 @@
-# Upwork Project Description
+# VisionDesk Project Description
 
-Raspberry Pi AI Vision Desk Assistant is a portfolio-ready MVP inspired by real freelance work at the intersection of embedded UX, computer vision, and AI-assisted workflows.
+VisionDesk is a Raspberry Pi 5 assistant appliance built around a native `PySide6 + Qt Quick/QML` kiosk interface. A USB camera captures an image, the pipeline preprocesses it with OpenCV-oriented vision helpers, OpenAI analyzes it, and the device shows the answer directly on-screen with GPIO button support.
 
-The project combines Raspberry Pi 5 hardware, USB camera capture, OpenCV preprocessing, OpenAI Vision analysis, a custom Flask touchscreen interface, a native `PySide6 + Qt Quick/QML` frontend for the primary capture flow, and GPIO hardware controls. The current product direction is a local-only capture appliance: select a mode, frame the subject in a live preview, capture the image, watch a compact progress flow, and read the AI result directly on-device.
+## Product highlights
 
-Current maturity highlights:
+- native Qt/QML embedded UI
+- first-boot Wi-Fi and OpenAI key setup
+- live preview, capture, processing, and result flow
+- saved text-only history and history detail screens
+- offline retry queue with bounded private storage
+- health header and GPIO integration
+- privacy-first local persistence with delete-all-data behavior
 
-- shared pipeline architecture across CLI, Flask UI, native Qt UI, and GPIO triggers
-- production-oriented `1200x800` landscape kiosk UX for Raspberry Pi
-- native Qt v1 flow for `setup`, `home`, `camera`, `processing`, `result`, and `error`, with Flask kept intact during migration
-- lighter `640x360` live preview separated from `1920x1080` still capture
-- typed YAML-backed device configuration with environment overrides
-- shared presenter, setup, and result-history helpers so Flask and Qt stay behavior-compatible
-- health monitoring, rotating logs, and hardware-aware busy-state handling
-- text-only recent-result history for better privacy
-- offline retry queue for transient network or OpenAI failures
-- targeted shared-plus-Qt regression suite at `63 passed, 4 skipped, 23 subtests passed` on 2026-07-12
+## Technical shape
 
-This project demonstrates practical skills in:
+- `qt_app/` for the native UI runtime and controllers
+- shared backend modules for camera, preprocessing, pipeline, AI, hardware, health, setup, and result history
+- local persistence under `config/`, `.env`, and `data/private/`
 
-- Raspberry Pi integration
-- Python backend development
-- Flask kiosk UX plus native Qt/QML migration for an embedded device UI
-- OpenCV preprocessing and screen/document correction
-- OpenAI API integration
-- hardware button and LED control through GPIO
-- reliability engineering for edge-device software
-- deployment packaging, diagnostics, and portfolio presentation
+## Run modes
+
+- development: `python -m qt_app.main --windowed --mock-hardware`
+- production: `python -m qt_app.main`

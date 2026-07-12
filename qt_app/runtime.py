@@ -44,18 +44,12 @@ LOGGER = logging.getLogger(__name__)
 class RuntimePaths:
     """Filesystem paths used by the Qt frontend runtime."""
 
-    ui_state_path: Path = Path("data/ui_state.json")
     setup_state_path: Path = Path("data/setup_state.json")
     health_status_path: Path = Path("data/health_status.json")
     latest_result_path: Path = Path("data/latest_result.txt")
     result_history_path: Path = Path("data/result_history.json")
     private_data_path: Path = Path("data/private")
-    ui_preview_dir: Path = Path("data/ui-previews")
     env_file_path: Path = Path(".env")
-
-    @property
-    def latest_result_preview_path(self) -> Path:
-        return self.ui_preview_dir / "latest-result.jpg"
 
     @property
     def private_current_path(self) -> Path:
@@ -163,7 +157,7 @@ class VisionDeskRuntime:
         return self.offline_retry_queue is not None
 
     def timestamp(self) -> str:
-        """Return an ISO timestamp matching the Flask UI state format."""
+        """Return an ISO timestamp matching the shared persistence format."""
         from datetime import datetime
 
         return datetime.now().isoformat(timespec="seconds")
@@ -306,9 +300,8 @@ class VisionDeskRuntime:
                 pass
 
     def purge_runtime_artifacts(self, *, delete_all: bool) -> None:
-        """Apply the same privacy cleanup defaults used by the Flask UI."""
+        """Apply shared privacy cleanup defaults for startup or full deletion."""
         self.cleanup_current_private_media()
-        safe_unlink(self.paths.latest_result_preview_path)
         if self.offline_retry_queue is not None:
             if delete_all:
                 self.offline_retry_queue.clear()
@@ -321,10 +314,27 @@ class VisionDeskRuntime:
             safe_unlink(self.paths.latest_result_path)
             safe_unlink(self.paths.setup_state_path)
             safe_rmtree(self.paths.private_quarantine_path)
+            self.result_history_store.invalidate_cache()
             return
         entries = self.result_history_store.load_entries()
         if entries or self.paths.result_history_path.is_file():
             self.result_history_store.write_entries(entries)
+
+    def delete_all_user_data(self) -> None:
+        """Delete retained user data while preserving device config and secrets."""
+        self.cleanup_current_private_media()
+        if self.offline_retry_queue is not None:
+            self.offline_retry_queue.clear()
+        else:
+            safe_rmtree(self.paths.private_retry_path)
+            safe_unlink(self.paths.offline_retry_queue_path)
+        self.result_history_store.clear()
+        safe_unlink(self.paths.latest_result_path)
+        self.setup_state_store.clear_state()
+        safe_rmtree(self.paths.private_quarantine_path)
+        self.result_history_store.invalidate_cache()
+        self.paths.private_data_path.mkdir(parents=True, exist_ok=True)
+        self.paths.private_quarantine_path.mkdir(parents=True, exist_ok=True)
 
     def shutdown(self) -> None:
         """Stop background services and release hardware resources."""

@@ -48,7 +48,6 @@ class LoadDeviceSettingsTests(unittest.TestCase):
               screen_optimization: auto
             startup:
               behavior: kiosk
-              url: http://127.0.0.1:5000
             reliability:
               log_level: INFO
               log_max_bytes: 1048576
@@ -132,7 +131,6 @@ class LoadDeviceSettingsTests(unittest.TestCase):
               screen_optimization: auto
             startup:
               behavior: kiosk
-              url: http://127.0.0.1:5000
             reliability:
               log_level: INFO
               log_max_bytes: 1048576
@@ -254,7 +252,6 @@ class LoadDeviceSettingsTests(unittest.TestCase):
               screen_optimization: auto
             startup:
               behavior: kiosk
-              url: http://127.0.0.1:5000
             reliability:
               log_level: INFO
               log_max_bytes: 1048576
@@ -300,7 +297,6 @@ class LoadDeviceSettingsTests(unittest.TestCase):
               screen_optimization: maybe
             startup:
               behavior: kiosk
-              url: http://127.0.0.1:5000
             reliability:
               log_level: INFO
               log_max_bytes: 1048576
@@ -346,7 +342,6 @@ class LoadDeviceSettingsTests(unittest.TestCase):
               screen_optimization: auto
             startup:
               behavior: kiosk
-              url: http://127.0.0.1:5000
             reliability:
               log_level: nope
               log_max_bytes: 1048576
@@ -386,17 +381,12 @@ class LoadDeviceSettingsTests(unittest.TestCase):
             button:
               enabled: true
               pin: 17
-            app:
-              host: 127.0.0.1
-              port: 5000
-              debug: false
             ai:
               default_mode: document_reader
             vision:
               screen_optimization: auto
             startup:
               behavior: kiosk
-              url: http://127.0.0.1:5000
             setup:
               completed: false
               completed_at: ""
@@ -439,9 +429,6 @@ class LoadDeviceSettingsTests(unittest.TestCase):
 
         settings = load_device_settings(config_path=config_path, env={})
 
-        self.assertEqual(settings.app.host, "127.0.0.1")
-        self.assertEqual(settings.app.port, 5000)
-        self.assertFalse(settings.app.debug)
         self.assertFalse(settings.setup.completed)
         self.assertEqual(settings.setup.completed_at, "")
         self.assertEqual(settings.setup.version, 0)
@@ -498,7 +485,6 @@ class LoadDeviceSettingsTests(unittest.TestCase):
               screen_optimization: auto
             startup:
               behavior: kiosk
-              url: http://127.0.0.1:5000
             reliability:
               log_level: INFO
               log_max_bytes: 1048576
@@ -544,7 +530,6 @@ class LoadDeviceSettingsTests(unittest.TestCase):
               screen_optimization: auto
             startup:
               behavior: kiosk
-              url: http://127.0.0.1:5000
             reliability:
               log_level: INFO
               log_max_bytes: 1048576
@@ -602,7 +587,6 @@ class LoadDeviceSettingsTests(unittest.TestCase):
               screen_optimization: auto
             startup:
               behavior: kiosk
-              url: http://127.0.0.1:5000
             localization:
               locale: vi
             reliability:

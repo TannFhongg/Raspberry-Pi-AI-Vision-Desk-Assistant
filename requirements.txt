@@ -1,6 +1,10 @@
-openai
-python-dotenv
-pillow
-flask
-gpiozero
-pyyaml
+openai==2.45.0
+python-dotenv==1.2.2
+pillow==12.3.0
+gpiozero==2.0.1
+PyYAML==6.0.3
+MarkupSafe==3.0.3
+numpy==2.5.1
+PySide6==6.11.1
+pytest==9.1.1
+pytest-qt==4.5.0

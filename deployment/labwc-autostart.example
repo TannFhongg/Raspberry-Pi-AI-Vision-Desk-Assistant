@@ -1,4 +1,0 @@
-# Copy this file to ~/.config/labwc/autostart on the Raspberry Pi.
-# Update the repo path if your project lives elsewhere.
-
-/bin/bash /home/pi/raspberry-pi-ai-vision-assistant/deployment/kiosk-launch.sh &

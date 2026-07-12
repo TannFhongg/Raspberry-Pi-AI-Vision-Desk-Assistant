@@ -53,6 +53,16 @@ ApplicationWindow {
     }
 
     Component {
+        id: historyScreenComponent
+        HistoryScreen { theme: appTheme; controller: appController }
+    }
+
+    Component {
+        id: historyDetailScreenComponent
+        HistoryDetailScreen { theme: appTheme; controller: appController }
+    }
+
+    Component {
         id: errorScreenComponent
         ErrorScreen { theme: appTheme; controller: appController }
     }
@@ -111,6 +121,10 @@ ApplicationWindow {
                             return processingScreenComponent
                         case "result":
                             return resultScreenComponent
+                        case "history":
+                            return historyScreenComponent
+                        case "history_detail":
+                            return historyDetailScreenComponent
                         case "error":
                             return errorScreenComponent
                         default:

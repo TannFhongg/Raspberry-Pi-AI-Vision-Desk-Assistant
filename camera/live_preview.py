@@ -1,4 +1,4 @@
-"""Background live-preview service for the touchscreen Flask UI."""
+"""Background live-preview service for the native VisionDesk UI."""
 
 from __future__ import annotations
 

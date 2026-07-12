@@ -10,6 +10,7 @@ from hardware import DeviceState, clear_latest_result_file
 from qt_app.camera_controller import CameraController
 from qt_app.gpio_controller import GPIOController
 from qt_app.health_controller import HealthController
+from qt_app.history_controller import HistoryController
 from qt_app.image_provider import CachedImageStore
 from qt_app.models import ApplicationStateModel, DictListModel, ResultStateModel
 from qt_app.navigation_controller import NavigationController
@@ -65,6 +66,7 @@ class AppController(QObject):
         self.camera_controller = CameraController(runtime, image_store=camera_store, parent=self)
         self.pipeline_controller = PipelineController(runtime, result_image_store=result_store, parent=self)
         self.setup_controller = SetupController(runtime, parent=self)
+        self.history_controller = HistoryController(runtime, parent=self)
         self.health_controller = HealthController(
             runtime,
             camera_controller=self.camera_controller,
@@ -101,6 +103,10 @@ class AppController(QObject):
     @Property(QObject, constant=True)
     def gpioRequirementsModel(self) -> DictListModel:
         return self.setup_controller.gpioRequirementsModel
+
+    @Property(QObject, constant=True)
+    def historyEntriesModel(self) -> DictListModel:
+        return self.history_controller.historyEntriesModel
 
     @Property(QObject, constant=True)
     def applicationStateModel(self) -> ApplicationStateModel:
@@ -274,6 +280,70 @@ class AppController(QObject):
     def setupGpioActive(self) -> bool:
         return self.setup_controller.gpioActive
 
+    @Property(str, notify=viewStateChanged)
+    def historyState(self) -> str:
+        return self.history_controller.historyState
+
+    @Property(str, notify=viewStateChanged)
+    def historyMessage(self) -> str:
+        return self.history_controller.historyMessage
+
+    @Property(bool, notify=viewStateChanged)
+    def hasSelectedHistoryItem(self) -> bool:
+        return self.history_controller.hasSelectedHistoryItem
+
+    @Property(str, notify=viewStateChanged)
+    def selectedHistoryId(self) -> str:
+        return self.history_controller.selectedHistoryId
+
+    @Property(str, notify=viewStateChanged)
+    def selectedHistoryCreatedAt(self) -> str:
+        return self.history_controller.selectedHistoryCreatedAt
+
+    @Property(str, notify=viewStateChanged)
+    def selectedHistoryModeLabel(self) -> str:
+        return self.history_controller.selectedHistoryModeLabel
+
+    @Property(str, notify=viewStateChanged)
+    def selectedHistoryStatus(self) -> str:
+        return self.history_controller.selectedHistoryStatus
+
+    @Property(str, notify=viewStateChanged)
+    def selectedHistoryStatusLabel(self) -> str:
+        return self.history_controller.selectedHistoryStatusLabel
+
+    @Property(str, notify=viewStateChanged)
+    def selectedHistoryModelUsed(self) -> str:
+        return self.history_controller.selectedHistoryModelUsed
+
+    @Property(str, notify=viewStateChanged)
+    def selectedHistoryDurationLabel(self) -> str:
+        return self.history_controller.selectedHistoryDurationLabel
+
+    @Property(str, notify=viewStateChanged)
+    def selectedHistoryRetryStatus(self) -> str:
+        return self.history_controller.selectedHistoryRetryStatus
+
+    @Property(str, notify=viewStateChanged)
+    def selectedHistoryErrorSummary(self) -> str:
+        return self.history_controller.selectedHistoryErrorSummary
+
+    @Property(str, notify=viewStateChanged)
+    def selectedHistoryTitle(self) -> str:
+        return self.history_controller.selectedHistoryTitle
+
+    @Property(str, notify=viewStateChanged)
+    def selectedHistoryNote(self) -> str:
+        return self.history_controller.selectedHistoryNote
+
+    @Property(str, notify=viewStateChanged)
+    def selectedHistoryResultHtml(self) -> str:
+        return self.history_controller.selectedHistoryResultHtml
+
+    @Property(str, notify=viewStateChanged)
+    def selectedHistoryDetailHtml(self) -> str:
+        return self.history_controller.selectedHistoryDetailHtml
+
     @Property(int, constant=True)
     def windowWidth(self) -> int:
         return self.runtime.screen_width
@@ -324,6 +394,9 @@ class AppController(QObject):
             return
         if self.currentScreen == "setup" and not self.runtime.setup_is_complete():
             return
+        if self.currentScreen in {"history", "history_detail"}:
+            self.history_controller.goBack()
+            return
         self.clearResult()
 
     @Slot()
@@ -333,31 +406,40 @@ class AppController(QObject):
 
     @Slot()
     def clearResult(self) -> None:
-        clear_latest_result_file(
-            self.runtime.paths.latest_result_path,
-            mode=self._selected_mode_internal or self.selectedMode,
-        )
-        self._result_store.clear()
-        self._result_state_model.update(
-            result_title="Result",
-            result_state="NO_RESULT",
-            result_plain_text="",
-            result_html="",
-            result_note="",
-            detail_html="",
-            detail_visible=False,
-            preview_revision=self._result_store.revision,
-        )
-        self._application_state_model.update(
-            selected_mode="",
-            selected_mode_label="",
-            error_title="",
-            error_detail="",
+        self._reset_result_ui(
+            reset_selected_mode=True,
             display_status=READY_DETAIL,
-            updated_at=self.runtime.timestamp(),
+            application_state="READY",
+            target_screen="home",
         )
-        self._selected_mode_internal = ""
-        self._set_screen("home", "READY", READY_DETAIL)
+
+    @Slot()
+    def openHistory(self) -> None:
+        if self.pipeline_controller.busy:
+            return
+        self.history_controller.openHistory()
+
+    @Slot()
+    def reloadHistory(self) -> None:
+        self.history_controller.reloadHistory()
+
+    @Slot(str)
+    def openHistoryItem(self, entry_id: str) -> None:
+        self.history_controller.openHistoryItem(entry_id)
+
+    @Slot(str)
+    def deleteHistoryItem(self, entry_id: str) -> None:
+        self.history_controller.deleteHistoryItem(entry_id)
+
+    @Slot()
+    def clearHistory(self) -> None:
+        self.history_controller.clearHistory()
+
+    @Slot()
+    def deleteAllData(self) -> None:
+        if self.pipeline_controller.busy:
+            return
+        self.history_controller.deleteAllData()
 
     @Slot()
     def scanWifi(self) -> None:
@@ -451,6 +533,9 @@ class AppController(QObject):
         self.camera_controller.previewAvailableChanged.connect(self._refresh_health_summary)
         self.camera_controller.previewErrorChanged.connect(self._refresh_health_summary)
         self.health_controller.summaryChanged.connect(self.viewStateChanged)
+        self.history_controller.stateChanged.connect(self.viewStateChanged)
+        self.history_controller.screenRequested.connect(self._handle_history_screen_requested)
+        self.history_controller.deleteAllDataCompleted.connect(self._handle_delete_all_data_completed)
         self.setup_controller.stateChanged.connect(self._handle_setup_state_changed)
         self.setup_controller.setupCompleted.connect(self._handle_setup_completed)
         self.gpio_controller.modeSelected.connect(self.selectMode)
@@ -518,6 +603,35 @@ class AppController(QObject):
         del completion_timestamp
         self.gpio_controller.restart_if_needed()
         QCoreApplication.quit()
+
+    def _handle_history_screen_requested(self, screen: str) -> None:
+        if screen == "history_detail":
+            self._set_screen("history_detail", "HISTORY_DETAIL", "Viewing saved result")
+            self.viewStateChanged.emit()
+            self._refresh_health_summary()
+            return
+        if screen == "history":
+            self._set_screen("history", "HISTORY", "Recent saved results")
+            self.viewStateChanged.emit()
+            self._refresh_health_summary()
+            return
+        if screen == "home":
+            self._reset_result_ui(
+                reset_selected_mode=True,
+                display_status=READY_DETAIL,
+                application_state="READY",
+                target_screen="home",
+                write_latest_result_placeholder=False,
+            )
+
+    def _handle_delete_all_data_completed(self, message: str) -> None:
+        self._reset_result_ui(
+            reset_selected_mode=True,
+            display_status=message,
+            application_state="READY",
+            target_screen="home",
+            write_latest_result_placeholder=False,
+        )
 
     def _mark_camera_ready(self) -> None:
         if self.currentScreen == "camera":
@@ -595,6 +709,46 @@ class AppController(QObject):
             updated_at=self.runtime.timestamp(),
         )
         self.camera_controller.setActive(resolved_screen in {"setup", "camera"})
+
+    def _reset_result_ui(
+        self,
+        *,
+        reset_selected_mode: bool,
+        display_status: str,
+        application_state: str,
+        target_screen: str,
+        write_latest_result_placeholder: bool = True,
+    ) -> None:
+        if write_latest_result_placeholder:
+            clear_latest_result_file(
+                self.runtime.paths.latest_result_path,
+                mode=self._selected_mode_internal or self.selectedMode,
+            )
+        self._result_store.clear()
+        self._result_state_model.update(
+            result_title="Result",
+            result_state="NO_RESULT",
+            result_plain_text="",
+            result_html="",
+            result_note="",
+            detail_html="",
+            detail_visible=False,
+            preview_revision=self._result_store.revision,
+        )
+        update_payload: dict[str, Any] = {
+            "error_title": "",
+            "error_detail": "",
+            "display_status": display_status,
+            "updated_at": self.runtime.timestamp(),
+        }
+        if reset_selected_mode:
+            update_payload["selected_mode"] = ""
+            update_payload["selected_mode_label"] = ""
+            self._selected_mode_internal = ""
+        self._application_state_model.update(**update_payload)
+        self._set_screen(target_screen, application_state, display_status)
+        self.viewStateChanged.emit()
+        self._refresh_health_summary()
 
     def _refresh_health_summary(self) -> None:
         self.health_controller.refresh()

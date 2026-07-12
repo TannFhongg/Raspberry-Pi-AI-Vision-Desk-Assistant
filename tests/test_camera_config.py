@@ -8,7 +8,6 @@ from unittest.mock import patch
 
 from config.settings import (
     AISettings,
-    AppSettings,
     ButtonSettings,
     CameraSettings,
     DeviceSettings,
@@ -111,10 +110,9 @@ def _build_settings() -> DeviceSettings:
             hold_seconds=1.2,
         ),
         led=LEDSettings(enabled=False, pin=27, active_high=True),
-        app=AppSettings(host="127.0.0.1", port=5000, debug=False),
         ai=AISettings(default_mode="document_reader"),
         vision=VisionSettings(screen_optimization="auto"),
-        startup=StartupSettings(behavior="kiosk", url="http://127.0.0.1:5000"),
+        startup=StartupSettings(behavior="kiosk"),
         reliability=ReliabilitySettings(
             log_level="INFO",
             log_max_bytes=1_048_576,

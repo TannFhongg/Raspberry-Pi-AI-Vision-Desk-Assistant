@@ -1,4 +1,4 @@
-"""Shared pipeline orchestration for terminal, Flask, and GPIO entrypoints."""
+"""Shared pipeline orchestration for terminal, Qt, and GPIO entrypoints."""
 
 from pipeline.runner import (
     build_capture_session_paths,

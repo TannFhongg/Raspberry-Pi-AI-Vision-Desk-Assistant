@@ -1,4 +1,4 @@
-"""Shared UI mode, progress, and copy constants for Flask and Qt frontends."""
+"""Shared UI mode, progress, and copy constants for the native Qt frontend."""
 
 from __future__ import annotations
 

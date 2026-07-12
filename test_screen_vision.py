@@ -21,7 +21,7 @@ def build_parser(settings) -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--output",
-        default="static/processed.jpg",
+        default="debug/screen-processed.jpg",
         help="Path where the processed image will be saved.",
     )
     parser.add_argument(

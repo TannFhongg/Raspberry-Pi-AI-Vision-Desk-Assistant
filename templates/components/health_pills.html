@@ -1,5 +1,0 @@
-<div class="health-status-list system-health-bar kiosk-health-bar{% if health_bar_class %} {{ health_bar_class }}{% endif %}" aria-label="Device health" data-health-bar>
-    {% for metric in health_summary.metrics %}
-    {% include "components/health_pill.html" %}
-    {% endfor %}
-</div>

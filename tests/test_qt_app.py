@@ -1,8 +1,9 @@
-"""Qt frontend smoke tests for the native VisionDesk migration."""
+"""Qt frontend tests for the native VisionDesk workflow."""
 
 from __future__ import annotations
 
 import importlib.util
+import json
 import threading
 from pathlib import Path
 
@@ -17,6 +18,7 @@ if PY_SIDE6_AVAILABLE:
     from PySide6.QtTest import QSignalSpy
     from PySide6.QtWidgets import QApplication
 
+    from pipeline.runner import PipelineResult
     from qt_app.app_controller import AppController
     from qt_app.gpio_controller import GPIOController
     from qt_app.image_provider import CachedImageStore, VisionDeskImageProvider
@@ -35,13 +37,11 @@ def qapp():
 def build_runtime(tmp_path: Path, *, setup_completed: bool) -> VisionDeskRuntime:
     """Create an isolated mock runtime that never touches repo data paths."""
     paths = RuntimePaths(
-        ui_state_path=tmp_path / "ui_state.json",
         setup_state_path=tmp_path / "setup_state.json",
         health_status_path=tmp_path / "health_status.json",
         latest_result_path=tmp_path / "latest_result.txt",
         result_history_path=tmp_path / "result_history.json",
         private_data_path=tmp_path / "private",
-        ui_preview_dir=tmp_path / "ui-previews",
         env_file_path=tmp_path / ".env",
     )
     runtime = VisionDeskRuntime(
@@ -57,13 +57,54 @@ def build_runtime(tmp_path: Path, *, setup_completed: bool) -> VisionDeskRuntime
     return runtime
 
 
-def test_app_controller_select_mode_opens_camera(qapp, tmp_path) -> None:
-    runtime = build_runtime(tmp_path, setup_completed=True)
+def append_history_entry(
+    runtime: VisionDeskRuntime,
+    *,
+    answer: str,
+    selected_mode: str = "read_text",
+    selected_mode_internal: str = "document_reader",
+    status: str = "success",
+    model_used: str = "gpt-5.4-mini",
+    duration_seconds: float = 1.25,
+    retry_status: str = "",
+    error_summary: str = "",
+) -> dict[str, object]:
+    """Persist one deterministic saved result in the shared history store."""
+    result = PipelineResult(
+        captured_path=None,
+        processed_path=None,
+        answer=answer,
+        mode=selected_mode_internal,
+        camera_backend_used="opencv",
+        camera_resolution=(1920, 1080),
+        status=status,
+        model_used=model_used,
+        duration_seconds=duration_seconds,
+        retry_status=retry_status,
+        error_summary=error_summary,
+    )
+    entry = runtime.result_history_store.append_result(
+        result,
+        selected_mode,
+        selected_mode_internal,
+    )
+    assert entry is not None
+    return entry
+
+
+def build_controller(tmp_path: Path, *, setup_completed: bool = True) -> tuple[VisionDeskRuntime, AppController]:
+    """Create an app controller with isolated cached image stores."""
+    runtime = build_runtime(tmp_path, setup_completed=setup_completed)
     controller = AppController(
         runtime,
         camera_store=CachedImageStore(),
         result_store=CachedImageStore(),
     )
+    return runtime, controller
+
+
+def test_app_controller_select_mode_opens_camera(qapp, tmp_path) -> None:
+    runtime, controller = build_controller(tmp_path)
 
     controller.selectMode("read_text")
     QTimer.singleShot(250, qapp.quit)
@@ -76,12 +117,7 @@ def test_app_controller_select_mode_opens_camera(qapp, tmp_path) -> None:
 
 
 def test_app_controller_reports_backend_busy_while_camera_screen_is_open(qapp, tmp_path) -> None:
-    runtime = build_runtime(tmp_path, setup_completed=True)
-    controller = AppController(
-        runtime,
-        camera_store=CachedImageStore(),
-        result_store=CachedImageStore(),
-    )
+    runtime, controller = build_controller(tmp_path)
 
     controller.selectMode("read_text")
 
@@ -113,10 +149,9 @@ def test_pipeline_capture_lock_blocks_parallel_requests(qapp, qtbot, tmp_path) -
 
 
 def test_qml_main_loads_with_mock_runtime(qapp, tmp_path) -> None:
-    runtime = build_runtime(tmp_path, setup_completed=True)
-    camera_store = CachedImageStore()
-    result_store = CachedImageStore()
-    controller = AppController(runtime, camera_store=camera_store, result_store=result_store)
+    runtime, controller = build_controller(tmp_path)
+    camera_store = controller._camera_store
+    result_store = controller._result_store
     engine = QQmlApplicationEngine()
     engine.addImageProvider(
         "visiondesk",
@@ -143,3 +178,217 @@ def test_gpio_signal_delivery_reaches_qt_main_thread(qapp, qtbot, tmp_path) -> N
     assert spy.count() == 1
     controller.stop()
     runtime.shutdown()
+
+
+def test_history_navigation_detail_and_newest_first(qapp, qtbot, tmp_path) -> None:
+    runtime, controller = build_controller(tmp_path)
+    older_entry = append_history_entry(runtime, answer="Older result body.")
+    newer_entry = append_history_entry(
+        runtime,
+        answer="Latest <script>alert(1)</script> **answer**",
+        model_used="gpt-5.4-nano",
+        duration_seconds=2.5,
+    )
+
+    controller.openHistory()
+
+    qtbot.waitUntil(
+        lambda: controller.currentScreen == "history"
+        and controller.historyEntriesModel.count == 2
+        and controller.historyState == "ready",
+        timeout=3000,
+    )
+
+    newest_item = controller.historyEntriesModel.get(0)
+    older_item = controller.historyEntriesModel.get(1)
+    assert newest_item["id"] == newer_entry["id"]
+    assert older_item["id"] == older_entry["id"]
+
+    controller.openHistoryItem(str(newest_item["id"]))
+
+    qtbot.waitUntil(lambda: controller.currentScreen == "history_detail", timeout=1000)
+    assert controller.selectedHistoryId == newer_entry["id"]
+    assert controller.selectedHistoryModeLabel == newer_entry["mode_label"]
+    assert "<script>" not in controller.selectedHistoryResultHtml
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in controller.selectedHistoryResultHtml
+
+    controller.goBack()
+    qtbot.waitUntil(lambda: controller.currentScreen == "history", timeout=1000)
+    controller.goBack()
+    qtbot.waitUntil(lambda: controller.currentScreen == "home", timeout=1000)
+    controller.shutdown()
+
+
+def test_history_empty_state(qapp, qtbot, tmp_path) -> None:
+    runtime, controller = build_controller(tmp_path)
+
+    controller.openHistory()
+
+    qtbot.waitUntil(
+        lambda: controller.currentScreen == "history" and controller.historyState == "empty",
+        timeout=3000,
+    )
+    assert controller.historyEntriesModel.count == 0
+    assert "No saved results yet" in controller.historyMessage
+    controller.shutdown()
+
+
+def test_history_corruption_recovery_state(qapp, qtbot, tmp_path) -> None:
+    runtime = build_runtime(tmp_path, setup_completed=True)
+    runtime.paths.result_history_path.parent.mkdir(parents=True, exist_ok=True)
+    runtime.paths.result_history_path.write_text("{not-json", encoding="utf-8")
+    controller = AppController(
+        runtime,
+        camera_store=CachedImageStore(),
+        result_store=CachedImageStore(),
+    )
+
+    controller.openHistory()
+
+    qtbot.waitUntil(
+        lambda: controller.currentScreen == "history" and controller.historyState == "recovered",
+        timeout=3000,
+    )
+    assert controller.historyEntriesModel.count == 0
+    quarantined_files = list(runtime.paths.private_quarantine_path.glob("result_history-*-invalid-history-json.json"))
+    assert quarantined_files
+    controller.shutdown()
+
+
+def test_delete_one_history_item(qapp, qtbot, tmp_path) -> None:
+    runtime, controller = build_controller(tmp_path)
+    first_entry = append_history_entry(runtime, answer="First result.")
+    second_entry = append_history_entry(runtime, answer="Second result.")
+
+    controller.openHistory()
+    qtbot.waitUntil(lambda: controller.historyEntriesModel.count == 2, timeout=3000)
+
+    controller.deleteHistoryItem(first_entry["id"])
+
+    qtbot.waitUntil(
+        lambda: controller.historyEntriesModel.count == 1 and controller.historyState == "ready",
+        timeout=3000,
+    )
+    remaining_item = controller.historyEntriesModel.get(0)
+    assert remaining_item["id"] == second_entry["id"]
+    controller.shutdown()
+
+
+def test_clear_history(qapp, qtbot, tmp_path) -> None:
+    runtime, controller = build_controller(tmp_path)
+    append_history_entry(runtime, answer="Result to clear.")
+
+    controller.openHistory()
+    qtbot.waitUntil(lambda: controller.historyEntriesModel.count == 1, timeout=3000)
+
+    controller.clearHistory()
+
+    qtbot.waitUntil(lambda: controller.historyState == "empty", timeout=3000)
+    assert controller.historyEntriesModel.count == 0
+    persisted_payload = json.loads(runtime.paths.result_history_path.read_text(encoding="utf-8"))
+    assert persisted_payload == []
+    controller.shutdown()
+
+
+def test_delete_all_data_resets_runtime_artifacts_and_returns_home(qapp, qtbot, tmp_path) -> None:
+    runtime, controller = build_controller(tmp_path)
+    append_history_entry(runtime, answer="Stored result.")
+    runtime.paths.latest_result_path.write_text("latest result", encoding="utf-8")
+    runtime.setup_state_store.write_state({"current_step": "openai"})
+    runtime.paths.private_current_path.mkdir(parents=True, exist_ok=True)
+    (runtime.paths.private_current_path / "capture.jpg").write_text("capture", encoding="utf-8")
+    runtime.paths.private_retry_path.mkdir(parents=True, exist_ok=True)
+    (runtime.paths.private_retry_path / "queued.txt").write_text("retry", encoding="utf-8")
+    runtime.paths.offline_retry_queue_path.parent.mkdir(parents=True, exist_ok=True)
+    runtime.paths.offline_retry_queue_path.write_text("[]", encoding="utf-8")
+    runtime.paths.private_quarantine_path.mkdir(parents=True, exist_ok=True)
+    (runtime.paths.private_quarantine_path / "leftover.txt").write_text("trash", encoding="utf-8")
+
+    controller.selectMode("read_text")
+    qtbot.waitUntil(lambda: controller.currentScreen == "camera", timeout=1000)
+
+    controller.deleteAllData()
+
+    qtbot.waitUntil(
+        lambda: controller.currentScreen == "home"
+        and controller.selectedMode == ""
+        and controller.historyEntriesModel.count == 0,
+        timeout=3000,
+    )
+    assert "All local data deleted" in controller.displayStatus
+    assert not runtime.paths.latest_result_path.exists()
+    assert not runtime.paths.setup_state_path.exists()
+    assert not runtime.paths.offline_retry_queue_path.exists()
+    assert not runtime.paths.private_current_path.exists()
+    assert not runtime.paths.private_retry_path.exists()
+    assert list(runtime.paths.private_quarantine_path.iterdir()) == []
+    controller.shutdown()
+
+
+def test_history_qml_payload_hides_sensitive_fields(qapp, qtbot, tmp_path) -> None:
+    runtime = build_runtime(tmp_path, setup_completed=True)
+    runtime.paths.result_history_path.parent.mkdir(parents=True, exist_ok=True)
+    runtime.paths.result_history_path.write_text(
+        json.dumps(
+            [
+                {
+                    "id": "entry-1",
+                    "created_at": "2026-07-12T10:00:00",
+                    "selected_mode": "read_text",
+                    "selected_mode_internal": "document_reader",
+                    "mode_label": "Read Text",
+                    "status": "success",
+                    "answer": "Safe answer body.",
+                    "summary": "Safe answer body.",
+                    "camera_backend_used": "opencv",
+                    "camera_resolution": [1920, 1080],
+                    "model_used": "gpt-5.4-mini",
+                    "duration_seconds": 1.5,
+                    "retry_status": "",
+                    "error_summary": "",
+                    "private_path": "data/private/current/processed.jpg",
+                    "secret_value": "sk-secret-123",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    controller = AppController(
+        runtime,
+        camera_store=CachedImageStore(),
+        result_store=CachedImageStore(),
+    )
+
+    controller.openHistory()
+
+    qtbot.waitUntil(lambda: controller.historyEntriesModel.count == 1, timeout=3000)
+    history_item = controller.historyEntriesModel.get(0)
+    assert "private_path" not in history_item
+    assert "secret_value" not in history_item
+
+    controller.openHistoryItem("entry-1")
+    qtbot.waitUntil(lambda: controller.currentScreen == "history_detail", timeout=1000)
+    assert "data/private/current/processed.jpg" not in controller.selectedHistoryDetailHtml
+    assert "sk-secret-123" not in controller.selectedHistoryDetailHtml
+    controller.shutdown()
+
+
+def test_capture_pipeline_appends_history_and_history_screen_reads_it(qapp, qtbot, tmp_path) -> None:
+    runtime, controller = build_controller(tmp_path)
+
+    controller.selectMode("read_text")
+    qtbot.waitUntil(lambda: controller.currentScreen == "camera", timeout=1000)
+    controller.capture()
+    qtbot.waitUntil(lambda: controller.currentScreen == "result", timeout=4000)
+
+    stored_entries = runtime.result_history_store.load_entries()
+    assert len(stored_entries) == 1
+    assert stored_entries[0]["mode_label"] == "Read Text"
+    assert stored_entries[0]["answer"]
+
+    controller.openHistory()
+    qtbot.waitUntil(
+        lambda: controller.currentScreen == "history" and controller.historyEntriesModel.count == 1,
+        timeout=3000,
+    )
+    controller.shutdown()

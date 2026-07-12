@@ -59,7 +59,7 @@ class _MockSetupVerifier:
 
 
 class SetupController(QObject):
-    """Manage first-boot setup state without relying on Flask routes."""
+    """Manage first-boot setup state directly through Qt slots and signals."""
 
     stateChanged = Signal()
     setupCompleted = Signal(str)
