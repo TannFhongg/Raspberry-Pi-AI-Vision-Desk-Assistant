@@ -387,6 +387,38 @@ class PrivacyFirstAppTests(unittest.TestCase):
         self.assertIn(b">OFFLINE</span>", response.data)
         self.assertIn(b">OK</span>", response.data)
 
+    def test_base_template_uses_combined_app_stylesheet_route(self) -> None:
+        client = app_module.app.test_client()
+
+        response = client.get("/")
+        html = response.data.decode("utf-8")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('href="/assets/app.css"', html)
+        self.assertNotIn('href="/static/style.css"', html)
+
+    def test_combined_app_stylesheet_route_serves_flattened_css_bundle(self) -> None:
+        client = app_module.app.test_client()
+
+        response = client.get("/assets/app.css")
+        css = response.data.decode("utf-8")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.mimetype, "text/css")
+        self.assertIn(".kiosk-layout", css)
+        self.assertIn(".processing-main", css)
+        self.assertNotIn("@import url(", css)
+
+    def test_shared_header_marks_long_values_for_compact_health_pills(self) -> None:
+        client = app_module.app.test_client()
+
+        response = client.get("/")
+        html = response.data.decode("utf-8")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(">PREPARING</span>", html)
+        self.assertIn("health-pill__value--long", html)
+
     def test_result_route_formats_ai_answer_markup(self) -> None:
         client = app_module.app.test_client()
         app_module._write_device_state(

@@ -1,11 +1,30 @@
 import { applyCameraAnalysisPayload, applyCameraPreviewPayload } from "./camera.js";
 
 const METRIC_STATES = ["healthy", "warning", "error", "unavailable"];
+const VALUE_SIZE_CLASSES = ["normal", "long", "very-long"];
 const UNAVAILABLE_AFTER_ERRORS = 3;
 const MAX_BACKOFF_MS = 30000;
 
 function normalizeState(state) {
     return METRIC_STATES.includes(state) ? state : "unavailable";
+}
+
+function classifyValueSize(value) {
+    const normalizedValue = String(value || "N/A").replace(/\s+/g, "");
+    if (normalizedValue.length >= 10) {
+        return "very-long";
+    }
+    if (normalizedValue.length >= 8) {
+        return "long";
+    }
+    return "normal";
+}
+
+function normalizeValueSize(valueSize, value) {
+    if (VALUE_SIZE_CLASSES.includes(valueSize)) {
+        return valueSize;
+    }
+    return classifyValueSize(value);
 }
 
 function setMetric(root, payload) {
@@ -18,7 +37,13 @@ function setMetric(root, payload) {
     const state = normalizeState(payload.state);
     const valueElement = element.querySelector("[data-health-value]");
     if (valueElement) {
-        valueElement.textContent = payload.value || "N/A";
+        const value = payload.value || "N/A";
+        const valueSize = normalizeValueSize(payload.value_size, value);
+        valueElement.textContent = value;
+        VALUE_SIZE_CLASSES.forEach((sizeClass) => {
+            valueElement.classList.remove(`health-pill__value--${sizeClass}`);
+        });
+        valueElement.classList.add(`health-pill__value--${valueSize}`);
     }
 
     METRIC_STATES.forEach((metricState) => {

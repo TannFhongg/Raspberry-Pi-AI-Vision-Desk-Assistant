@@ -107,6 +107,21 @@ SCREEN_TEMPLATE_NAMES = {
     "history": "history.html",
     "history_detail": "history_detail.html",
 }
+APP_STYLESHEET_FILES = (
+    Path("static/css/tokens.css"),
+    Path("static/css/reset.css"),
+    Path("static/css/base.css"),
+    Path("static/css/layout.css"),
+    Path("static/css/components.css"),
+    Path("static/css/utilities.css"),
+    Path("static/css/screens/home.css"),
+    Path("static/css/screens/camera.css"),
+    Path("static/css/screens/processing.css"),
+    Path("static/css/screens/result.css"),
+    Path("static/css/screens/error.css"),
+    Path("static/css/screens/setup.css"),
+    Path("static/css/legacy.css"),
+)
 MJPEG_BOUNDARY = "frame"
 SETUP_STEPS = ("wifi", "openai", "camera", "gpio", "finish")
 SETUP_GPIO_LABELS = {
@@ -756,6 +771,7 @@ def first_boot_setup_gate():
         "setup_gpio_test_start",
         "setup_gpio_test_stop",
         "setup_finish",
+        "app_stylesheet",
         "live_preview_frame",
         "live_preview_stream",
         "static",
@@ -770,6 +786,16 @@ def first_boot_setup_gate():
             return redirect(url_for("setup"))
         return None
     return redirect(url_for("setup"))
+
+
+@app.get("/assets/app.css")
+def app_stylesheet() -> Response:
+    """Serve a single combined stylesheet to avoid flaky secondary CSS requests."""
+    combined_stylesheet = "\n\n".join(
+        stylesheet_path.read_text(encoding="utf-8")
+        for stylesheet_path in APP_STYLESHEET_FILES
+    )
+    return Response(combined_stylesheet, mimetype="text/css")
 
 
 @app.get("/")
@@ -2500,6 +2526,7 @@ def _build_health_metric(
         "key": key,
         "label": label,
         "value": value,
+        "value_size": _classify_health_value_size(value),
         "state": state,
         "message": message,
         "title": message,
@@ -2507,6 +2534,16 @@ def _build_health_metric(
     }
     metric.update(extra)
     return metric
+
+
+def _classify_health_value_size(value: str) -> str:
+    """Return a CSS-friendly size bucket for compact health pill values."""
+    normalized_value = re.sub(r"\s+", "", str(value or "N/A"))
+    if len(normalized_value) >= 10:
+        return "very-long"
+    if len(normalized_value) >= 8:
+        return "long"
+    return "normal"
 
 
 def _metric_state_for_thresholds(

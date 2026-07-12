@@ -7,5 +7,5 @@
     aria-label="{{ metric.aria_label }}"
 >
     <span class="health-pill__label">{{ metric.label }}</span>
-    <span class="health-pill__value" data-health-value>{{ metric.value }}</span>
+    <span class="health-pill__value health-pill__value--{{ metric.value_size|default('normal') }}" data-health-value>{{ metric.value }}</span>
 </div>
