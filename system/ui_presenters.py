@@ -218,8 +218,126 @@ def format_result_duration(value: Any) -> str:
     return f"{duration:.2f} seconds"
 
 
+def result_detail_heading_for_mode(selected_mode: str) -> str:
+    """Return the answer-derived section heading for the detail card."""
+    headings = {
+        "read_text": "Text Highlights",
+        "summarize_document": "Summary Highlights",
+        "analyze_image": "Scene Highlights",
+        "professional_assistant": "Recommendation Highlights",
+        "solve_problem": "Solution Highlights",
+    }
+    return headings.get(selected_mode, "AI Answer Highlights")
+
+
+def split_answer_sentences(text: str) -> list[str]:
+    """Split a plain answer line into sentence-like chunks."""
+    normalized_text = text.strip()
+    if not normalized_text:
+        return []
+    return [
+        sentence.strip()
+        for sentence in re.split(r"(?<=[.!?])\s+(?=[A-Z0-9])", normalized_text)
+        if sentence.strip()
+    ] or [normalized_text]
+
+
+def normalize_answer_detail_item(text: str, *, max_chars: int = 180) -> str:
+    """Return a compact single-line detail item derived from the AI answer."""
+    compact = re.sub(r"(\*\*|__)(.*?)\1", r"\2", text).strip()
+    compact = re.sub(r"\s+", " ", compact)
+    if len(compact) <= max_chars:
+        return compact
+    return compact[: max_chars - 3].rstrip() + "..."
+
+
+def is_structural_answer_label(text: str) -> bool:
+    """Return True when a short line looks like a section label rather than content."""
+    normalized = re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
+    if not normalized:
+        return True
+    if text.endswith(":"):
+        return True
+    common_labels = {
+        "summary",
+        "what s visible",
+        "what is visible",
+        "key points",
+        "key takeaways",
+        "details",
+        "observations",
+        "analysis",
+        "recommendations",
+        "next steps",
+    }
+    return normalized in common_labels
+
+
+def extract_answer_detail_items(answer_text: str, *, max_items: int = 4) -> list[str]:
+    """Extract concise supplementary bullets from the AI answer without copying the full answer."""
+    if not answer_text.strip():
+        return []
+
+    list_candidates: list[str] = []
+    sentence_candidates: list[str] = []
+
+    for raw_line in answer_text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        if re.match(r"^#{1,3}\s+", line):
+            continue
+
+        numbered_match = re.match(r"^\d+[.)]\s+(.*)$", line)
+        if numbered_match:
+            candidate = normalize_answer_detail_item(numbered_match.group(1))
+            if candidate:
+                list_candidates.append(candidate)
+            continue
+
+        bullet_match = re.match(r"^(?:[-*]|\u2022)\s+(.*)$", line)
+        if bullet_match:
+            candidate = normalize_answer_detail_item(bullet_match.group(1))
+            if candidate:
+                list_candidates.append(candidate)
+            continue
+
+        plain_line = normalize_answer_detail_item(line)
+        if not plain_line or is_structural_answer_label(plain_line):
+            continue
+
+        if re.match(r"^[A-Z][A-Za-z0-9 '&()/.-]{1,30}:\s+.+$", plain_line):
+            list_candidates.append(plain_line)
+            continue
+
+        for sentence in split_answer_sentences(plain_line):
+            candidate = normalize_answer_detail_item(sentence)
+            if candidate and not is_structural_answer_label(candidate):
+                sentence_candidates.append(candidate)
+
+    prioritized_candidates = list_candidates if len(list_candidates) >= 2 else list_candidates + sentence_candidates
+    if len(prioritized_candidates) < max_items:
+        prioritized_candidates.extend(sentence_candidates)
+
+    detail_items: list[str] = []
+    seen_keys: set[str] = set()
+    for candidate in prioritized_candidates:
+        dedupe_key = re.sub(r"[^a-z0-9]+", " ", candidate.lower()).strip()
+        if not dedupe_key or dedupe_key in seen_keys:
+            continue
+        seen_keys.add(dedupe_key)
+        detail_items.append(candidate)
+        if len(detail_items) >= max_items:
+            break
+
+    return detail_items
+
+
 def build_result_detail_view(
     *,
+    selected_mode: str,
+    answer_text: str,
     result_state: str,
     detail_text: str,
     error_text: str,
@@ -231,6 +349,11 @@ def build_result_detail_view(
     latest_result_summary = load_latest_result_summary(latest_result_path)
     entry = history_entry or {}
     detail_sections: list[str] = []
+
+    answer_detail_items = extract_answer_detail_items(answer_text)
+    if answer_detail_items:
+        detail_sections.append(f"### {result_detail_heading_for_mode(selected_mode)}")
+        detail_sections.extend(f"- {item}" for item in answer_detail_items)
 
     technical_detail = error_text.strip()
     if technical_detail and result_state in {"ERROR", "RETRY_PENDING"}:

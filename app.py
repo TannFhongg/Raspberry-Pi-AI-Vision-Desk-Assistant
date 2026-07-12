@@ -1508,6 +1508,8 @@ def _format_result_duration(value: Any) -> str:
 
 def _build_result_detail_view(
     *,
+    selected_mode: str,
+    answer_text: str,
     result_state: str,
     detail_text: str,
     error_text: str,
@@ -1515,6 +1517,8 @@ def _build_result_detail_view(
 ) -> dict[str, Any]:
     """Build the supplementary detail card using existing backend data only."""
     return shared_build_result_detail_view(
+        selected_mode=selected_mode,
+        answer_text=answer_text,
         result_state=result_state,
         detail_text=detail_text,
         error_text=error_text,
@@ -2495,6 +2499,8 @@ def _build_template_context(
         error_text=state["error"] or state["error_detail"],
     )
     result_detail_view = _build_result_detail_view(
+        selected_mode=selected_mode,
+        answer_text=answer_text,
         result_state=result_view["state"],
         detail_text=state["detail"],
         error_text=state["error_detail"] or state["error"],

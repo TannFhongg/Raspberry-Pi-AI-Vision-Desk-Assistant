@@ -553,6 +553,8 @@ class AppController(QObject):
             default_capture_mode=self.runtime.default_capture_mode,
         )
         detail_view = build_result_detail_view(
+            selected_mode=self.selectedMode,
+            answer_text=answer_text,
             result_state=result_view["state"],
             detail_text=self.pipeline_controller.progressMessage,
             error_text=error_text,

@@ -58,8 +58,11 @@ Item {
                     html: root.controller.resultDetailVisible
                           ? root.controller.resultDetailHtml
                           : "<p class='answer-empty'>No additional detail available.</p>"
+                    titlePixelSize: 28
+                    bodyPixelSize: 16
+                    notePixelSize: 14
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 210
+                    Layout.preferredHeight: 240
                 }
             }
 
@@ -70,6 +73,9 @@ Item {
                 html: root.controller.resultHtml
                 emphasizeError: root.controller.resultState === "ERROR"
                 emphasizeQueued: root.controller.resultState === "RETRY_PENDING"
+                titlePixelSize: 32
+                bodyPixelSize: 18
+                notePixelSize: 15
                 Layout.fillWidth: true
                 Layout.fillHeight: true
             }
@@ -96,4 +102,3 @@ Item {
         }
     }
 }
-
