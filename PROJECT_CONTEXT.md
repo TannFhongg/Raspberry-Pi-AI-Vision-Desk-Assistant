@@ -1,15 +1,16 @@
 # Project Context
 
-Updated on: 2026-07-11
+Updated on: 2026-07-12
 Project root: `C:\Users\Admin\Desktop\Raspberry Pi AI Vision Desk Assistant`
 
 ## Purpose
 
-This repository is a portfolio-ready Raspberry Pi 5 AI vision desk assistant. It is no longer just a single script demo. The codebase now behaves like a small capture appliance with three main control surfaces:
+This repository is a portfolio-ready Raspberry Pi 5 AI vision desk assistant. It is no longer just a single script demo. The codebase now behaves like a small capture appliance with four main control surfaces:
 
 ```text
 CLI -> shared pipeline
 Flask kiosk UI -> shared pipeline
+Qt kiosk UI -> shared pipeline
 GPIO buttons -> shared pipeline
 ```
 
@@ -28,6 +29,7 @@ Main top-level areas:
 - `config/`: typed YAML-backed device settings loader
 - `hardware/`: button, LED, camera-request, state-machine, and diagnostics helpers
 - `pipeline/`: shared capture, preprocess, analyze, and latest-result orchestration
+- `qt_app/`: native `PySide6 + Qt Quick/QML` frontend runtime, controllers, models, image providers, and QML screens
 - `system/`: logging, storage helpers, health monitor, and offline retry queue
 - `templates/` and `static/`: touchscreen-first Flask UI
 - `vision/`: preprocess pipeline, screen detection, perspective correction, and text enhancement
@@ -37,6 +39,7 @@ Main entrypoints:
 
 - `main.py`: full terminal pipeline
 - `app.py`: local touchscreen/kiosk UI
+- `python -m qt_app.main`: native Qt frontend for the setup/capture/result workflow
 - `check_hardware.py`: standalone device diagnostics
 - `test_ai_vision.py`: one-off existing-image OpenAI test
 - `test_camera_capture.py`: one-off camera capture test
@@ -53,6 +56,9 @@ Configuration and shared services:
 - `system/logging.py`: rotating `logs/app.log` and `logs/error.log`
 - `system/health.py`: background CPU, memory, network, and camera health snapshots
 - `system/offline_retry.py`: durable retry queue that keeps copied processed images for transient OpenAI failures
+- `system/ui_presenters.py`: canonical progress, result, preview, and health-pill formatting shared by Flask and Qt
+- `system/setup_flow.py`: import-safe first-boot setup state, validation, and persistence helpers shared by Flask and Qt
+- `system/result_history.py`: shared recent-result storage and decoration helpers used by both UI surfaces
 
 Shared capture stack:
 
@@ -65,9 +71,12 @@ Shared capture stack:
 - `pipeline/runner.py`: canonical `run_capture`, `run_preprocess`, `run_analyze`, `run_capture_analyze`, and `save_latest_result`
 - `ai/openai_client.py`: OpenAI Responses API wrapper with explicit timeout, retry, and retryable-error classification
 
-Touch and hardware layer:
+UI and hardware layer:
 
-- `app.py`: kiosk UI state machine, recent-results history, health bar, delete-all-data flow, and offline retry integration
+- `app.py`: Flask kiosk UI state machine, recent-results history, health bar, delete-all-data flow, and offline retry integration
+- `qt_app/app_controller.py`: single QML-facing facade for screen navigation, setup, capture, result, and error state
+- `qt_app/runtime.py`: shared Qt bootstrap for settings, preview, health, result history, retry queue, and setup stores
+- `qt_app/image_provider.py`: in-memory QML image providers for live preview and latest result media
 - `hardware/status.py`: shared `READY`, `MODE_SELECTED`, `CAPTURING`, `PROCESSING`, `DONE`, and `ERROR` helpers
 - `hardware/button.py`: capture button, mode buttons, and optional back button controller
 - `hardware/led.py`: optional single-color LED that mirrors the shared device state
@@ -125,6 +134,23 @@ Device-state flow:
 ```text
 READY -> MODE_SELECTED -> CAPTURING -> PROCESSING -> DONE | ERROR
 ```
+
+## Native Qt UI Behavior
+
+The native Qt app is now the parallel migration surface for the primary on-device workflow. Qt v1 currently covers:
+
+- `setup`
+- `home`
+- `camera`
+- `processing`
+- `result`
+- `error`
+
+Key Qt runtime notes:
+
+- `qt_app.main` talks to shared Python services directly instead of polling `/api/ui-state` or `/api/health`.
+- QML image providers are used for the live preview and the latest result preview instead of exposing arbitrary file paths.
+- `history` and `history_detail` remain Flask-only during the current migration milestone.
 
 ## Current Device Defaults
 
@@ -198,6 +224,14 @@ Flask UI:
 python app.py
 ```
 
+Native Qt UI:
+
+```bash
+pip install -r requirements-qt.txt
+python -m qt_app.main --windowed --mock-hardware
+python -m qt_app.main
+```
+
 Standalone GPIO listener:
 
 ```bash
@@ -212,9 +246,9 @@ python check_hardware.py
 
 ## Validation Snapshot
 
-Verified on 2026-07-11 in the current local development environment:
+Verified on 2026-07-12 in the current local development environment:
 
-- `python -m pytest -q` -> `105 passed, 16 subtests passed`
+- `python -m pytest tests/test_first_boot_setup.py tests/test_app_phase11.py tests/test_qt_deployment_service.py tests/test_qt_app.py -q` -> `63 passed, 4 skipped, 23 subtests passed`
 
 Latest documented real-device behavior from 2026-07-10:
 
@@ -226,6 +260,7 @@ Latest documented real-device behavior from 2026-07-10:
 
 - Same-image reanalysis is intentionally unavailable while result history remains text-only.
 - The offline retry queue has no dedicated queue-management screen yet.
+- `history` and `history_detail` are still Flask-only while the native Qt migration focuses on the main capture flow.
 - More validation is still needed on the exact target Raspberry Pi hardware for button feel, LED timing, and preview smoothness.
 - The current UI is tuned first for a `1200x800` landscape display.
 - OpenAI analysis still requires network access and a valid API key.
@@ -233,7 +268,8 @@ Latest documented real-device behavior from 2026-07-10:
 ## Development Guardrails
 
 - Do not commit `.env` or real API keys.
-- Keep shared behavior in `pipeline/runner.py` so CLI, Flask, and GPIO stay aligned.
+- Keep shared behavior in `pipeline/runner.py` so CLI, Flask, Qt, and GPIO stay aligned.
+- Keep UI shaping and setup/history persistence logic in `system/ui_presenters.py`, `system/setup_flow.py`, and `system/result_history.py` so Flask and Qt stay behavior-compatible.
 - Keep runtime artifacts out of git.
 - Prefer updating `config/device.yaml` for committed hardware defaults and use env vars for deployment-specific overrides.
 - Preserve the privacy-first model: result history is text-only by default, working images stay private, and delete-all-data should keep clearing retained user artifacts.

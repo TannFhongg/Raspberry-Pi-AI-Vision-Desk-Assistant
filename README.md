@@ -1,8 +1,8 @@
 # Raspberry Pi AI Vision Desk Assistant
 
-Updated: 2026-07-11
+Updated: 2026-07-12
 
-Raspberry Pi AI Vision Desk Assistant is a portfolio-ready Raspberry Pi 5 project that turns a USB webcam, OpenCV preprocessing, OpenAI Vision analysis, Flask, and GPIO controls into a small-device capture appliance.
+Raspberry Pi AI Vision Desk Assistant is a portfolio-ready Raspberry Pi 5 project that turns a USB webcam, OpenCV preprocessing, OpenAI Vision analysis, Flask, a native `PySide6 + Qt Quick/QML` frontend, and GPIO controls into a small-device capture appliance.
 
 ```text
 Camera capture -> OpenCV preprocess / screen optimization -> OpenAI Vision -> CLI / Touchscreen UI / GPIO controls
@@ -10,12 +10,12 @@ Camera capture -> OpenCV preprocess / screen optimization -> OpenAI Vision -> CL
 
 ## Current Status
 
-- End-to-end capture, preprocess, analyze, and result display flows are implemented across CLI, Flask, and GPIO entrypoints.
+- End-to-end capture, preprocess, analyze, and result display flows are implemented across CLI, Flask, Qt, and GPIO entrypoints.
 - The committed device baseline is now a local-only kiosk profile on `127.0.0.1:5000` with a `1200x800` landscape UI.
 - A mandatory first-boot setup wizard now blocks the normal kiosk flow until Wi-Fi, `OPENAI_API_KEY`, camera diagnostics, and GPIO verification have been reviewed.
 - The current default hardware profile uses `1920x1080` still capture, a lighter `640x360` live preview, text-only result history, private runtime media, and a background offline retry queue.
 - Physical controls support one capture button, five mode buttons, an optional back button, and an optional single-color status LED.
-- Automated validation on 2026-07-11: `python -m pytest -q` completed with `121 passed, 16 subtests passed`.
+- Targeted shared-plus-Qt validation on 2026-07-12: `python -m pytest tests/test_first_boot_setup.py tests/test_app_phase11.py tests/test_qt_deployment_service.py tests/test_qt_app.py -q` completed with `63 passed, 4 skipped, 23 subtests passed`.
 - Latest documented on-device validation on 2026-07-10: the `Read Text` flow captured a Raspberry Pi 27W USB-C power supply box, returned structured OCR-style output, and confirmed the fixed live-preview-to-capture handoff on the GPIO-triggered path.
 
 ## Milestone Snapshot
@@ -31,7 +31,7 @@ Camera capture -> OpenCV preprocess / screen optimization -> OpenAI Vision -> CL
 
 - `main.py` runs the full camera -> preprocess -> OpenAI workflow from the terminal.
 - `app.py` exposes a touchscreen-first Flask UI with `setup`, `home`, `processing`, `result`, `error`, `history`, and `history_detail` screens.
-- `qt_app/` now contains the native `PySide6 + Qt Quick/QML` migration shell for `setup`, `home`, `camera`, `processing`, `result`, and `error`.
+- `qt_app/` now contains the native `PySide6 + Qt Quick/QML` app for `setup`, `home`, `camera`, `processing`, `result`, and `error`, backed by shared Python services instead of HTTP UI polling.
 - `test_gpio_button.py` and the embedded Flask GPIO listener both trigger the same shared capture pipeline.
 - Live framing is available through `/camera/live-stream.mjpg`, with `/camera/live-frame.jpg` kept as a diagnostic and compatibility endpoint.
 - Compact device-health data is available through `/api/health`, and the UI state is exposed through `/api/ui-state`.
@@ -114,19 +114,22 @@ pip install -r requirements.txt
 
 ### First boot flow
 
-On a new device, start the Flask app and open the local UI:
+On a new device, you can start either UI surface locally:
 
 ```bash
 python app.py
+python -m qt_app.main
 ```
 
-The app now redirects unfinished devices into `/setup` automatically. The V1 setup wizard:
+Both runtimes gate unfinished devices into setup automatically. In the Flask surface this appears at `/setup`. The V1 setup wizard:
 
 - scans and connects Wi-Fi through `nmcli`
 - saves `OPENAI_API_KEY` into local `.env`
 - runs a lightweight camera diagnostic while showing the live preview
 - verifies the configured GPIO buttons once each
-- finishes with warning acknowledgment and then restarts the Flask process
+- finishes with warning acknowledgment and then either restarts the Flask process or exits the Qt app for relaunch
+
+When the native Qt app completes setup, it exits cleanly and expects systemd or a manual relaunch to bring the normal runtime back up.
 
 V1 keeps the locale fixed to English. Wi-Fi passwords are applied to the OS through NetworkManager and are not stored in `config/device.yaml`.
 
@@ -351,7 +354,7 @@ Install the extra UI dependencies once:
 pip install -r requirements-qt.txt
 ```
 
-Run the native Qt shell in a desktop window:
+Run the native Qt app in a desktop window:
 
 ```bash
 python -m qt_app.main --windowed --mock-hardware
@@ -389,8 +392,8 @@ Current UI behavior:
 
 Qt v1 notes:
 
-- `qt_app.main` does not open an HTTP port for UI state or health polling.
-- The Qt shell reuses shared Python presenters, setup helpers, and result-history helpers directly.
+- `qt_app.main` does not open an HTTP port for UI state or health polling in normal operation.
+- The Qt app reuses shared Python presenters, setup helpers, and result-history helpers directly.
 - `history` and `history_detail` remain Flask-only in the current migration milestone.
 
 Route notes:
