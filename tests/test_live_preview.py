@@ -252,6 +252,25 @@ class LivePreviewServiceTests(unittest.TestCase):
             inter_read_delay_seconds=0.0,
         )
 
+    def test_snapshot_frame_source_uses_capture_preview_jpeg(self) -> None:
+        request = _build_request()
+        source = _OpenCVSnapshotFrameSource(request)
+
+        with patch("camera.live_preview.capture_preview_jpeg", return_value=b"jpeg-frame") as preview_capture:
+            frame = source.read_frame()
+
+        self.assertEqual(frame, b"jpeg-frame")
+        preview_capture.assert_called_once_with(
+            backend=request.backend,
+            camera_index=request.camera_index,
+            width=request.width,
+            height=request.height,
+            autofocus_mode=request.autofocus_mode,
+            exposure=request.exposure,
+            brightness=request.brightness,
+            capture_delay_seconds=request.capture_delay_seconds,
+        )
+
     def test_linux_snapshot_preview_worker_produces_recent_frame(self) -> None:
         request = _build_request()
         source = _ImmediateFrameSource()
