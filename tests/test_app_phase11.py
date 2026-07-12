@@ -189,6 +189,23 @@ class PrivacyFirstAppTests(unittest.TestCase):
                     status="Answer Ready",
                 ),
             ),
+            (
+                "/setup",
+                b"OPENAI KEY",
+                lambda: app_module._reset_ui_state(clear_saved_result=False),
+            ),
+            (
+                "/error",
+                b"CAPTURE AGAIN",
+                lambda: app_module._write_device_state(
+                    DeviceState.ERROR,
+                    selected_mode="read_text",
+                    selected_mode_internal="document_reader",
+                    error="Camera disconnected",
+                    detail="Try again when ready",
+                    progress_state="ERROR",
+                ),
+            ),
         )
 
         for route, expected_copy, prepare_state in route_expectations:
@@ -354,13 +371,21 @@ class PrivacyFirstAppTests(unittest.TestCase):
         )
 
         response = client.get("/")
+        html = response.data.decode("utf-8")
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn(b'data-health-overall data-status="fail"', response.data)
-        self.assertIn(b'data-health-cpu data-status="warning"', response.data)
-        self.assertIn(b'data-health-memory data-status="pass"', response.data)
-        self.assertIn(b'data-health-network data-status="fail"', response.data)
-        self.assertIn(b'data-health-camera data-status="pass"', response.data)
+        self.assertIn('data-health-pill-key="system"', html)
+        self.assertIn('data-health-pill-key="cpu"', html)
+        self.assertIn('data-health-pill-key="ram"', html)
+        self.assertIn('data-health-pill-key="wifi"', html)
+        self.assertIn('data-health-pill-key="camera"', html)
+        self.assertIn('health-pill--warning', html)
+        self.assertIn('health-pill--unavailable', html)
+        self.assertIn(b">WARNING</span>", response.data)
+        self.assertIn("73°C".encode("utf-8"), response.data)
+        self.assertIn(b">42%</span>", response.data)
+        self.assertIn(b">OFFLINE</span>", response.data)
+        self.assertIn(b">OK</span>", response.data)
 
     def test_result_route_formats_ai_answer_markup(self) -> None:
         client = app_module.app.test_client()
@@ -404,12 +429,12 @@ class PrivacyFirstAppTests(unittest.TestCase):
         self.assertIn("overflow-y: auto;", components_css)
         self.assertIn(".kiosk-scroll-area", utilities_css)
 
-    def test_core_screen_templates_extend_base_template(self) -> None:
-        for template_name in ("home.html", "camera.html", "processing.html", "result.html"):
+    def test_core_screen_templates_extend_shared_app_screen_layout(self) -> None:
+        for template_name in ("home.html", "camera.html", "processing.html", "result.html", "setup.html", "error.html"):
             template_path = Path("templates") / template_name
             template_text = template_path.read_text(encoding="utf-8")
             with self.subTest(template=template_name):
-                self.assertIn('{% extends "base.html" %}', template_text)
+                self.assertIn('{% extends "layouts/app_screen.html" %}', template_text)
 
     def test_core_screen_templates_keep_semantic_heading_markup(self) -> None:
         template_expectations = {
@@ -428,7 +453,9 @@ class PrivacyFirstAppTests(unittest.TestCase):
     def test_shared_component_templates_exist_for_core_kiosk_shell(self) -> None:
         component_names = (
             "components/header.html",
+            "components/health_pill.html",
             "components/health_pills.html",
+            "layouts/app_screen.html",
             "components/clock.html",
             "components/mode_pill.html",
             "components/footer_actions.html",
@@ -545,10 +572,10 @@ class PrivacyFirstAppTests(unittest.TestCase):
 
         summary = app_module._build_health_summary()
 
-        self.assertEqual(summary["camera"]["status"], "pass")
-        self.assertEqual(summary["camera"]["label"], "CAM OK")
-        self.assertEqual(summary["overall"]["status"], "pass")
-        self.assertEqual(summary["overall"]["label"], "System OK")
+        self.assertEqual(summary["camera"]["state"], "healthy")
+        self.assertEqual(summary["camera"]["value"], "OK")
+        self.assertEqual(summary["system"]["state"], "healthy")
+        self.assertEqual(summary["system"]["value"], "OK")
 
     def test_health_summary_uses_warning_state_for_high_cpu_or_memory(self) -> None:
         self.health_status_path.write_text(
@@ -581,10 +608,83 @@ class PrivacyFirstAppTests(unittest.TestCase):
 
         summary = app_module._build_health_summary()
 
-        self.assertEqual(summary["cpu"]["status"], "warning")
-        self.assertEqual(summary["memory"]["status"], "warning")
-        self.assertEqual(summary["overall"]["status"], "warning")
-        self.assertEqual(summary["overall"]["label"], "System Watch")
+        self.assertEqual(summary["cpu"]["state"], "warning")
+        self.assertEqual(summary["ram"]["state"], "warning")
+        self.assertEqual(summary["system"]["state"], "warning")
+        self.assertEqual(summary["system"]["value"], "WARNING")
+
+    def test_health_summary_reports_na_for_unavailable_metrics(self) -> None:
+        with patch.object(app_module, "_setup_is_complete", return_value=True):
+            summary = app_module._build_health_summary(render_screen="home")
+
+        self.assertEqual(summary["cpu"]["value"], "N/A")
+        self.assertEqual(summary["ram"]["value"], "N/A")
+        self.assertEqual(summary["wifi"]["value"], "N/A")
+        self.assertEqual(summary["camera"]["value"], "N/A")
+        self.assertEqual(summary["system"]["value"], "PREPARING")
+
+    def test_health_summary_uses_pipeline_overrides_for_capture_state(self) -> None:
+        app_module._write_processing_screen_state(
+            selected_mode="read_text",
+            selected_mode_internal="document_reader",
+            progress_state="CAPTURING",
+            detail="Capturing image...",
+        )
+
+        summary = app_module._build_health_summary(render_screen="processing")
+
+        self.assertEqual(summary["camera"]["value"], "CAPTURING")
+        self.assertEqual(summary["camera"]["state"], "warning")
+        self.assertEqual(summary["system"]["value"], "PREPARING")
+
+    def test_health_summary_api_returns_safe_shared_header_payload(self) -> None:
+        client = app_module.app.test_client()
+        self.health_status_path.write_text(
+            json.dumps(
+                {
+                    "updated_at": "2026-07-11T10:10:00",
+                    "overall_status": "healthy",
+                    "cpu": {
+                        "status": "pass",
+                        "temperature_c": 52.2,
+                        "message": "CPU temperature is 52.2 C.",
+                    },
+                    "memory": {
+                        "status": "pass",
+                        "used_percent": 43.1,
+                        "message": "Memory usage is 43.1%.",
+                    },
+                    "network": {
+                        "status": "pass",
+                        "message": "Internet connection check succeeded.",
+                    },
+                    "camera": {
+                        "status": "pass",
+                        "message": "Camera probe succeeded.",
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test-secret"}, clear=False):
+            response = client.get("/api/health-summary")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        assert payload is not None
+        self.assertEqual(payload["system"]["value"], "OK")
+        self.assertEqual(payload["cpu"]["value"], "52°C")
+        self.assertEqual(payload["ram"]["value"], "43%")
+        self.assertEqual(payload["wifi"]["value"], "OK")
+        self.assertEqual(payload["camera"]["value"], "OK")
+        self.assertEqual([metric["key"] for metric in payload["metrics"]], ["system", "cpu", "ram", "wifi", "camera"])
+        serialized = json.dumps(payload)
+        self.assertNotIn("OPENAI_API_KEY", serialized)
+        self.assertNotIn("sk-test-secret", serialized)
+        self.assertNotIn("password", serialized.lower())
+        self.assertNotIn("captured_path", serialized)
+        self.assertNotIn("processed_path", serialized)
 
     def test_successful_capture_cleans_private_working_media_and_persists_text_history(self) -> None:
         self.captured_path.write_bytes(b"captured")

@@ -1,0 +1,11 @@
+<div
+    class="health-pill health-pill--{{ metric.state }}"
+    data-health-pill
+    data-health-pill-key="{{ metric.key }}"
+    data-health-state="{{ metric.state }}"
+    title="{{ metric.title }}"
+    aria-label="{{ metric.aria_label }}"
+>
+    <span class="health-pill__label">{{ metric.label }}</span>
+    <span class="health-pill__value" data-health-value>{{ metric.value }}</span>
+</div>

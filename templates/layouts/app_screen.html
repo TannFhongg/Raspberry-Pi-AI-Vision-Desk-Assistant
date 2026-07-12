@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="kiosk-layout {{ screen_layout_class }}" aria-label="{{ screen_aria_label }}">
+    {% with header_class=header_class, health_bar_class=health_bar_class, divider_class=divider_class %}
+    {% include "components/header.html" %}
+    {% endwith %}
+
+    {% block screen_body %}{% endblock %}
+</section>
+{% endblock %}

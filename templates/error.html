@@ -1,22 +1,43 @@
-{% extends "base.html" %}
+{% extends "layouts/app_screen.html" %}
+{% set screen_layout_class = "error-layout" %}
+{% set screen_aria_label = "Error screen" %}
+{% set header_class = "error-header" %}
+{% set health_bar_class = "error-status-list" %}
+{% set divider_class = "error-divider" %}
 
 {% block title %}VisionDesk Error{% endblock %}
 
-{% block content %}
-{% with panel_title=selected_mode_label if has_mode_selected else default_capture_mode_label, panel_subtitle=error or display_status, panel_action_label='Capture Again', panel_action_url=url_for('retry'), panel_action_method='post', panel_header_class='panel-header-compact' %}
-{% include "components/panel_header.html" %}
-{% endwith %}
-{% include "components/panel_health_pills.html" %}
+{% block screen_body %}
+<div class="sr-only" aria-live="polite">
+    Error screen. Status: {{ error or display_status }}. {% if has_mode_selected %}Mode: {{ selected_mode_label }}.{% endif %}
+</div>
 
-<section class="content-box answer-box answer-box-postcapture" aria-label="Assistant output">
-    <div class="status-panel error-state">
-        <div class="status-copy">
-            <p class="error-title">{{ error or "Something went wrong" }}</p>
+<section class="error-main">
+    <article class="error-card" aria-label="Capture error details">
+        <div class="error-copy">
+            <p class="error-kicker">{{ selected_mode_label if has_mode_selected else default_capture_mode_label }}</p>
+            <h1 class="error-title">{{ error or "Something went wrong" }}</h1>
             <p class="error-detail">{{ detail }}</p>
             {% if show_debug and error_detail %}
             <p class="debug-text">{{ error_detail }}</p>
             {% endif %}
         </div>
-    </div>
+    </article>
 </section>
+
+{% set footer_actions = [
+    {
+        'method': 'post',
+        'action': url_for('retry'),
+        'form_class': 'error-action-form kiosk-action-form',
+        'button_class': 'error-action-button kiosk-button kiosk-action-button kiosk-button-primary',
+        'label': 'CAPTURE AGAIN',
+        'type': 'submit',
+        'disabled': False,
+        'form_aria_hidden': False
+    }
+] %}
+{% with footer_class='error-footer' %}
+{% include "components/footer_actions.html" %}
+{% endwith %}
 {% endblock %}

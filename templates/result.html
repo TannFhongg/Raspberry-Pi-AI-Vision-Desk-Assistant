@@ -1,78 +1,77 @@
-{% extends "base.html" %}
+{% extends "layouts/app_screen.html" %}
+{% set screen_layout_class = "result-layout" %}
+{% set screen_aria_label = "Result screen" %}
+{% set header_class = "result-header" %}
+{% set health_bar_class = "result-status-list" %}
+{% set divider_class = "result-divider" %}
 
 {% block title %}VisionDesk Result{% endblock %}
 
-{% block content %}
+{% block screen_body %}
 <div class="sr-only" aria-live="polite">
     Assistant screen. Status: {{ display_status }}. {% if has_mode_selected %}Mode: {{ selected_mode_label }}.{% endif %} Live Camera Feed hidden after capture.
 </div>
 <div class="sr-only" data-live-preview-route="{{ live_preview_url }}">Live Camera Feed</div>
 
-<section class="kiosk-layout result-layout" aria-label="Result screen">
-    {% with header_class='result-header', health_bar_class='result-status-list', divider_class='result-divider' %}
-    {% include "components/header.html" %}
-    {% endwith %}
-
-    <section class="result-main">
-        <div class="result-panels">
-            <aside class="result-preview-column" aria-label="Captured image and additional detail">
-                <article class="result-preview-card" aria-label="Captured image">
-                    <div class="result-preview-frame">
-                        <h2 class="result-preview-title">Captured</h2>
-                        {% if has_result_preview %}
-                        <img src="{{ result_preview_url }}" alt="Captured image" class="result-preview-image">
-                        {% else %}
-                        <div class="result-preview-placeholder-wrap">
-                            <p class="result-preview-placeholder">No preview available.</p>
-                        </div>
-                        {% endif %}
+<section class="result-main">
+    <div class="result-panels">
+        <aside class="result-preview-column" aria-label="Captured image and additional detail">
+            <article class="result-preview-card" aria-label="Captured image">
+                <div class="result-preview-frame">
+                    <h2 class="result-preview-title">Captured</h2>
+                    {% if has_result_preview %}
+                    <img src="{{ result_preview_url }}" alt="Captured image" class="result-preview-image">
+                    {% else %}
+                    <div class="result-preview-placeholder-wrap">
+                        <p class="result-preview-placeholder">No preview available.</p>
                     </div>
-                </article>
+                    {% endif %}
+                </div>
+            </article>
 
-                <article class="result-support-card kiosk-surface-card" aria-label="Additional detail" data-has-content="{{ 'true' if result_detail_view.has_content else 'false' }}">
-                    <div class="result-support-head">
-                        <h2 class="result-support-title">{{ result_detail_view.title }}</h2>
-                    </div>
-                    <div class="result-support-scroll kiosk-scroll-area" tabindex="0">
-                        <div class="answer-copy result-support-copy">{{ result_detail_view.body_html }}</div>
-                    </div>
-                </article>
-            </aside>
+            <article class="result-support-card kiosk-surface-card" aria-label="Additional detail" data-has-content="{{ 'true' if result_detail_view.has_content else 'false' }}">
+                <div class="result-support-head">
+                    <h2 class="result-support-title">{{ result_detail_view.title }}</h2>
+                </div>
+                <div class="result-support-scroll kiosk-scroll-area" tabindex="0">
+                    <div class="answer-copy result-support-copy">{{ result_detail_view.body_html }}</div>
+                </div>
+            </article>
+        </aside>
 
-            <aside class="result-detail-column" aria-label="Result details">
-                {% with mode_label=result_view.mode_label, mode_pill_class='result-mode-pill kiosk-mode-pill-block' %}
-                {% include "components/mode_pill.html" %}
-                {% endwith %}
+        <aside class="result-detail-column" aria-label="Result details">
+            {% with mode_label=result_view.mode_label, mode_pill_class='result-mode-pill kiosk-mode-pill-block' %}
+            {% include "components/mode_pill.html" %}
+            {% endwith %}
 
-                <div class="result-side-divider kiosk-divider" aria-hidden="true"></div>
+            <div class="result-side-divider kiosk-divider" aria-hidden="true"></div>
 
-                <article class="result-answer-card kiosk-surface-card" data-result-state="{{ result_view.state }}">
-                    <div class="result-answer-head">
-                        <h1 class="result-answer-title">{{ result_view.title }}</h1>
-                        {% if result_view.note %}
-                        <p class="result-answer-note">{{ result_view.note }}</p>
-                        {% endif %}
-                    </div>
-                    <div class="result-answer-scroll kiosk-scroll-area" tabindex="0">
-                        <div class="answer-copy result-answer-copy">{{ result_view.body_html }}</div>
-                    </div>
-                </article>
-            </aside>
-        </div>
-    </section>
-
-    {% set footer_actions = [
-        {
-            'method': 'post',
-            'action': url_for('back'),
-            'form_class': 'result-action-form kiosk-action-form',
-            'button_class': 'result-action-button kiosk-button kiosk-action-button',
-            'label': 'BACK',
-            'type': 'submit',
-            'disabled': False,
-            'form_aria_hidden': False
-        }
-    ] %}
-    {% include "components/footer_actions.html" %}
+            <article class="result-answer-card kiosk-surface-card" data-result-state="{{ result_view.state }}">
+                <div class="result-answer-head">
+                    <h1 class="result-answer-title">{{ result_view.title }}</h1>
+                    {% if result_view.note %}
+                    <p class="result-answer-note">{{ result_view.note }}</p>
+                    {% endif %}
+                </div>
+                <div class="result-answer-scroll kiosk-scroll-area" tabindex="0">
+                    <div class="answer-copy result-answer-copy">{{ result_view.body_html }}</div>
+                </div>
+            </article>
+        </aside>
+    </div>
 </section>
+
+{% set footer_actions = [
+    {
+        'method': 'post',
+        'action': url_for('back'),
+        'form_class': 'result-action-form kiosk-action-form',
+        'button_class': 'result-action-button kiosk-button kiosk-action-button',
+        'label': 'BACK',
+        'type': 'submit',
+        'disabled': False,
+        'form_aria_hidden': False
+    }
+] %}
+{% include "components/footer_actions.html" %}
 {% endblock %}

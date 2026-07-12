@@ -674,7 +674,9 @@ LIVE_PREVIEW_FRAME_INTERVAL_MS = _read_int_env(
 )
 UI_HEALTH_REFRESH_MS = _read_int_env("UI_HEALTH_REFRESH_MS", 5000, minimum=2000, maximum=60000)
 UI_CPU_WARNING_C = 70.0
-UI_MEMORY_WARNING_PERCENT = 80.0
+UI_CPU_ERROR_C = 80.0
+UI_MEMORY_WARNING_PERCENT = 75.0
+UI_MEMORY_ERROR_PERCENT = 90.0
 RESULT_HISTORY_LIMIT = SETTINGS.retention.text_history_max_items
 RAW_SCREEN_WIDTH = max(240, min(1920, SETTINGS.display.size.width))
 RAW_SCREEN_HEIGHT = max(240, min(1920, SETTINGS.display.size.height))
@@ -817,6 +819,20 @@ def result_screen():
     return _render_screen_template(screen_override="result")
 
 
+@app.get("/error")
+def error_screen():
+    """Render the error screen only when the current UI state is in error."""
+    state = _load_ui_state()
+    selected_mode, _selected_mode_internal = _resolve_mode_pair(
+        state.get("selected_mode"),
+        state.get("selected_mode_internal"),
+    )
+    screen = _resolve_render_screen(state.get("screen", "home"), selected_mode)
+    if screen != "error":
+        return redirect(url_for("index"))
+    return _render_screen_template(screen_override="error")
+
+
 @app.get("/setup")
 def setup():
     """Render the first-boot setup wizard."""
@@ -900,9 +916,15 @@ def ui_state_api():
     return jsonify(_build_ui_state_api_payload())
 
 
+@app.get("/api/health-summary")
+def health_summary_api():
+    """Return the shared real-time header summary for the touchscreen UI."""
+    return jsonify(_build_health_summary())
+
+
 @app.get("/api/health")
 def health_status_api():
-    """Return a compact device-health snapshot for the touchscreen status bar."""
+    """Keep the legacy health route working for existing local clients."""
     return jsonify(_build_health_summary())
 
 
@@ -2042,34 +2064,55 @@ def _build_camera_analysis_summary(*, render_screen: str | None = None) -> dict[
 
 
 def _build_health_summary(*, render_screen: str | None = None) -> dict[str, Any]:
-    """Return compact health labels for the small-screen device UI."""
+    """Return the shared header health summary for every device screen."""
+    ui_state = _load_ui_state()
+    selected_mode, _selected_mode_internal = _resolve_mode_pair(
+        ui_state.get("selected_mode"),
+        ui_state.get("selected_mode_internal"),
+    )
     if render_screen is None:
-        state = _load_ui_state()
-        selected_mode, _selected_mode_internal = _resolve_mode_pair(
-            state.get("selected_mode"),
-            state.get("selected_mode_internal"),
-        )
-        render_screen = _resolve_render_screen(state.get("screen", "home"), selected_mode)
+        render_screen = _resolve_render_screen(ui_state.get("screen", "home"), selected_mode)
 
     snapshot = _load_health_snapshot()
-    cpu_chip = _build_cpu_health_chip(snapshot)
-    memory_chip = _build_memory_health_chip(snapshot)
-    network_chip = _build_component_health_chip(snapshot, "network", prefix="NET")
-    camera_chip = _build_camera_health_chip(snapshot, render_screen=render_screen)
-    overall_status = _resolve_ui_health_overall_status(
-        cpu_chip,
-        memory_chip,
-        network_chip,
-        camera_chip,
+    setup_state = _load_setup_state() if render_screen == "setup" or not _setup_is_complete() else None
+    cpu_metric = _build_cpu_health_metric(snapshot)
+    ram_metric = _build_ram_health_metric(snapshot)
+    wifi_metric = _build_wifi_health_metric(
+        snapshot,
+        render_screen=render_screen,
+        setup_state=setup_state,
     )
+    camera_metric = _build_camera_health_metric(
+        snapshot,
+        render_screen=render_screen,
+        ui_state=ui_state,
+    )
+    system_metric = _build_system_health_metric(
+        snapshot=snapshot,
+        ui_state=ui_state,
+        render_screen=render_screen,
+        cpu_metric=cpu_metric,
+        ram_metric=ram_metric,
+        wifi_metric=wifi_metric,
+        camera_metric=camera_metric,
+    )
+    metrics = [
+        system_metric,
+        cpu_metric,
+        ram_metric,
+        wifi_metric,
+        camera_metric,
+    ]
+    updated_at = str(snapshot.get("updated_at", "")) if snapshot else str(ui_state.get("updated_at", ""))
 
     return {
-        "updated_at": str(snapshot.get("updated_at", "")) if snapshot else "",
-        "overall": _build_overall_health_chip(overall_status, snapshot),
-        "cpu": cpu_chip,
-        "memory": memory_chip,
-        "network": network_chip,
-        "camera": camera_chip,
+        "updated_at": updated_at,
+        "metrics": metrics,
+        "system": system_metric,
+        "cpu": cpu_metric,
+        "ram": ram_metric,
+        "wifi": wifi_metric,
+        "camera": camera_metric,
         "camera_preview": _build_camera_preview_summary(render_screen=render_screen),
         "camera_analysis": _build_camera_analysis_summary(render_screen=render_screen),
     }
@@ -2093,179 +2136,403 @@ def _load_health_snapshot() -> dict[str, Any] | None:
     return None
 
 
-def _build_overall_health_chip(
-    overall_status: str,
-    snapshot: dict[str, Any] | None,
-) -> dict[str, str]:
-    """Return the overall device-health chip."""
-    label_lookup = {
-        "pass": "System OK",
-        "warning": "System Watch",
-        "fail": "Check Device",
-        "unknown": "Health Pending",
-    }
-    message_lookup = {
-        "pass": "All monitored device checks are passing.",
-        "warning": "One or more monitored device checks are nearing their warning threshold.",
-        "fail": "One or more monitored device checks need attention.",
-        "unknown": "Waiting for a complete health snapshot.",
-    }
-    updated_at = str(snapshot.get("updated_at", "")) if snapshot else ""
-    message = message_lookup[overall_status]
-    if updated_at:
-        message = f"{message} Last update: {updated_at}."
-    return {
-        "status": overall_status,
-        "label": label_lookup[overall_status],
-        "message": message,
-    }
-
-
-def _build_cpu_health_chip(snapshot: dict[str, Any] | None) -> dict[str, str]:
-    """Return the CPU temperature chip."""
+def _build_cpu_health_metric(snapshot: dict[str, Any] | None) -> dict[str, Any]:
+    """Return the CPU header metric."""
     if not snapshot or not isinstance(snapshot.get("cpu"), dict):
-        return {
-            "status": "unknown",
-            "label": "CPU --",
-            "message": "CPU temperature is unavailable.",
-        }
+        return _build_health_metric(
+            key="cpu",
+            label="CPU",
+            value="N/A",
+            state="unavailable",
+            message="CPU temperature is unavailable.",
+            aria_label="CPU temperature unavailable",
+            temperature_c=None,
+        )
 
     cpu = snapshot["cpu"]
-    status = _normalize_component_health_status(cpu.get("status"))
     temperature_c = cpu.get("temperature_c")
-    if status == "pass" and isinstance(temperature_c, (int, float)) and float(temperature_c) >= UI_CPU_WARNING_C:
-        status = "warning"
-    label = "CPU --"
-    if isinstance(temperature_c, (int, float)):
-        label = f"CPU {float(temperature_c):.1f}C"
-    return {
-        "status": status,
-        "label": label,
-        "message": str(cpu.get("message", "CPU temperature is unavailable.")),
-    }
+    if not isinstance(temperature_c, (int, float)):
+        return _build_health_metric(
+            key="cpu",
+            label="CPU",
+            value="N/A",
+            state="unavailable",
+            message=str(cpu.get("message", "CPU temperature is unavailable.")),
+            aria_label="CPU temperature unavailable",
+            temperature_c=None,
+        )
+
+    rounded_temperature = int(float(temperature_c) + 0.5)
+    state = _metric_state_for_thresholds(
+        float(temperature_c),
+        warning_threshold=UI_CPU_WARNING_C,
+        error_threshold=UI_CPU_ERROR_C,
+    )
+    return _build_health_metric(
+        key="cpu",
+        label="CPU",
+        value=f"{rounded_temperature}\N{DEGREE SIGN}C",
+        state=state,
+        message=str(cpu.get("message", "CPU temperature is unavailable.")),
+        aria_label=f"CPU temperature: {rounded_temperature} degrees Celsius",
+        temperature_c=rounded_temperature,
+    )
 
 
-def _build_memory_health_chip(snapshot: dict[str, Any] | None) -> dict[str, str]:
-    """Return the memory usage chip."""
+def _build_ram_health_metric(snapshot: dict[str, Any] | None) -> dict[str, Any]:
+    """Return the RAM header metric."""
     if not snapshot or not isinstance(snapshot.get("memory"), dict):
-        return {
-            "status": "unknown",
-            "label": "RAM --",
-            "message": "Memory usage is unavailable.",
-        }
+        return _build_health_metric(
+            key="ram",
+            label="RAM",
+            value="N/A",
+            state="unavailable",
+            message="Memory usage is unavailable.",
+            aria_label="RAM usage unavailable",
+            usage_percent=None,
+        )
 
     memory = snapshot["memory"]
-    status = _normalize_component_health_status(memory.get("status"))
     used_percent = memory.get("used_percent")
-    if status == "pass" and isinstance(used_percent, (int, float)) and float(used_percent) >= UI_MEMORY_WARNING_PERCENT:
-        status = "warning"
-    label = "RAM --"
-    if isinstance(used_percent, (int, float)):
-        label = f"RAM {float(used_percent):.1f}%"
-    return {
-        "status": status,
-        "label": label,
-        "message": str(memory.get("message", "Memory usage is unavailable.")),
-    }
+    if not isinstance(used_percent, (int, float)):
+        return _build_health_metric(
+            key="ram",
+            label="RAM",
+            value="N/A",
+            state="unavailable",
+            message=str(memory.get("message", "Memory usage is unavailable.")),
+            aria_label="RAM usage unavailable",
+            usage_percent=None,
+        )
+
+    rounded_percent = int(float(used_percent) + 0.5)
+    state = _metric_state_for_thresholds(
+        float(used_percent),
+        warning_threshold=UI_MEMORY_WARNING_PERCENT,
+        error_threshold=UI_MEMORY_ERROR_PERCENT,
+    )
+    return _build_health_metric(
+        key="ram",
+        label="RAM",
+        value=f"{rounded_percent}%",
+        state=state,
+        message=str(memory.get("message", "Memory usage is unavailable.")),
+        aria_label=f"RAM usage: {rounded_percent} percent",
+        usage_percent=rounded_percent,
+    )
 
 
-def _build_component_health_chip(
-    snapshot: dict[str, Any] | None,
-    key: str,
-    *,
-    prefix: str,
-) -> dict[str, str]:
-    """Return a compact pass/fail/unknown label for network and camera health."""
-    if not snapshot or not isinstance(snapshot.get(key), dict):
-        return {
-            "status": "unknown",
-            "label": f"{prefix} --",
-            "message": f"{prefix} status is unavailable.",
-        }
-
-    component = snapshot[key]
-    status = _normalize_component_health_status(component.get("status"))
-    suffix_lookup = {
-        "pass": "OK",
-        "warning": "WARN",
-        "fail": "FAIL",
-        "unknown": "WAIT",
-    }
-    return {
-        "status": status,
-        "label": f"{prefix} {suffix_lookup[status]}",
-        "message": str(component.get("message", f"{prefix} status is unavailable.")),
-    }
-
-
-def _build_camera_health_chip(
+def _build_wifi_health_metric(
     snapshot: dict[str, Any] | None,
     *,
     render_screen: str | None = None,
-) -> dict[str, str]:
-    """Return camera health with live-preview-aware status overrides."""
+    setup_state: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Return the Wi-Fi header metric."""
+    wifi_state = setup_state.get("wifi", {}) if isinstance(setup_state, dict) else {}
+    connect_status = str(wifi_state.get("connect_status", "")).strip().lower()
+    scan_status = str(wifi_state.get("scan_status", "")).strip().lower()
+    setup_message = str(wifi_state.get("message", "")).strip()
+
+    if render_screen == "setup":
+        if connect_status in {"running", "connecting"} or scan_status in {"running", "connecting"}:
+            return _build_health_metric(
+                key="wifi",
+                label="WIFI",
+                value="CONNECTING",
+                state="warning",
+                message=setup_message or "Wi-Fi setup is in progress.",
+                aria_label="Wi-Fi status: connecting",
+            )
+        if connect_status == "pass":
+            return _build_health_metric(
+                key="wifi",
+                label="WIFI",
+                value="OK",
+                state="healthy",
+                message=setup_message or "Wi-Fi is connected.",
+                aria_label="Wi-Fi status: OK",
+            )
+        if connect_status == "fail" or scan_status == "fail":
+            return _build_health_metric(
+                key="wifi",
+                label="WIFI",
+                value="ERROR",
+                state="error",
+                message=setup_message or "Wi-Fi setup failed.",
+                aria_label="Wi-Fi status: error",
+            )
+
+    if not snapshot or not isinstance(snapshot.get("network"), dict):
+        return _build_health_metric(
+            key="wifi",
+            label="WIFI",
+            value="N/A",
+            state="unavailable",
+            message="Wi-Fi status is unavailable.",
+            aria_label="Wi-Fi status unavailable",
+        )
+
+    network = snapshot["network"]
+    normalized_status = _normalize_metric_state(network.get("status"))
+    message = str(network.get("message", "Wi-Fi status is unavailable."))
+
+    if normalized_status == "healthy":
+        return _build_health_metric(
+            key="wifi",
+            label="WIFI",
+            value="OK",
+            state="healthy",
+            message=message,
+            aria_label="Wi-Fi status: OK",
+        )
+    if normalized_status == "warning":
+        return _build_health_metric(
+            key="wifi",
+            label="WIFI",
+            value="CONNECTING",
+            state="warning",
+            message=message,
+            aria_label="Wi-Fi status: connecting",
+        )
+    if normalized_status == "error":
+        return _build_health_metric(
+            key="wifi",
+            label="WIFI",
+            value="OFFLINE",
+            state="unavailable",
+            message=message,
+            aria_label="Wi-Fi status: offline",
+        )
+
+    return _build_health_metric(
+        key="wifi",
+        label="WIFI",
+        value="N/A",
+        state="unavailable",
+        message=message,
+        aria_label="Wi-Fi status unavailable",
+    )
+
+
+def _build_camera_health_metric(
+    snapshot: dict[str, Any] | None,
+    *,
+    render_screen: str | None = None,
+    ui_state: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Return the camera header metric with live-preview-aware overrides."""
+    current_ui_state = ui_state or _load_ui_state()
+    device_state = coerce_device_state(current_ui_state.get("device_state"))
     has_recent_frame, latest_error = _live_preview_runtime_status()
 
-    if has_recent_frame:
-        return {
-            "status": "pass",
-            "label": "CAM OK",
-            "message": "Live preview is receiving camera frames normally.",
-        }
+    if device_state == DeviceState.CAPTURING:
+        return _build_health_metric(
+            key="camera",
+            label="CAM",
+            value="CAPTURING",
+            state="warning",
+            message="A capture is in progress.",
+            aria_label="Camera status: capturing",
+        )
 
-    component = _build_component_health_chip(snapshot, "camera", prefix="CAM")
-    if component["status"] != "unknown":
-        return component
+    if has_recent_frame:
+        return _build_health_metric(
+            key="camera",
+            label="CAM",
+            value="OK",
+            state="healthy",
+            message="Live preview is receiving camera frames normally.",
+            aria_label="Camera status: OK",
+        )
+
+    if snapshot and isinstance(snapshot.get("camera"), dict):
+        camera = snapshot["camera"]
+        normalized_status = _normalize_metric_state(camera.get("status"))
+        message = str(camera.get("message", "Camera status is unavailable."))
+        if normalized_status == "healthy":
+            return _build_health_metric(
+                key="camera",
+                label="CAM",
+                value="OK",
+                state="healthy",
+                message=message,
+                aria_label="Camera status: OK",
+            )
+        if normalized_status == "error":
+            return _build_health_metric(
+                key="camera",
+                label="CAM",
+                value="ERROR",
+                state="error",
+                message=message,
+                aria_label="Camera status: error",
+            )
 
     if _is_live_preview_screen(render_screen):
-        return {
-            "status": "unknown",
-            "label": "CAM LIVE",
-            "message": latest_error or "Live preview is warming up the camera feed.",
-        }
+        return _build_health_metric(
+            key="camera",
+            label="CAM",
+            value="PREPARING",
+            state="warning",
+            message=latest_error or "Live preview is warming up the camera feed.",
+            aria_label="Camera status: preparing",
+        )
 
     if latest_error:
-        return {
-            "status": "fail",
-            "label": "CAM FAIL",
-            "message": latest_error,
-        }
+        return _build_health_metric(
+            key="camera",
+            label="CAM",
+            value="ERROR",
+            state="error",
+            message=latest_error,
+            aria_label="Camera status: error",
+        )
 
-    return component
+    return _build_health_metric(
+        key="camera",
+        label="CAM",
+        value="N/A",
+        state="unavailable",
+        message="Camera status is unavailable.",
+        aria_label="Camera status unavailable",
+    )
 
 
-def _resolve_ui_health_overall_status(*chips: dict[str, str]) -> str:
-    """Collapse UI chip statuses into the overall health pill state."""
-    statuses = [str(chip.get("status", "unknown")).lower() for chip in chips]
-    if any(status == "fail" for status in statuses):
-        return "fail"
-    if any(status == "warning" for status in statuses):
+def _build_system_health_metric(
+    *,
+    snapshot: dict[str, Any] | None,
+    ui_state: dict[str, Any],
+    render_screen: str,
+    cpu_metric: dict[str, Any],
+    ram_metric: dict[str, Any],
+    wifi_metric: dict[str, Any],
+    camera_metric: dict[str, Any],
+) -> dict[str, Any]:
+    """Return the overall system header metric using live UI and hardware state."""
+    device_state = coerce_device_state(ui_state.get("device_state"))
+    updated_at = str(snapshot.get("updated_at", "")) if snapshot else ""
+
+    if (
+        device_state == DeviceState.ERROR
+        or cpu_metric["state"] == "error"
+        or ram_metric["state"] == "error"
+        or camera_metric["state"] == "error"
+    ):
+        message = "Critical device attention is required."
+        if updated_at:
+            message = f"{message} Last update: {updated_at}."
+        return _build_health_metric(
+            key="system",
+            label="SYS",
+            value="ERROR",
+            state="error",
+            message=message,
+            aria_label="System status: error",
+        )
+
+    preparing_values = {"PREPARING", "CONNECTING", "CAPTURING"}
+    if (
+        not _setup_is_complete()
+        or render_screen == "setup"
+        or device_state in {DeviceState.CAPTURING, DeviceState.PROCESSING}
+        or snapshot is None
+        or camera_metric["value"] in preparing_values
+        or wifi_metric["value"] == "CONNECTING"
+    ):
+        message = "The application is preparing hardware or pipeline state."
+        if updated_at:
+            message = f"{message} Last update: {updated_at}."
+        return _build_health_metric(
+            key="system",
+            label="SYS",
+            value="PREPARING",
+            state="warning",
+            message=message,
+            aria_label="System status: preparing",
+        )
+
+    if (
+        cpu_metric["state"] == "warning"
+        or ram_metric["state"] == "warning"
+        or wifi_metric["value"] == "OFFLINE"
+    ):
+        if wifi_metric["value"] == "OFFLINE" and OFFLINE_RETRY_ENABLED:
+            message = "Network is offline, but offline retry remains available."
+        else:
+            message = "The device is running with a warning condition."
+        if updated_at:
+            message = f"{message} Last update: {updated_at}."
+        return _build_health_metric(
+            key="system",
+            label="SYS",
+            value="WARNING",
+            state="warning",
+            message=message,
+            aria_label="System status: warning",
+        )
+
+    message = "The application and monitored hardware are running normally."
+    if updated_at:
+        message = f"{message} Last update: {updated_at}."
+    return _build_health_metric(
+        key="system",
+        label="SYS",
+        value="OK",
+        state="healthy",
+        message=message,
+        aria_label="System status: OK",
+    )
+
+
+def _build_health_metric(
+    *,
+    key: str,
+    label: str,
+    value: str,
+    state: str,
+    message: str,
+    aria_label: str,
+    **extra: Any,
+) -> dict[str, Any]:
+    """Return one header metric payload."""
+    metric = {
+        "key": key,
+        "label": label,
+        "value": value,
+        "state": state,
+        "message": message,
+        "title": message,
+        "aria_label": aria_label,
+    }
+    metric.update(extra)
+    return metric
+
+
+def _metric_state_for_thresholds(
+    value: float,
+    *,
+    warning_threshold: float,
+    error_threshold: float,
+) -> str:
+    """Map a numeric value into healthy, warning, or error states."""
+    if value >= error_threshold:
+        return "error"
+    if value >= warning_threshold:
         return "warning"
-    if statuses and all(status == "pass" for status in statuses):
-        return "pass"
-    return "unknown"
+    return "healthy"
 
 
-def _normalize_component_health_status(value: Any) -> str:
-    """Normalize component health statuses into pass/warning/fail/unknown."""
+def _normalize_metric_state(value: Any) -> str:
+    """Normalize pass/warn/fail/unknown values into shared UI states."""
     normalized = str(value or "").strip().lower()
     if normalized == "pass":
-        return "pass"
+        return "healthy"
     if normalized in {"warning", "warn"}:
         return "warning"
     if normalized == "fail":
-        return "fail"
-    return "unknown"
-
-
-def _normalize_overall_health_status(value: Any) -> str:
-    """Normalize aggregate health statuses into pass/fail/unknown."""
-    normalized = str(value or "").strip().lower()
-    if normalized == "healthy":
-        return "pass"
-    if normalized == "degraded":
-        return "fail"
-    return "unknown"
+        return "error"
+    return "unavailable"
 
 
 def _load_result_history() -> list[dict[str, Any]]:
@@ -2659,7 +2926,7 @@ def _build_template_context(
         "ui_state_updated_at": ui_state_updated_at,
         "has_result_preview": has_result_preview,
         "result_preview_url": result_preview_url,
-        "health_api_url": url_for("health_status_api"),
+        "health_api_url": url_for("health_summary_api"),
         "health_refresh_ms": UI_HEALTH_REFRESH_MS,
         "health_summary": health_summary,
         "camera_preview": health_summary["camera_preview"],

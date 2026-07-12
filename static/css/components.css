@@ -1,3 +1,4 @@
+.app-logo,
 .kiosk-brand {
     display: inline-flex;
     align-items: baseline;
@@ -13,11 +14,12 @@
     color: var(--mode-blue-logo);
 }
 
+.health-status-list,
 .system-health-bar {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--space-xs);
-    align-items: center;
+    gap: 14px;
+    align-items: stretch;
 }
 
 .kiosk-health-bar {
@@ -29,48 +31,67 @@
 .setup-status-list,
 .camera-status-list,
 .processing-status-list,
-.result-status-list {
-    gap: 18px;
+.result-status-list,
+.error-status-list {
+    gap: 14px;
 }
 
 .health-pill {
     min-width: var(--health-pill-width);
     min-height: var(--health-pill-height);
     display: inline-flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 0 24px;
+    gap: 4px;
+    padding: 10px 18px 9px;
     border: var(--border-strong) solid var(--color-text);
     border-radius: var(--radius-pill);
     background: var(--color-surface);
     color: var(--color-text);
     font-family: var(--font-family-display);
-    font-size: clamp(18px, 1.9vw, 28px);
-    font-weight: var(--font-weight-strong);
     line-height: 1;
-    letter-spacing: 0.03em;
+    letter-spacing: -0.03em;
+    text-align: center;
     white-space: nowrap;
 }
 
-.health-pill[data-status="pass"] {
+.health-pill__label,
+.health-pill__value {
+    display: block;
+}
+
+.health-pill__label {
+    font-size: clamp(15px, 1.05vw, 19px);
+    font-weight: var(--font-weight-strong);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.health-pill__value {
+    font-size: clamp(22px, 1.75vw, 30px);
+    font-weight: var(--font-weight-heavy);
+}
+
+.health-pill--healthy {
     background: #ecf9f1;
     border-color: #2d9b5d;
     color: #16713e;
 }
 
-.health-pill[data-status="warning"] {
+.health-pill--warning {
     background: #fff3d9;
     border-color: #d69c24;
     color: #8a5f00;
 }
 
-.health-pill[data-status="fail"] {
+.health-pill--error {
     background: #fdeaea;
     border-color: #d14343;
     color: #ac2b2b;
 }
 
-.health-pill[data-status="unknown"] {
+.health-pill--unavailable {
     background: #f2f4f7;
     border-color: #bbc4ce;
     color: #5c6773;
@@ -323,9 +344,9 @@
     }
 
     .health-pill {
-        min-width: 104px;
-        min-height: 46px;
-        padding: 0 20px;
+        min-width: 112px;
+        min-height: 64px;
+        padding: 8px 16px 7px;
     }
 
     .kiosk-clock {
@@ -358,22 +379,31 @@
 }
 
 @media (max-width: 560px) {
+    .health-status-list,
     .system-health-bar {
-        gap: 3px;
+        gap: 8px;
     }
 
     .home-status-list,
     .setup-status-list,
     .camera-status-list,
     .processing-status-list,
-    .result-status-list {
+    .result-status-list,
+    .error-status-list {
         gap: 10px;
     }
 
     .health-pill {
         min-width: 92px;
-        min-height: 42px;
-        padding: 0 16px;
-        font-size: calc(var(--base-font-size) * 0.9);
+        min-height: 58px;
+        padding: 7px 12px 6px;
+    }
+
+    .health-pill__label {
+        font-size: calc(var(--base-font-size) * 0.56);
+    }
+
+    .health-pill__value {
+        font-size: calc(var(--base-font-size) * 0.86);
     }
 }

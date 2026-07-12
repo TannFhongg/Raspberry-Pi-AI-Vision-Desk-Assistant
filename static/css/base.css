@@ -19,7 +19,8 @@ body.app-screen-home,
 body.app-screen-setup,
 body.app-screen-camera,
 body.app-screen-processing,
-body.app-screen-result {
+body.app-screen-result,
+body.app-screen-error {
     padding: 0;
     background: var(--color-page-background);
     overflow: hidden;
@@ -41,7 +42,8 @@ body.app-screen-result {
 .app-screen-setup .device-shell,
 .app-screen-camera .device-shell,
 .app-screen-processing .device-shell,
-.app-screen-result .device-shell {
+.app-screen-result .device-shell,
+.app-screen-error .device-shell {
     width: min(var(--screen-width), 100vw);
     height: min(var(--screen-height), 100dvh);
     padding: 0;
@@ -68,7 +70,8 @@ body.app-screen-result {
 .app-screen-setup .device-panel,
 .app-screen-camera .device-panel,
 .app-screen-processing .device-panel,
-.app-screen-result .device-panel {
+.app-screen-result .device-panel,
+.app-screen-error .device-panel {
     gap: 0;
     padding: 0;
     border-radius: 0;

@@ -57,13 +57,21 @@
 }
 
 .app-screen-history .health-pill,
-.app-screen-history_detail .health-pill,
-.app-screen-error .health-pill {
-    min-height: 18px;
-    padding: 2px 7px;
+.app-screen-history_detail .health-pill {
+    min-height: 40px;
+    padding: 4px 8px;
     border-width: 1px;
-    font-size: calc(var(--base-font-size) * 0.42);
     letter-spacing: 0.01em;
+}
+
+.app-screen-history .health-pill__label,
+.app-screen-history_detail .health-pill__label {
+    font-size: calc(var(--base-font-size) * 0.34);
+}
+
+.app-screen-history .health-pill__value,
+.app-screen-history_detail .health-pill__value {
+    font-size: calc(var(--base-font-size) * 0.44);
 }
 
 .setup-box {
@@ -396,8 +404,8 @@
     background: rgba(17, 17, 17, 0.06);
 }
 
-.status-panel,
-.error-state {
+.content-box .status-panel,
+.content-box .error-state {
     flex: 1;
     min-height: 0;
     display: flex;
@@ -406,27 +414,27 @@
     justify-content: center;
 }
 
-.status-copy {
+.content-box .status-copy {
     display: flex;
     flex-direction: column;
     gap: 6px;
 }
 
-.error-title {
+.content-box .error-title {
     color: var(--error-red);
     font-size: calc(var(--title-font-size) * 0.58);
     font-weight: var(--font-weight-heavy);
     line-height: 1.02;
 }
 
-.error-detail {
+.content-box .error-detail {
     color: var(--text-soft);
     font-size: calc(var(--base-font-size) * 0.76);
     font-weight: 700;
     line-height: 1.24;
 }
 
-.debug-text {
+.content-box .debug-text {
     color: var(--error-red);
     font-size: calc(var(--base-font-size) * 0.6);
     font-weight: 700;

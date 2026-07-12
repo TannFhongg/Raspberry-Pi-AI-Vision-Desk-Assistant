@@ -1,43 +1,42 @@
-{% extends "base.html" %}
+{% extends "layouts/app_screen.html" %}
+{% set screen_layout_class = "home-layout" %}
+{% set screen_aria_label = "Mode selection" %}
+{% set header_class = "home-header" %}
+{% set health_bar_class = "home-status-list" %}
+{% set divider_class = "home-divider" %}
 
 {% block title %}VisionDesk Home{% endblock %}
 
-{% block content %}
+{% block screen_body %}
 <div class="sr-only" aria-live="polite">
     Ready screen. {% if has_mode_selected %}Selected mode: {{ selected_mode_label }}. Press the main capture button to continue.{% else %}No mode selected yet.{% endif %}
 </div>
 
-<section class="kiosk-layout home-layout" aria-label="Mode selection">
-    {% with header_class='home-header', health_bar_class='home-status-list', divider_class='home-divider' %}
-    {% include "components/header.html" %}
-    {% endwith %}
-
-    <section class="home-main">
-        <div class="home-hero">
-            <div class="home-title-wrap">
-                <h1 class="home-title">What would you like to do?</h1>
-            </div>
-            {% with clock_class='home-clock' %}
-            {% include "components/clock.html" %}
-            {% endwith %}
+<section class="home-main">
+    <div class="home-hero">
+        <div class="home-title-wrap">
+            <h1 class="home-title">What would you like to do?</h1>
         </div>
+        {% with clock_class='home-clock' %}
+        {% include "components/clock.html" %}
+        {% endwith %}
+    </div>
 
-        <div class="home-mode-grid" role="list">
-            {% for mode_option in mode_options %}
-            <form method="post" action="{{ url_for('select_mode') }}" class="home-mode-form{% if loop.index > 3 %} home-mode-form-wide{% endif %}">
-                <input type="hidden" name="mode" value="{{ mode_option.id }}">
-                <button
-                    type="submit"
-                    class="home-mode-card{% if selected_mode == mode_option.id %} home-mode-card-active{% endif %}{% if loop.index > 3 %} home-mode-card-wide{% endif %}"
-                    aria-pressed="{{ 'true' if selected_mode == mode_option.id else 'false' }}"
-                >
-                    <span class="home-mode-card-title">{{ mode_option.name|upper }}</span>
-                    <span class="home-mode-card-description">{{ mode_option.description }}</span>
-                    <span class="home-mode-card-button">{{ mode_option.button_label }}</span>
-                </button>
-            </form>
-            {% endfor %}
-        </div>
-    </section>
+    <div class="home-mode-grid" role="list">
+        {% for mode_option in mode_options %}
+        <form method="post" action="{{ url_for('select_mode') }}" class="home-mode-form{% if loop.index > 3 %} home-mode-form-wide{% endif %}">
+            <input type="hidden" name="mode" value="{{ mode_option.id }}">
+            <button
+                type="submit"
+                class="home-mode-card{% if selected_mode == mode_option.id %} home-mode-card-active{% endif %}{% if loop.index > 3 %} home-mode-card-wide{% endif %}"
+                aria-pressed="{{ 'true' if selected_mode == mode_option.id else 'false' }}"
+            >
+                <span class="home-mode-card-title">{{ mode_option.name|upper }}</span>
+                <span class="home-mode-card-description">{{ mode_option.description }}</span>
+                <span class="home-mode-card-button">{{ mode_option.button_label }}</span>
+            </button>
+        </form>
+        {% endfor %}
+    </div>
 </section>
 {% endblock %}

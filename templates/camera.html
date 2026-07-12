@@ -1,104 +1,103 @@
-{% extends "base.html" %}
+{% extends "layouts/app_screen.html" %}
+{% set screen_layout_class = "camera-layout" %}
+{% set screen_aria_label = "Camera screen" %}
+{% set header_class = "camera-header" %}
+{% set health_bar_class = "camera-status-list" %}
+{% set divider_class = "camera-divider" %}
 
 {% block title %}VisionDesk Camera{% endblock %}
 
-{% block content %}
+{% block screen_body %}
 <div class="sr-only" aria-live="polite">
     Camera screen. Current mode: {{ selected_mode_label }}. {% if camera_preview.show_placeholder %}{{ camera_preview.message or 'Live preview is loading.' }}{% else %}Live preview ready.{% endif %}
 </div>
 <h1 class="sr-only">Camera</h1>
 
-<section class="kiosk-layout camera-layout" aria-label="Camera screen">
-    {% with header_class='camera-header', health_bar_class='camera-status-list', divider_class='camera-divider' %}
-    {% include "components/header.html" %}
-    {% endwith %}
-
-    <section class="camera-main">
-        <article class="camera-preview-panel" aria-label="Live camera preview">
-            <div class="camera-preview-frame">
-                <img
-                    src="{{ live_preview_url }}"
-                    alt="Live camera preview"
-                    class="camera-preview-image preview-image"
-                    data-live-preview-image="true"
-                    data-live-preview-base-url="{{ live_preview_base_url }}"
-                    data-live-preview-refresh-ms="{{ live_preview_refresh_ms }}"
-                >
-                <div
-                    class="camera-preview-overlay{% if not camera_preview.show_placeholder %} camera-preview-overlay-hidden{% endif %}"
-                    data-camera-preview-overlay
-                    data-status="{{ camera_preview.status }}"
-                    {% if not camera_preview.show_placeholder %}hidden{% endif %}
-                >
-                    <p class="camera-preview-overlay-title" data-camera-preview-title>{{ camera_preview.title }}</p>
-                    <p class="camera-preview-overlay-copy" data-camera-preview-copy>{{ camera_preview.message }}</p>
-                </div>
+<section class="camera-main">
+    <article class="camera-preview-panel" aria-label="Live camera preview">
+        <div class="camera-preview-frame">
+            <img
+                src="{{ live_preview_url }}"
+                alt="Live camera preview"
+                class="camera-preview-image preview-image"
+                data-live-preview-image="true"
+                data-live-preview-base-url="{{ live_preview_base_url }}"
+                data-live-preview-refresh-ms="{{ live_preview_refresh_ms }}"
+            >
+            <div
+                class="camera-preview-overlay{% if not camera_preview.show_placeholder %} camera-preview-overlay-hidden{% endif %}"
+                data-camera-preview-overlay
+                data-status="{{ camera_preview.status }}"
+                {% if not camera_preview.show_placeholder %}hidden{% endif %}
+            >
+                <p class="camera-preview-overlay-title" data-camera-preview-title>{{ camera_preview.title }}</p>
+                <p class="camera-preview-overlay-copy" data-camera-preview-copy>{{ camera_preview.message }}</p>
             </div>
-        </article>
+        </div>
+    </article>
 
-        <aside class="camera-sidebar" aria-label="Capture details">
-            {% with clock_class='camera-clock' %}
-            {% include "components/clock.html" %}
-            {% endwith %}
+    <aside class="camera-sidebar" aria-label="Capture details">
+        {% with clock_class='camera-clock' %}
+        {% include "components/clock.html" %}
+        {% endwith %}
 
-            <div class="camera-side-divider kiosk-section-divider" aria-hidden="true"></div>
+        <div class="camera-side-divider kiosk-section-divider" aria-hidden="true"></div>
 
-            <section class="camera-mode-section" aria-label="Current mode">
-                <div class="camera-mode-row">
-                    <h2 class="camera-side-heading">CURRENT MODE</h2>
-                    {% with mode_label=selected_mode_label|upper, mode_pill_class='camera-mode-pill kiosk-mode-pill-block' %}
-                    {% include "components/mode_pill.html" %}
-                    {% endwith %}
-                </div>
-            </section>
+        <section class="camera-mode-section" aria-label="Current mode">
+            <div class="camera-mode-row">
+                <h2 class="camera-side-heading">CURRENT MODE</h2>
+                {% with mode_label=selected_mode_label|upper, mode_pill_class='camera-mode-pill kiosk-mode-pill-block' %}
+                {% include "components/mode_pill.html" %}
+                {% endwith %}
+            </div>
+        </section>
 
-            <div class="camera-side-divider kiosk-section-divider" aria-hidden="true"></div>
+        <div class="camera-side-divider kiosk-section-divider" aria-hidden="true"></div>
 
-            <section class="camera-analysis-section" aria-label="Camera analysis">
-                <h2 class="camera-analysis-title">CAMERA ANALYSIS</h2>
+        <section class="camera-analysis-section" aria-label="Camera analysis">
+            <h2 class="camera-analysis-title">CAMERA ANALYSIS</h2>
 
-                <div class="camera-analysis-row">
-                    <span class="camera-analysis-label">Autofocus</span>
-                    <span class="camera-status-pill kiosk-status-pill" data-camera-analysis="autofocus" data-status="{{ camera_analysis.autofocus.status }}" title="{{ camera_analysis.autofocus.message }}">{{ camera_analysis.autofocus.label }}</span>
-                </div>
+            <div class="camera-analysis-row">
+                <span class="camera-analysis-label">Autofocus</span>
+                <span class="camera-status-pill kiosk-status-pill" data-camera-analysis="autofocus" data-status="{{ camera_analysis.autofocus.status }}" title="{{ camera_analysis.autofocus.message }}">{{ camera_analysis.autofocus.label }}</span>
+            </div>
 
-                <div class="camera-analysis-row">
-                    <span class="camera-analysis-label">Lighting</span>
-                    <span class="camera-status-pill kiosk-status-pill" data-camera-analysis="lighting" data-status="{{ camera_analysis.lighting.status }}" title="{{ camera_analysis.lighting.message }}">{{ camera_analysis.lighting.label }}</span>
-                </div>
+            <div class="camera-analysis-row">
+                <span class="camera-analysis-label">Lighting</span>
+                <span class="camera-status-pill kiosk-status-pill" data-camera-analysis="lighting" data-status="{{ camera_analysis.lighting.status }}" title="{{ camera_analysis.lighting.message }}">{{ camera_analysis.lighting.label }}</span>
+            </div>
 
-                <div class="camera-analysis-row">
-                    <span class="camera-analysis-label">Sharpness</span>
-                    <span class="camera-status-pill kiosk-status-pill" data-camera-analysis="sharpness" data-status="{{ camera_analysis.sharpness.status }}" title="{{ camera_analysis.sharpness.message }}">{{ camera_analysis.sharpness.label }}</span>
-                </div>
-            </section>
-        </aside>
-    </section>
-
-    {% set footer_actions = [
-        {
-            'method': 'post',
-            'action': url_for('capture'),
-            'form_class': 'camera-action-form kiosk-action-form',
-            'button_class': 'camera-action-button camera-action-button-primary kiosk-button kiosk-action-button',
-            'label': 'CAPTURE',
-            'type': 'submit',
-            'disabled': False,
-            'form_aria_hidden': False
-        },
-        {
-            'method': 'post',
-            'action': url_for('back'),
-            'form_class': 'camera-action-form camera-action-form-back kiosk-action-form kiosk-action-form-back',
-            'button_class': 'camera-action-button kiosk-button kiosk-action-button',
-            'label': 'BACK',
-            'type': 'submit',
-            'disabled': False,
-            'form_aria_hidden': False
-        }
-    ] %}
-    {% with footer_class='kiosk-footer-split' %}
-    {% include "components/footer_actions.html" %}
-    {% endwith %}
+            <div class="camera-analysis-row">
+                <span class="camera-analysis-label">Sharpness</span>
+                <span class="camera-status-pill kiosk-status-pill" data-camera-analysis="sharpness" data-status="{{ camera_analysis.sharpness.status }}" title="{{ camera_analysis.sharpness.message }}">{{ camera_analysis.sharpness.label }}</span>
+            </div>
+        </section>
+    </aside>
 </section>
+
+{% set footer_actions = [
+    {
+        'method': 'post',
+        'action': url_for('capture'),
+        'form_class': 'camera-action-form kiosk-action-form',
+        'button_class': 'camera-action-button camera-action-button-primary kiosk-button kiosk-action-button',
+        'label': 'CAPTURE',
+        'type': 'submit',
+        'disabled': False,
+        'form_aria_hidden': False
+    },
+    {
+        'method': 'post',
+        'action': url_for('back'),
+        'form_class': 'camera-action-form camera-action-form-back kiosk-action-form kiosk-action-form-back',
+        'button_class': 'camera-action-button kiosk-button kiosk-action-button',
+        'label': 'BACK',
+        'type': 'submit',
+        'disabled': False,
+        'form_aria_hidden': False
+    }
+] %}
+{% with footer_class='kiosk-footer-split' %}
+{% include "components/footer_actions.html" %}
+{% endwith %}
 {% endblock %}

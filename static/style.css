@@ -8,5 +8,6 @@
 @import url("/static/css/screens/camera.css");
 @import url("/static/css/screens/processing.css");
 @import url("/static/css/screens/result.css");
+@import url("/static/css/screens/error.css");
 @import url("/static/css/screens/setup.css");
 @import url("/static/css/legacy.css");

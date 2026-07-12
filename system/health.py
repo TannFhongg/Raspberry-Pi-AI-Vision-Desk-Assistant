@@ -19,7 +19,7 @@ DEFAULT_HEALTH_STATUS_PATH = Path("data/health_status.json")
 CPU_TEMPERATURE_PATH = Path("/sys/class/thermal/thermal_zone0/temp")
 MEMORY_INFO_PATH = Path("/proc/meminfo")
 CPU_TEMPERATURE_FAIL_C = 80.0
-MEMORY_USED_FAIL_PERCENT = 95.0
+MEMORY_USED_FAIL_PERCENT = 90.0
 DEFAULT_INITIAL_CAMERA_PROBE_DELAY_SECONDS = 15.0
 LOGGER = logging.getLogger(__name__)
 
