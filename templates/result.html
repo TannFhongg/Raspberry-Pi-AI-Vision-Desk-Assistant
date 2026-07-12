@@ -1,0 +1,68 @@
+<section class="result-layout" aria-label="Result screen">
+    <header class="home-topbar result-topbar">
+        <div class="home-brand" aria-label="VisionDesk">
+            <span class="home-brand-word">Vision</span><span class="home-brand-word home-brand-word-accent">Desk</span>
+        </div>
+        <div class="system-health-bar home-status-list result-status-list" aria-label="Device health" data-health-bar>
+            <span class="health-pill health-pill-overall" data-label="SYS" data-health-overall data-status="{{ health_summary.overall.status }}" title="{{ health_summary.overall.message }}">SYS</span>
+            <span class="health-pill" data-label="CPU" data-health-cpu data-status="{{ health_summary.cpu.status }}" title="{{ health_summary.cpu.message }}">CPU</span>
+            <span class="health-pill" data-label="RAM" data-health-memory data-status="{{ health_summary.memory.status }}" title="{{ health_summary.memory.message }}">RAM</span>
+            <span class="health-pill" data-label="WIFI" data-health-network data-status="{{ health_summary.network.status }}" title="{{ health_summary.network.message }}">WIFI</span>
+            <span class="health-pill" data-label="CAM" data-health-camera data-status="{{ health_summary.camera.status }}" title="{{ health_summary.camera.message }}">CAM</span>
+        </div>
+    </header>
+
+    <div class="home-divider result-divider" aria-hidden="true"></div>
+
+    <section class="result-main">
+        <div class="result-panels">
+            <aside class="result-preview-column" aria-label="Captured image and additional detail">
+                <article class="result-preview-card" aria-label="Captured image">
+                    <div class="result-preview-frame">
+                        <p class="result-preview-title">Captured</p>
+                        {% if has_result_preview %}
+                        <img src="{{ result_preview_url }}" alt="Captured image" class="result-preview-image">
+                        {% else %}
+                        <div class="result-preview-placeholder-wrap">
+                            <p class="result-preview-placeholder">No preview available.</p>
+                        </div>
+                        {% endif %}
+                    </div>
+                </article>
+
+                <article class="result-support-card kiosk-surface-card" aria-label="Additional detail" data-has-content="{{ 'true' if result_detail_view.has_content else 'false' }}">
+                    <div class="result-support-head">
+                        <p class="result-support-title">{{ result_detail_view.title }}</p>
+                    </div>
+                    <div class="result-support-scroll kiosk-scroll-area" tabindex="0">
+                        <div class="answer-copy result-support-copy">{{ result_detail_view.body_html }}</div>
+                    </div>
+                </article>
+            </aside>
+
+            <aside class="result-detail-column" aria-label="Result details">
+                <span class="result-mode-pill kiosk-pill">{{ result_view.mode_label }}</span>
+
+                <div class="result-side-divider kiosk-divider" aria-hidden="true"></div>
+
+                <article class="result-answer-card kiosk-surface-card" data-result-state="{{ result_view.state }}">
+                    <div class="result-answer-head">
+                        <p class="result-answer-title">{{ result_view.title }}</p>
+                        {% if result_view.note %}
+                        <p class="result-answer-note">{{ result_view.note }}</p>
+                        {% endif %}
+                    </div>
+                    <div class="result-answer-scroll kiosk-scroll-area" tabindex="0">
+                        <div class="answer-copy result-answer-copy">{{ result_view.body_html }}</div>
+                    </div>
+                </article>
+            </aside>
+        </div>
+    </section>
+
+    <footer class="result-footer">
+        <form method="post" action="{{ url_for('back') }}" class="result-action-form">
+            <button type="submit" class="result-action-button kiosk-button">BACK</button>
+        </form>
+    </footer>
+</section>

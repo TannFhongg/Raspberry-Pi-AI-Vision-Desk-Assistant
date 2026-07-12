@@ -208,7 +208,7 @@ RESULT_MODE_TITLES = {
     "read_text": "Extracted Text",
     "summarize_document": "Key Takeaways",
     "summarize": "Key Takeaways",
-    "analyze_image": "Analysis",
+    "analyze_image": "Image Analysis",
     "professional_assistant": "Recommendations",
     "solve_problem": "Solution",
 }
@@ -1480,10 +1480,12 @@ def _result_title_for_mode(selected_mode: str) -> str:
 def _result_state_for_payload(status: str, answer_text: str, error_text: str = "") -> str:
     """Return the visual result state for the current completed screen payload."""
     normalized_status = status.strip().lower()
-    if any(token in normalized_status for token in ("queued", "retry", "failed", "error")) or error_text.strip():
+    if any(token in normalized_status for token in ("queued", "retry")):
+        return "RETRY_PENDING"
+    if any(token in normalized_status for token in ("failed", "error")) or error_text.strip():
         return "ERROR"
     if not answer_text.strip():
-        return "RESULT_EMPTY"
+        return "NO_RESULT"
     return "RESULT_READY"
 
 
@@ -1501,19 +1503,24 @@ def _build_result_view(
     body_text = answer_text.strip()
     note = ""
 
-    if result_state == "ERROR":
+    if result_state == "RETRY_PENDING":
         if "queued" in normalized_status.lower() or "retry" in normalized_status.lower():
             title = "Retry queued"
             note = "Waiting for retry."
             if not body_text:
                 body_text = "This capture was saved for automatic retry."
         else:
-            title = "Analysis failed"
-            if not body_text:
-                body_text = error_text.strip() or "Analysis failed. Please go back and try again."
-    elif result_state == "RESULT_EMPTY":
+            title = "Retry queued"
+            note = "Waiting for retry."
+    elif result_state == "ERROR":
+        title = "Analysis failed"
+        if not body_text:
+            body_text = error_text.strip() or "Analysis failed. Please go back and try again."
+    elif result_state == "NO_RESULT":
         title = "No answer received"
-        body_text = "No answer was received for this capture."
+        note = "No result available."
+        if not body_text:
+            body_text = "No answer was received for this capture."
     else:
         title = _result_title_for_mode(selected_mode)
 
@@ -1524,6 +1531,175 @@ def _build_result_view(
         "note": note,
         "body_text": body_text,
         "body_html": _format_answer_html(body_text),
+    }
+
+
+def _load_latest_result_summary() -> dict[str, Any]:
+    """Return the non-sensitive metadata saved in the latest result text file."""
+    summary: dict[str, Any] = {
+        "status": "",
+        "model_used": "",
+        "duration_seconds": None,
+        "camera_backend": "",
+        "camera_resolution": "",
+        "warnings": [],
+    }
+    if not LATEST_RESULT_PATH.is_file():
+        return summary
+
+    try:
+        lines = LATEST_RESULT_PATH.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return summary
+
+    in_warnings = False
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line:
+            in_warnings = False
+            continue
+
+        if in_warnings:
+            if line.startswith("- "):
+                warning = line[2:].strip()
+                if warning:
+                    summary["warnings"].append(warning)
+                continue
+            in_warnings = False
+
+        if line == "Warnings:":
+            in_warnings = True
+            continue
+
+        if ":" not in line:
+            continue
+
+        raw_key, raw_value = line.split(":", 1)
+        key = raw_key.strip().lower()
+        value = raw_value.strip()
+        if not value or value.lower() == "n/a":
+            continue
+
+        if key == "status":
+            summary["status"] = value
+        elif key == "model":
+            summary["model_used"] = value
+        elif key == "duration seconds":
+            summary["duration_seconds"] = _coerce_optional_float(value)
+        elif key == "camera backend":
+            summary["camera_backend"] = value
+        elif key == "camera resolution":
+            summary["camera_resolution"] = value
+
+    if str(summary["status"]).strip().lower() == "cleared":
+        return {
+            "status": "",
+            "model_used": "",
+            "duration_seconds": None,
+            "camera_backend": "",
+            "camera_resolution": "",
+            "warnings": [],
+        }
+
+    return summary
+
+
+def _format_result_duration(value: Any) -> str:
+    """Return a compact processing-time label for the result detail card."""
+    duration = _coerce_optional_float(value)
+    if duration is None:
+        return ""
+    if duration >= 60.0:
+        minutes = int(duration // 60)
+        seconds = int(round(duration % 60))
+        return f"{minutes}m {seconds}s"
+    if duration >= 10.0:
+        return f"{duration:.1f} seconds"
+    return f"{duration:.2f} seconds"
+
+
+def _build_result_detail_view(
+    *,
+    result_state: str,
+    detail_text: str,
+    error_text: str,
+    history_entry: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build the supplementary detail card using existing backend data only."""
+    latest_result_summary = _load_latest_result_summary()
+    entry = history_entry or {}
+    detail_sections: list[str] = []
+
+    technical_detail = error_text.strip()
+    if technical_detail and result_state in {"ERROR", "RETRY_PENDING"}:
+        detail_sections.extend(
+            [
+                "### Technical Detail",
+                technical_detail,
+            ]
+        )
+
+    metadata_items: list[str] = []
+    model_used = str(entry.get("model_used") or latest_result_summary.get("model_used", "")).strip()
+    if model_used:
+        metadata_items.append(f"Model: {model_used}")
+
+    duration_label = _format_result_duration(
+        entry.get("duration_seconds", latest_result_summary.get("duration_seconds"))
+    )
+    if duration_label:
+        metadata_items.append(f"Processing time: {duration_label}")
+
+    camera_backend = str(
+        entry.get("camera_backend_used") or latest_result_summary.get("camera_backend", "")
+    ).strip()
+    if camera_backend:
+        metadata_items.append(f"Camera backend: {camera_backend}")
+
+    camera_resolution = ""
+    if entry:
+        resolution = _history_entry_camera_resolution(entry)
+        if resolution is not None:
+            camera_resolution = f"{resolution[0]} x {resolution[1]}"
+    if not camera_resolution:
+        camera_resolution = str(latest_result_summary.get("camera_resolution", "")).strip()
+    if camera_resolution:
+        metadata_items.append(f"Camera resolution: {camera_resolution}")
+
+    retry_status = str(entry.get("retry_status", "")).strip().replace("_", " ")
+    if retry_status:
+        metadata_items.append(f"Retry status: {retry_status.title()}")
+
+    error_summary = str(entry.get("error_summary", "")).strip()
+    if error_summary and error_summary != technical_detail:
+        metadata_items.append(f"Error summary: {error_summary}")
+
+    if metadata_items:
+        detail_sections.append("### Processing Metadata")
+        detail_sections.extend(f"- {item}" for item in metadata_items)
+
+    warnings = latest_result_summary.get("warnings", [])
+    if warnings:
+        detail_sections.append("### Warnings")
+        detail_sections.extend(f"- {warning}" for warning in warnings if str(warning).strip())
+
+    detail_body_text = "\n".join(section for section in detail_sections if section).strip()
+    if not detail_body_text and detail_text.strip() not in {
+        "",
+        PIPELINE_PROGRESS_DETAILS["DONE"],
+        PIPELINE_PROGRESS_DETAILS["RETRY_QUEUED"],
+        PIPELINE_PROGRESS_DETAILS["ERROR"],
+    }:
+        detail_body_text = detail_text.strip()
+
+    return {
+        "title": "Additional Detail",
+        "has_content": bool(detail_body_text),
+        "body_html": (
+            _format_answer_html(detail_body_text)
+            if detail_body_text
+            else Markup("<p class='answer-empty'>No additional detail available.</p>")
+        ),
     }
 
 
@@ -2363,6 +2539,12 @@ def _build_template_context(
         answer_text=answer_text,
         error_text=state["error"] or state["error_detail"],
     )
+    result_detail_view = _build_result_detail_view(
+        result_state=result_view["state"],
+        detail_text=state["detail"],
+        error_text=state["error_detail"] or state["error"],
+        history_entry=current_result_history_entry,
+    )
 
     return {
         "screen": screen,
@@ -2380,6 +2562,7 @@ def _build_template_context(
         "progress_error_step": state["progress_error_step"],
         "processing_view": processing_view,
         "result_view": result_view,
+        "result_detail_view": result_detail_view,
         "active_mode_name": active_mode_definition.name if active_mode_definition else "",
         "has_mode_selected": bool(selected_mode),
         "recent_results": recent_results,
@@ -2945,6 +3128,37 @@ def _format_answer_html(answer: str) -> Markup:
                 rendered.append(str(escape(token)))
         return "".join(rendered)
 
+    def split_plain_paragraphs(text: str) -> list[str]:
+        normalized_text = text.strip()
+        if len(normalized_text) < 220:
+            return [normalized_text]
+
+        sentences = [
+            sentence.strip()
+            for sentence in re.split(r"(?<=[.!?])\s+(?=[A-Z0-9])", normalized_text)
+            if sentence.strip()
+        ]
+        if len(sentences) < 2:
+            return [normalized_text]
+
+        paragraphs: list[str] = []
+        current: list[str] = []
+        current_length = 0
+        for sentence in sentences:
+            projected_length = current_length + len(sentence) + (1 if current else 0)
+            if current and (projected_length > 220 or len(current) >= 2):
+                paragraphs.append(" ".join(current))
+                current = [sentence]
+                current_length = len(sentence)
+                continue
+
+            current.append(sentence)
+            current_length = projected_length
+
+        if current:
+            paragraphs.append(" ".join(current))
+        return paragraphs or [normalized_text]
+
     for raw_line in answer.splitlines():
         line = raw_line.strip()
         if not line:
@@ -2975,7 +3189,8 @@ def _format_answer_html(answer: str) -> Markup:
             continue
 
         flush_list()
-        parts.append(f"<p>{format_inline(line)}</p>")
+        for paragraph in split_plain_paragraphs(line):
+            parts.append(f"<p>{format_inline(paragraph)}</p>")
 
     flush_list()
     return Markup("".join(parts))
