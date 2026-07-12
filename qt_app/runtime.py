@@ -354,7 +354,10 @@ class VisionDeskRuntime:
             force_mjpeg=self.settings.camera.preview.force_mjpeg,
             target_fps=self.settings.camera.preview.target_fps,
             frame_interval_seconds=self.preview_refresh_ms / 1000.0,
-            prefer_snapshot_on_linux=sys.platform.startswith("linux"),
+            prefer_snapshot_on_linux=(
+                sys.platform.startswith("linux")
+                and not self.settings.camera.preview.force_mjpeg
+            ),
         )
 
     def _build_offline_retry_queue(self) -> OfflineRetryQueue | None:

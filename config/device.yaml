@@ -6,8 +6,8 @@ camera:
     height: 1080
   preview:
     resolution:
-      width: 640
-      height: 360
+      width: 1280
+      height: 720
     target_fps: 30.0
     force_mjpeg: true
   autofocus_mode: continuous
