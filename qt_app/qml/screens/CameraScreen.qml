@@ -62,7 +62,9 @@ Item {
                     fillMode: Image.PreserveAspectFit
                     cache: false
                     visible: root.controller.cameraPreviewAvailable
-                    source: "image://visiondesk/camera/live?seq=" + root.controller.cameraPreviewRevision
+                    source: root.controller.cameraPreviewRevision > 0
+                            ? "image://visiondesk/camera/live?seq=" + root.controller.cameraPreviewRevision
+                            : ""
                 }
 
                 Rectangle {

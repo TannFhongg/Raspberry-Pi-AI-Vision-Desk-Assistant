@@ -389,7 +389,7 @@ class AppController(QObject):
 
     def isBackendBusy(self) -> bool:
         """Return True when capture/pipeline or preview should block intrusive checks."""
-        return self.pipeline_controller.busy or self.camera_controller.previewAvailable
+        return self.pipeline_controller.busy or self.currentScreen in {"setup", "camera"}
 
     def shutdown(self) -> None:
         """Stop background controllers and release runtime resources."""

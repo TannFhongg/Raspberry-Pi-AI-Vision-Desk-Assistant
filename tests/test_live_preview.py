@@ -205,6 +205,40 @@ class LivePreviewServiceTests(unittest.TestCase):
 
         self.assertIs(source, sentinel)
 
+    def test_service_can_prefer_snapshot_mode_on_linux_from_start(self) -> None:
+        request = _build_request()
+        source = _ImmediateFrameSource()
+        open_called = threading.Event()
+
+        def open_source(_request, **kwargs):
+            if kwargs.get("prefer_snapshot_on_linux"):
+                open_called.set()
+            return source
+
+        with (
+            patch("camera.live_preview.sys.platform", "linux"),
+            patch("camera.live_preview.build_camera_request", return_value=request),
+            patch("camera.live_preview._open_frame_source", side_effect=open_source),
+            patch("camera.live_preview._encode_preview_frame", return_value=b"frame"),
+        ):
+            service = LivePreviewService(
+                backend="opencv",
+                camera_index=0,
+                width=640,
+                height=480,
+                autofocus_mode="continuous",
+                exposure="auto",
+                brightness=0.0,
+                frame_interval_seconds=1.0,
+                prefer_snapshot_on_linux=True,
+            )
+
+            try:
+                service._ensure_worker_started()
+                self.assertTrue(open_called.wait(timeout=1.0))
+            finally:
+                service.close()
+
     def test_read_persistent_preview_frame_uses_low_latency_reads(self) -> None:
         camera = object()
 

@@ -30,7 +30,8 @@ LOGGER = logging.getLogger(__name__)
 DEFAULT_PLACEHOLDER_SIZE = (960, 540)
 DEFAULT_PREVIEW_STREAM_RESOLUTION = (640, 360)
 DEFAULT_RECENT_PREVIEW_FRAME_WINDOW_SECONDS = 10.0
-PERSISTENT_PREVIEW_READ_ATTEMPTS = 2
+PERSISTENT_PREVIEW_READ_ATTEMPTS = 1
+SNAPSHOT_PREVIEW_MIN_FRAME_INTERVAL_SECONDS = 0.25
 
 
 class LivePreviewError(Exception):
@@ -55,6 +56,7 @@ class LivePreviewService:
         force_mjpeg: bool = True,
         target_fps: float = 0.0,
         frame_interval_seconds: float = 0.15,
+        prefer_snapshot_on_linux: bool = False,
     ) -> None:
         request = build_camera_request(
             backend=backend,
@@ -95,7 +97,7 @@ class LivePreviewService:
         self._frame_interval_seconds = max(0.02, frame_interval_seconds)
         self._preview_size = (preview_width, preview_height)
         self._linux_mode = sys.platform.startswith("linux")
-        self._linux_snapshot_fallback = False
+        self._linux_snapshot_fallback = bool(prefer_snapshot_on_linux and self._linux_mode)
         self._condition = threading.Condition()
         self._latest_frame = _build_placeholder_frame(
             "Starting live camera feed...",
@@ -348,7 +350,13 @@ class LivePreviewService:
                         break
                     if self._paused:
                         continue
-                    self._condition.wait(timeout=self._frame_interval_seconds)
+                    wait_interval_seconds = self._frame_interval_seconds
+                    if source is not None and not source.holds_camera_between_reads():
+                        wait_interval_seconds = max(
+                            wait_interval_seconds,
+                            SNAPSHOT_PREVIEW_MIN_FRAME_INTERVAL_SECONDS,
+                        )
+                    self._condition.wait(timeout=wait_interval_seconds)
         finally:
             if source is not None:
                 self._close_source(source)

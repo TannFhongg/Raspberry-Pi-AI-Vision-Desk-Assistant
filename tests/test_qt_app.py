@@ -75,6 +75,21 @@ def test_app_controller_select_mode_opens_camera(qapp, tmp_path) -> None:
     controller.shutdown()
 
 
+def test_app_controller_reports_backend_busy_while_camera_screen_is_open(qapp, tmp_path) -> None:
+    runtime = build_runtime(tmp_path, setup_completed=True)
+    controller = AppController(
+        runtime,
+        camera_store=CachedImageStore(),
+        result_store=CachedImageStore(),
+    )
+
+    controller.selectMode("read_text")
+
+    assert controller.currentScreen == "camera"
+    assert controller.isBackendBusy() is True
+    controller.shutdown()
+
+
 def test_pipeline_capture_lock_blocks_parallel_requests(qapp, tmp_path) -> None:
     runtime = build_runtime(tmp_path, setup_completed=True)
     controller = PipelineController(runtime, result_image_store=CachedImageStore())
