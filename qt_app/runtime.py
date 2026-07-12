@@ -99,7 +99,7 @@ class VisionDeskRuntime:
         self.result_history_limit = self.settings.retention.text_history_max_items
         self.text_history_retention_days = self.settings.retention.text_history_retention_days
         self.preview_refresh_ms = max(
-            50,
+            33,
             int(round(1000.0 / max(1.0, self.settings.camera.preview.target_fps))),
         )
         self.health_refresh_ms = 5000

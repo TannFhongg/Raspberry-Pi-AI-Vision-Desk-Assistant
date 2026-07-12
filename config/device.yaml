@@ -36,7 +36,7 @@ button:
   hold_seconds: 1.2
 
 led:
-  enabled: false
+  enabled: true
   pin: 27
   active_high: true
 
