@@ -292,6 +292,10 @@ class AppController(QObject):
         return self.setup_controller.wifiStatus
 
     @Property(str, notify=viewStateChanged)
+    def setupWifiSsid(self) -> str:
+        return self.setup_controller.wifiSsid
+
+    @Property(str, notify=viewStateChanged)
     def setupOpenAiMessage(self) -> str:
         return self.setup_controller.openAiMessage
 
@@ -310,6 +314,18 @@ class AppController(QObject):
     @Property(str, notify=viewStateChanged)
     def setupCameraAutofocusMode(self) -> str:
         return self.setup_controller.cameraAutofocusMode
+
+    @Property(str, notify=viewStateChanged)
+    def setupCameraResolutionLabel(self) -> str:
+        return self.setup_controller.cameraResolutionLabel
+
+    @Property(str, notify=viewStateChanged)
+    def setupCameraPreviewFpsLabel(self) -> str:
+        return self.setup_controller.cameraPreviewFpsLabel
+
+    @Property(str, notify=viewStateChanged)
+    def setupCameraExposureLabel(self) -> str:
+        return self.setup_controller.cameraExposureLabel
 
     @Property(str, notify=viewStateChanged)
     def setupGpioMessage(self) -> str:

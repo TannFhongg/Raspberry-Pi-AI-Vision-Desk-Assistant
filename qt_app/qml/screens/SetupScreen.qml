@@ -10,8 +10,16 @@ Item {
     required property var controller
 
     property string selectedSsid: ""
+    property string manualSsidText: ""
+    property string wifiPasswordText: ""
+    property string apiKeyDraft: ""
     property bool showApiKey: false
 
+    readonly property int cardPadding: 16
+    readonly property int cardGap: 10
+    readonly property int sidebarWidthWide: 286
+    readonly property int sidebarWidthNarrow: 252
+    readonly property int finishLeadWidth: 280
     readonly property var stepOrder: ["welcome", "wifi", "openai", "camera", "gpio", "finish"]
     readonly property var stepTitles: ({
         "welcome": "Welcome + Device Check",
@@ -21,6 +29,19 @@ Item {
         "gpio": "GPIO Button Test",
         "finish": "Finish Setup"
     })
+    readonly property var stepSubtitles: ({
+        "welcome": "Get VisionDesk ready with a quick health and environment check.",
+        "wifi": "Connect the device to a nearby network or enter a hidden SSID manually.",
+        "openai": "Save and verify the OpenAI key in the protected VisionDesk environment file.",
+        "camera": "Confirm live preview, focus mode, and one-shot capture readiness.",
+        "gpio": "Press each configured hardware button once to verify wiring and mapping.",
+        "finish": "Review the setup gates, then restart directly into VisionDesk Home."
+    })
+    readonly property var welcomeHighlights: [
+        "Config, environment, and writable storage",
+        "Desktop session and NetworkManager readiness",
+        "Camera preview path and GPIO access"
+    ]
 
     function stepIndex(step) {
         const index = stepOrder.indexOf(step || "")
@@ -31,21 +52,35 @@ Item {
         return root.controller.setupCurrentStep === step
     }
 
-    function statusColor(status) {
+    function normalizeStatus(status) {
         const normalized = (status || "").toLowerCase()
-        if (normalized === "pass" || normalized === "healthy") return root.theme.success
-        if (normalized === "fail" || normalized === "error") return root.theme.error
-        if (normalized === "running" || normalized === "warning") return root.theme.warning
-        return root.theme.textSecondary
+        return normalized.length > 0 ? normalized : "idle"
     }
 
     function statusText(status) {
-        const normalized = (status || "").toLowerCase()
-        if (normalized === "pass") return "PASS"
-        if (normalized === "fail") return "FAIL"
-        if (normalized === "running") return "RUNNING"
-        if (normalized === "idle") return "IDLE"
-        return (status || "UNKNOWN").toUpperCase()
+        const normalized = normalizeStatus(status)
+        if (normalized === "pass") return "Ready"
+        if (normalized === "fail") return "Attention"
+        if (normalized === "running") return "In Progress"
+        if (normalized === "healthy") return "Healthy"
+        if (normalized === "idle") return "Idle"
+        return normalized.toUpperCase()
+    }
+
+    function statusTone(status) {
+        const normalized = normalizeStatus(status)
+        if (normalized === "pass" || normalized === "healthy") return "success"
+        if (normalized === "fail" || normalized === "error") return "danger"
+        if (normalized === "running" || normalized === "warning") return "warning"
+        return "info"
+    }
+
+    function statusColor(status) {
+        const tone = statusTone(status)
+        if (tone === "success") return root.theme.successStrong
+        if (tone === "danger") return root.theme.errorStrong
+        if (tone === "warning") return root.theme.warningStrong
+        return root.theme.primaryStrong
     }
 
     function canAdvance() {
@@ -67,6 +102,24 @@ Item {
         }
     }
 
+    function selectedOrManualSsid() {
+        const manual = root.manualSsidText.trim()
+        return manual.length > 0 ? manual : root.selectedSsid
+    }
+
+    function signalLabel(signalValue) {
+        const signal = Number(signalValue || 0)
+        if (signal >= 75) return "STRONG"
+        if (signal >= 45) return "GOOD"
+        if (signal > 0) return "WEAK"
+        return "UNKNOWN"
+    }
+
+    function securityLabel(securityValue) {
+        const value = (securityValue || "").trim()
+        return value.length > 0 ? value.toUpperCase() : "OPEN"
+    }
+
     Component.onCompleted: {
         if (root.controller.deviceChecksModel.count === 0
                 && root.controller.setupDeviceChecksStatus === "idle") {
@@ -79,737 +132,1045 @@ Item {
         }
     }
 
-    ColumnLayout {
-        anchors.fill: parent
-        spacing: 18
+    Component {
+        id: welcomeStepComponent
 
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: 10
+        Item {
+            anchors.fill: parent
 
-            Repeater {
-                model: root.stepOrder.length
+            ColumnLayout {
+                anchors.fill: parent
+                spacing: root.cardGap
 
-                delegate: Rectangle {
-                    required property int index
-                    readonly property string stepId: root.stepOrder[index]
-                    readonly property bool active: root.isCurrentStep(stepId)
-                    readonly property bool completed: index < root.stepIndex(root.controller.setupCurrentStep)
-                    color: active ? root.theme.primary : completed ? root.theme.successFill : root.theme.surface
-                    border.width: root.theme.borderStrong
-                    border.color: active ? root.theme.primaryDark : root.theme.text
-                    radius: root.theme.radiusPill
-                    implicitHeight: 48
-                    implicitWidth: Math.max(136, label.implicitWidth + 34)
+                RowLayout {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 176
+                    spacing: root.cardGap
 
-                    Text {
-                        id: label
-                        anchors.centerIn: parent
-                        text: (index + 1) + ". " + root.stepTitles[stepId]
-                        color: root.theme.text
-                        font.family: root.theme.displayFont
-                        font.pixelSize: 18
-                        font.weight: root.theme.weightHeavy
-                        renderType: Text.NativeRendering
+                    InfoCard {
+                        theme: root.theme
+                        padding: root.cardPadding
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            spacing: 16
+
+                            Rectangle {
+                                Layout.preferredWidth: 108
+                                Layout.preferredHeight: 108
+                                radius: 28
+                                color: root.theme.primarySoft
+
+                                Rectangle {
+                                    anchors.centerIn: parent
+                                    width: 58
+                                    height: 44
+                                    radius: 14
+                                    color: root.theme.surface
+                                    border.width: 1
+                                    border.color: root.theme.borderSoft
+
+                                    Rectangle {
+                                        anchors.horizontalCenter: parent.horizontalCenter
+                                        anchors.bottom: parent.bottom
+                                        anchors.bottomMargin: -8
+                                        width: 28
+                                        height: 8
+                                        radius: 4
+                                        color: root.theme.borderSoft
+                                    }
+                                }
+                            }
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                Layout.fillHeight: true
+                                spacing: 8
+
+                                Text {
+                                    text: "Before VisionDesk goes live, we verify the essentials that keep a kiosk deployment stable."
+                                    color: root.theme.text
+                                    font.family: root.theme.displayFont
+                                    font.pixelSize: 17
+                                    font.weight: root.theme.weightStrong
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                }
+
+                                Repeater {
+                                    model: root.welcomeHighlights.length
+
+                                    delegate: RowLayout {
+                                        required property int index
+                                        spacing: 8
+
+                                        Rectangle {
+                                            Layout.preferredWidth: 18
+                                            Layout.preferredHeight: 18
+                                            radius: 9
+                                            color: root.theme.successFill
+
+                                            Rectangle {
+                                                anchors.centerIn: parent
+                                                width: 7
+                                                height: 7
+                                                radius: 4
+                                                color: root.theme.successStrong
+                                            }
+                                        }
+
+                                        Text {
+                                            text: root.welcomeHighlights[index]
+                                            color: root.theme.textMuted
+                                            font.family: root.theme.bodyFont
+                                            font.pixelSize: 14
+                                            font.weight: root.theme.weightRegular
+                                            wrapMode: Text.WordWrap
+                                            Layout.fillWidth: true
+                                        }
+                                    }
+                                }
+
+                                Item {
+                                    Layout.fillHeight: true
+                                }
+                            }
+                        }
                     }
 
-                    MouseArea {
-                        anchors.fill: parent
-                        onClicked: root.controller.goToSetupStep(parent.stepId)
+                    InfoCard {
+                        theme: root.theme
+                        padding: root.cardPadding
+                        fillColor: "#FBFCFE"
+                        Layout.preferredWidth: 272
+                        Layout.fillHeight: true
+
+                        ColumnLayout {
+                            spacing: 14
+
+                            StatusChip {
+                                theme: root.theme
+                                label: "Checks"
+                                value: root.statusText(root.controller.setupDeviceChecksStatus)
+                                tone: root.statusTone(root.controller.setupDeviceChecksStatus)
+                            }
+
+                            Text {
+                                text: root.controller.setupDeviceChecksMessage.length > 0
+                                      ? root.controller.setupDeviceChecksMessage
+                                      : "Run the first-boot diagnostic pass to confirm config, storage, display session, camera, GPIO, and NetworkManager readiness."
+                                color: root.controller.setupDeviceChecksMessage.length > 0
+                                       ? root.statusColor(root.controller.setupDeviceChecksStatus)
+                                       : root.theme.textMuted
+                                font.family: root.theme.bodyFont
+                                font.pixelSize: 14
+                                wrapMode: Text.WordWrap
+                                Layout.fillWidth: true
+                            }
+
+                            Item {
+                                Layout.fillHeight: true
+                            }
+
+                            PrimaryButton {
+                                theme: root.theme
+                                tone: "success"
+                                text: root.controller.setupDeviceChecksStatus === "running" ? "RUNNING CHECKS..." : "RUN CHECKS"
+                                Layout.fillWidth: true
+                                onClicked: root.controller.runSetupDeviceChecks()
+                            }
+                        }
+                    }
+                }
+
+                GridLayout {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    columns: 3
+                    columnSpacing: root.cardGap
+                    rowSpacing: root.cardGap
+
+                    Repeater {
+                        model: Math.max(root.controller.deviceChecksModel.count, 6)
+
+                        delegate: StatusCard {
+                            required property int index
+                            readonly property bool hasData: index < root.controller.deviceChecksModel.count
+                            readonly property var itemData: hasData ? root.controller.deviceChecksModel.get(index) : null
+                            theme: root.theme
+                            padding: 16
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            Layout.preferredHeight: 90
+                            title: hasData ? ((itemData.name || "").replace(/_/g, " ")) : "Pending check"
+                            eyebrow: hasData ? "Device Check" : "Waiting"
+                            value: hasData ? root.statusText(itemData.status || "") : "Not run yet"
+                            message: hasData ? (itemData.message || "") : "Diagnostic results will appear here after the check run completes."
+                            tone: hasData ? root.statusTone(itemData.status || "") : "info"
+                        }
                     }
                 }
             }
         }
+    }
 
-        Rectangle {
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            radius: root.theme.radiusCard
-            border.width: root.theme.borderStrong
-            border.color: root.theme.text
-            color: root.theme.surface
+    Component {
+        id: wifiStepComponent
 
-            ScrollView {
+        Item {
+            anchors.fill: parent
+
+            Component.onCompleted: {
+                if (!root.selectedSsid && root.controller.setupWifiSsid.length > 0) {
+                    root.selectedSsid = root.controller.setupWifiSsid
+                }
+            }
+
+            ColumnLayout {
                 anchors.fill: parent
-                anchors.margins: 22
-                clip: true
+                spacing: root.cardGap
 
-                ColumnLayout {
-                    width: availableWidth
-                    spacing: 20
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
 
-                    Text {
-                        text: root.stepTitles[root.controller.setupCurrentStep]
-                        color: root.theme.text
-                        font.family: root.theme.displayFont
-                        font.pixelSize: 40
-                        font.weight: root.theme.weightHeavy
+                    Flow {
                         Layout.fillWidth: true
-                    }
+                        spacing: 8
 
-                    Item {
-                        visible: root.isCurrentStep("welcome")
-                        Layout.fillWidth: true
-                        implicitHeight: welcomeColumn.implicitHeight
+                        StatusChip {
+                            theme: root.theme
+                            label: "Wi-Fi"
+                            value: root.statusText(root.controller.setupWifiStatus)
+                            tone: root.statusTone(root.controller.setupWifiStatus)
+                        }
 
-                        ColumnLayout {
-                            id: welcomeColumn
-                            anchors.left: parent.left
-                            anchors.right: parent.right
-                            spacing: 18
-
-                            Text {
-                                text: "Run first-boot checks for config access, writable storage, NetworkManager, display session, camera, and GPIO."
-                                color: root.theme.textSecondary
-                                font.family: root.theme.bodyFont
-                                font.pixelSize: 18
-                                wrapMode: Text.WordWrap
-                                Layout.fillWidth: true
-                            }
-
-                            RowLayout {
-                                Layout.fillWidth: true
-                                spacing: 12
-
-                                StatusPill {
-                                    theme: root.theme
-                                    label: "Checks"
-                                    value: root.statusText(root.controller.setupDeviceChecksStatus)
-                                    tone: root.controller.setupDeviceChecksStatus
-                                }
-
-                                ActionButton {
-                                    theme: root.theme
-                                    primary: true
-                                    text: "RUN CHECKS"
-                                    implicitWidth: 220
-                                    onClicked: root.controller.runSetupDeviceChecks()
-                                }
-                            }
-
-                            Text {
-                                visible: root.controller.setupDeviceChecksMessage.length > 0
-                                text: root.controller.setupDeviceChecksMessage
-                                color: root.statusColor(root.controller.setupDeviceChecksStatus)
-                                font.family: root.theme.bodyFont
-                                font.pixelSize: 17
-                                wrapMode: Text.WordWrap
-                                Layout.fillWidth: true
-                            }
-
-                            Repeater {
-                                model: root.controller.deviceChecksModel.count
-
-                                delegate: Rectangle {
-                                    required property int index
-                                    readonly property var itemData: root.controller.deviceChecksModel.get(index)
-                                    Layout.fillWidth: true
-                                    implicitHeight: contentColumn.implicitHeight + 24
-                                    radius: root.theme.radiusCardSm
-                                    border.width: 2
-                                    border.color: root.statusColor(itemData.status || "")
-                                    color: itemData.status === "pass" ? root.theme.successFill
-                                          : itemData.status === "fail" ? root.theme.errorFill
-                                          : root.theme.mutedFill
-
-                                    ColumnLayout {
-                                        id: contentColumn
-                                        anchors.fill: parent
-                                        anchors.margins: 14
-                                        spacing: 8
-
-                                        RowLayout {
-                                            Layout.fillWidth: true
-
-                                            Text {
-                                                text: (itemData.name || "").replace(/_/g, " ").toUpperCase()
-                                                color: root.theme.text
-                                                font.family: root.theme.displayFont
-                                                font.pixelSize: 18
-                                                font.weight: root.theme.weightHeavy
-                                            }
-
-                                            Item { Layout.fillWidth: true }
-
-                                            Text {
-                                                text: root.statusText(itemData.status || "")
-                                                color: root.statusColor(itemData.status || "")
-                                                font.family: root.theme.displayFont
-                                                font.pixelSize: 18
-                                                font.weight: root.theme.weightHeavy
-                                            }
-                                        }
-
-                                        Text {
-                                            text: itemData.message || ""
-                                            color: root.theme.textSecondary
-                                            font.family: root.theme.bodyFont
-                                            font.pixelSize: 16
-                                            wrapMode: Text.WordWrap
-                                            Layout.fillWidth: true
-                                        }
-                                    }
-                                }
-                            }
+                        StatusChip {
+                            visible: root.controller.setupWifiSsid.length > 0
+                            theme: root.theme
+                            label: "SSID"
+                            value: root.controller.setupWifiSsid
+                            tone: root.controller.setupWifiStatus === "pass" ? "success" : "info"
                         }
                     }
 
-                    Item {
-                        visible: root.isCurrentStep("wifi")
-                        Layout.fillWidth: true
-                        implicitHeight: wifiColumn.implicitHeight
+                    SecondaryButton {
+                        theme: root.theme
+                        tone: "primary"
+                        text: "RESCAN"
+                        implicitWidth: 122
+                        onClicked: root.controller.scanWifi()
+                    }
+                }
 
-                        ColumnLayout {
-                            id: wifiColumn
-                            anchors.left: parent.left
-                            anchors.right: parent.right
-                            spacing: 16
+                Text {
+                    text: root.controller.setupWifiScanStatus === "fail"
+                          ? root.controller.setupWifiMessage
+                          : root.controller.wifiNetworksModel.count > 0
+                            ? "Tap a network on the left, or enter a hidden SSID on the right."
+                            : "Nearby networks will appear here after a scan."
+                    color: root.controller.setupWifiScanStatus === "fail" ? root.theme.errorStrong : root.theme.textMuted
+                    font.family: root.theme.bodyFont
+                    font.pixelSize: 14
+                    wrapMode: Text.WordWrap
+                    Layout.fillWidth: true
+                }
 
-                            Text {
-                                text: "Scan nearby networks or enter a hidden SSID manually. Wi-Fi is required before setup can finish."
-                                color: root.theme.textSecondary
-                                font.family: root.theme.bodyFont
-                                font.pixelSize: 18
-                                wrapMode: Text.WordWrap
-                                Layout.fillWidth: true
-                            }
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    radius: 20
+                    color: "#FBFCFE"
+                    border.width: 1
+                    border.color: root.theme.borderSoft
+                    clip: true
+
+                    ListView {
+                        id: wifiList
+                        anchors.fill: parent
+                        anchors.margins: 12
+                        clip: true
+                        spacing: 8
+                        boundsBehavior: Flickable.StopAtBounds
+                        model: root.controller.wifiNetworksModel.count
+
+                        delegate: Rectangle {
+                            required property int index
+                            readonly property var itemData: root.controller.wifiNetworksModel.get(index)
+                            readonly property bool selected: root.selectedSsid === (itemData.ssid || "")
+                            width: wifiList.width
+                            height: 54
+                            radius: 16
+                            color: selected ? root.theme.primarySoft : root.theme.surface
+                            border.width: 1
+                            border.color: selected ? root.theme.primaryStrong : root.theme.borderSoft
 
                             RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 14
+                                anchors.rightMargin: 14
                                 spacing: 12
 
-                                StatusPill {
-                                    theme: root.theme
-                                    label: "Wi-Fi"
-                                    value: root.statusText(root.controller.setupWifiStatus)
-                                    tone: root.controller.setupWifiStatus
+                                Rectangle {
+                                    Layout.preferredWidth: 30
+                                    Layout.preferredHeight: 30
+                                    radius: 15
+                                    color: selected ? "#D9E8FF" : root.theme.mutedFill
+
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: root.securityLabel(itemData.security || "") === "OPEN" ? "O" : "L"
+                                        color: selected ? root.theme.primaryStrong : root.theme.textMuted
+                                        font.family: root.theme.displayFont
+                                        font.pixelSize: 13
+                                        font.weight: root.theme.weightHeavy
+                                    }
                                 }
 
-                                ActionButton {
-                                    theme: root.theme
-                                    text: "RESCAN"
-                                    implicitWidth: 140
-                                    onClicked: root.controller.scanWifi()
-                                }
-                            }
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 1
 
-                            ComboBox {
-                                id: scanWifiCombo
-                                Layout.fillWidth: true
-                                height: 54
-                                model: root.controller.wifiNetworksModel.count
-                                currentIndex: -1
-                                enabled: model > 0
-                                font.family: root.theme.displayFont
-                                font.pixelSize: 20
-                                font.weight: root.theme.weightStrong
-                                leftPadding: 22
-                                rightPadding: 52
-                                displayText: root.selectedSsid.length > 0 ? root.selectedSsid : "Select a scanned SSID"
-
-                                indicator: Text {
-                                    text: "v"
-                                    color: root.theme.text
-                                    font.family: root.theme.displayFont
-                                    font.pixelSize: 20
-                                    font.weight: root.theme.weightHeavy
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    anchors.right: parent.right
-                                    anchors.rightMargin: 20
-                                }
-
-                                contentItem: Text {
-                                    leftPadding: scanWifiCombo.leftPadding
-                                    rightPadding: scanWifiCombo.rightPadding
-                                    verticalAlignment: Text.AlignVCenter
-                                    text: scanWifiCombo.displayText
-                                    color: root.selectedSsid.length > 0 ? root.theme.text : "#aeb4be"
-                                    font: scanWifiCombo.font
-                                    elide: Text.ElideRight
-                                    renderType: Text.NativeRendering
-                                }
-
-                                background: Rectangle {
-                                    radius: root.theme.radiusPill
-                                    color: root.theme.surface
-                                    border.width: root.theme.borderStrong
-                                    border.color: scanWifiCombo.activeFocus ? root.theme.primary : root.theme.text
-                                    opacity: scanWifiCombo.enabled ? 1.0 : 0.72
-                                }
-
-                                delegate: ItemDelegate {
-                                    id: scanWifiDelegate
-                                    required property int index
-                                    readonly property var itemData: root.controller.wifiNetworksModel.get(index)
-                                    width: ListView.view ? ListView.view.width : scanWifiCombo.width
-                                    highlighted: scanWifiCombo.highlightedIndex === index
-
-                                    contentItem: Text {
-                                        text: (scanWifiDelegate.itemData.ssid || "")
-                                              + ((scanWifiDelegate.itemData.security || "").length > 0
-                                                 ? " - " + scanWifiDelegate.itemData.security
-                                                 : "")
+                                    Text {
+                                        text: itemData.ssid || "Unnamed network"
                                         color: root.theme.text
                                         font.family: root.theme.displayFont
                                         font.pixelSize: 18
                                         font.weight: root.theme.weightStrong
-                                        verticalAlignment: Text.AlignVCenter
                                         elide: Text.ElideRight
                                         renderType: Text.NativeRendering
                                     }
 
-                                    background: Rectangle {
-                                        color: scanWifiDelegate.highlighted ? "#eef6ff" : root.theme.surface
-                                        radius: 16
-                                    }
-
-                                    onClicked: {
-                                        root.selectedSsid = itemData.ssid || ""
-                                        scanWifiCombo.currentIndex = index
-                                        manualSsidField.text = ""
-                                        scanWifiCombo.popup.close()
+                                    Text {
+                                        text: root.securityLabel(itemData.security || "") + " | " + root.signalLabel(itemData.signal)
+                                        color: root.theme.textMuted
+                                        font.family: root.theme.bodyFont
+                                        font.pixelSize: 13
                                     }
                                 }
 
-                                popup: Popup {
-                                    y: scanWifiCombo.height + 8
-                                    width: scanWifiCombo.width
-                                    padding: 8
-
-                                    contentItem: ListView {
-                                        clip: true
-                                        implicitHeight: Math.min(contentHeight, 220)
-                                        model: scanWifiCombo.popup.visible ? scanWifiCombo.delegateModel : null
-                                        currentIndex: scanWifiCombo.highlightedIndex
-                                        ScrollBar.vertical: ScrollBar {}
-                                    }
-
-                                    background: Rectangle {
-                                        radius: 24
-                                        color: root.theme.surface
-                                        border.width: root.theme.borderStrong
-                                        border.color: root.theme.text
-                                    }
+                                StatusChip {
+                                    theme: root.theme
+                                    label: root.signalLabel(itemData.signal)
+                                    tone: selected ? "success" : "info"
                                 }
                             }
 
-                            SetupInputField {
-                                id: manualSsidField
-                                theme: root.theme
-                                Layout.fillWidth: true
-                                placeholderText: "Manual SSID for hidden networks"
-                                onTextEdited: {
-                                    if (text.length > 0) {
-                                        root.selectedSsid = ""
-                                        scanWifiCombo.currentIndex = -1
-                                    }
-                                }
-                            }
-
-                            SetupInputField {
-                                id: passwordField
-                                theme: root.theme
-                                Layout.fillWidth: true
-                                secret: true
-                                placeholderText: "Leave blank for open networks"
-                            }
-
-                            ActionButton {
-                                theme: root.theme
-                                primary: true
-                                text: "CONNECT WIFI"
-                                implicitWidth: 220
+                            MouseArea {
+                                anchors.fill: parent
                                 onClicked: {
-                                    root.controller.connectWifi(root.selectedSsid, manualSsidField.text, passwordField.text)
-                                    passwordField.text = ""
+                                    root.selectedSsid = itemData.ssid || ""
+                                    root.manualSsidText = ""
                                 }
                             }
+                        }
+                    }
+                }
 
-                            Text {
-                                visible: root.controller.setupWifiMessage.length > 0
-                                text: root.controller.setupWifiMessage
-                                color: root.statusColor(root.controller.setupWifiStatus === "fail"
-                                                        ? "fail"
-                                                        : root.controller.setupWifiScanStatus)
-                                font.family: root.theme.bodyFont
-                                font.pixelSize: 16
-                                wrapMode: Text.WordWrap
-                                Layout.fillWidth: true
+                GridLayout {
+                    Layout.fillWidth: true
+                    columns: 2
+                    columnSpacing: root.cardGap
+                    rowSpacing: root.cardGap
+
+                    InputField {
+                        id: manualSsidField
+                        theme: root.theme
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 52
+                        leadingText: "ID"
+                        placeholderText: "Manual SSID for hidden networks"
+                        text: root.manualSsidText
+                        onTextChanged: {
+                            if (root.manualSsidText !== text) {
+                                root.manualSsidText = text
+                            }
+                            if (text.length > 0) {
+                                root.selectedSsid = ""
                             }
                         }
                     }
 
-                    Item {
-                        visible: root.isCurrentStep("openai")
+                    PasswordField {
+                        id: passwordField
+                        theme: root.theme
                         Layout.fillWidth: true
-                        implicitHeight: openAiColumn.implicitHeight
+                        Layout.preferredHeight: 52
+                        leadingText: "PW"
+                        placeholderText: "Leave blank for open networks"
+                        text: root.wifiPasswordText
+                        onTextChanged: if (root.wifiPasswordText !== text) root.wifiPasswordText = text
+                    }
+                }
 
-                        ColumnLayout {
-                            id: openAiColumn
-                            anchors.left: parent.left
-                            anchors.right: parent.right
-                            spacing: 16
+                PrimaryButton {
+                    theme: root.theme
+                    tone: "success"
+                    text: "CONNECT WI-FI"
+                    Layout.fillWidth: true
+                    onClicked: root.controller.connectWifi(root.selectedSsid, root.manualSsidText, root.wifiPasswordText)
+                }
 
-                            Text {
-                                text: "Save the API key into the protected VisionDesk environment file. The raw key never returns to QML after saving."
-                                color: root.theme.textSecondary
-                                font.family: root.theme.bodyFont
-                                font.pixelSize: 18
-                                wrapMode: Text.WordWrap
-                                Layout.fillWidth: true
-                            }
+            }
+        }
+    }
 
-                            RowLayout {
-                                spacing: 12
+    Component {
+        id: openAiStepComponent
 
-                                StatusPill {
-                                    theme: root.theme
-                                    label: "API Key"
-                                    value: root.controller.setupApiKeyVerified ? "VERIFIED" : root.controller.setupHasApiKey ? "SAVED" : "MISSING"
-                                    tone: root.controller.setupOpenAiStatus
-                                }
+        Item {
+            anchors.fill: parent
 
-                                ActionButton {
-                                    theme: root.theme
-                                    text: root.showApiKey ? "HIDE KEY" : "SHOW KEY"
-                                    implicitWidth: 170
-                                    onClicked: root.showApiKey = !root.showApiKey
-                                }
+            ColumnLayout {
+                anchors.fill: parent
+                spacing: root.cardGap
 
-                                ActionButton {
-                                    theme: root.theme
-                                    destructive: true
-                                    text: "CLEAR KEY"
-                                    implicitWidth: 170
-                                    enabled: root.controller.setupHasApiKey
-                                    onClicked: root.controller.clearApiKey()
-                                }
-                            }
+                Flow {
+                    Layout.fillWidth: true
+                    spacing: 8
 
-                            SetupInputField {
-                                id: openAiKeyField
-                                theme: root.theme
-                                Layout.fillWidth: true
-                                secret: !root.showApiKey
-                                placeholderText: "Paste OPENAI_API_KEY"
-                            }
+                    StatusChip {
+                        theme: root.theme
+                        label: "API Key"
+                        value: root.controller.setupApiKeyVerified ? "Verified" : root.controller.setupHasApiKey ? "Saved" : "Missing"
+                        tone: root.statusTone(root.controller.setupOpenAiStatus)
+                    }
 
-                            Text {
-                                visible: root.controller.setupMaskedApiKey.length > 0
-                                text: "Stored key: " + root.controller.setupMaskedApiKey
-                                color: root.theme.success
-                                font.family: root.theme.bodyFont
-                                font.pixelSize: 16
-                                wrapMode: Text.WordWrap
-                                Layout.fillWidth: true
-                            }
+                    StatusChip {
+                        visible: root.controller.setupMaskedApiKey.length > 0
+                        theme: root.theme
+                        label: "Stored"
+                        value: root.controller.setupMaskedApiKey
+                        tone: "success"
+                    }
+                }
 
-                            ActionButton {
-                                theme: root.theme
-                                primary: true
-                                text: "SAVE + VERIFY"
-                                implicitWidth: 220
-                                onClicked: {
-                                    root.controller.verifyApiKey(openAiKeyField.text)
-                                    openAiKeyField.text = ""
-                                }
-                            }
+                PasswordField {
+                    id: openAiKeyField
+                    theme: root.theme
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 52
+                    leadingText: "AI"
+                    placeholderText: "Paste OPENAI_API_KEY"
+                    invalid: root.controller.setupOpenAiStatus === "fail"
+                    revealed: root.showApiKey
+                    toggleEnabled: false
+                    text: root.apiKeyDraft
+                    onTextChanged: if (root.apiKeyDraft !== text) root.apiKeyDraft = text
+                }
 
-                            Text {
-                                visible: root.controller.setupOpenAiMessage.length > 0
-                                text: root.controller.setupOpenAiMessage
-                                color: root.statusColor(root.controller.setupOpenAiStatus)
-                                font.family: root.theme.bodyFont
-                                font.pixelSize: 16
-                                wrapMode: Text.WordWrap
-                                Layout.fillWidth: true
-                            }
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 10
+
+                    SecondaryButton {
+                        theme: root.theme
+                        tone: "primary"
+                        text: root.showApiKey ? "HIDE KEY" : "SHOW KEY"
+                        implicitWidth: 132
+                        onClicked: {
+                            root.showApiKey = !root.showApiKey
+                            openAiKeyField.revealed = root.showApiKey
                         }
                     }
 
+                    SecondaryButton {
+                        theme: root.theme
+                        tone: "primary"
+                        text: "PASTE"
+                        implicitWidth: 100
+                        onClicked: openAiKeyField.paste()
+                    }
+
+                    SecondaryButton {
+                        theme: root.theme
+                        tone: "danger"
+                        text: "CLEAR KEY"
+                        implicitWidth: 132
+                        enabled: root.controller.setupHasApiKey
+                        onClicked: root.controller.clearApiKey()
+                    }
+
                     Item {
-                        visible: root.isCurrentStep("camera")
                         Layout.fillWidth: true
-                        implicitHeight: cameraColumn.implicitHeight
+                    }
+                }
 
-                        ColumnLayout {
-                            id: cameraColumn
-                            anchors.left: parent.left
-                            anchors.right: parent.right
-                            spacing: 16
+                PrimaryButton {
+                    theme: root.theme
+                    tone: "success"
+                    text: "SAVE + VERIFY"
+                    Layout.fillWidth: true
+                    onClicked: {
+                        root.controller.verifyApiKey(root.apiKeyDraft)
+                        root.apiKeyDraft = ""
+                    }
+                }
 
-                            RowLayout {
-                                spacing: 12
+                StatusCard {
+                    theme: root.theme
+                    padding: 14
+                    title: "Verification result"
+                    eyebrow: "Protected storage"
+                    value: root.controller.setupApiKeyVerified
+                           ? "OpenAI verified"
+                           : root.controller.setupHasApiKey
+                             ? "Saved, waiting for verification"
+                             : "Key required"
+                    message: root.controller.setupOpenAiMessage.length > 0
+                             ? root.controller.setupOpenAiMessage
+                             : "The raw key never returns to QML after saving."
+                    tone: root.statusTone(root.controller.setupOpenAiStatus)
+                    Layout.fillWidth: true
+                }
 
-                                StatusPill {
-                                    theme: root.theme
-                                    label: "Camera"
-                                    value: root.statusText(root.controller.setupCameraStatus)
-                                    tone: root.controller.setupCameraStatus
-                                }
+                InfoCard {
+                    theme: root.theme
+                    padding: 14
+                    fillColor: "#FBFCFE"
+                    Layout.fillWidth: true
 
-                                StatusPill {
-                                    theme: root.theme
-                                    label: "Focus"
-                                    value: root.controller.setupCameraAutofocusMode.toUpperCase()
-                                    tone: "running"
-                                }
-                            }
+                    ColumnLayout {
+                        spacing: 6
+
+                        Text {
+                            text: "Secure API Setup"
+                            color: root.theme.text
+                            font.family: root.theme.displayFont
+                            font.pixelSize: 17
+                            font.weight: root.theme.weightStrong
+                        }
+
+                        Text {
+                            text: "VisionDesk stores the key in the protected environment file and only returns masked state back to QML."
+                            color: root.theme.textMuted
+                            font.family: root.theme.bodyFont
+                            font.pixelSize: 13
+                            wrapMode: Text.WordWrap
+                            Layout.fillWidth: true
+                        }
+
+                        Text {
+                            text: "Masked after save. Clear Key replaces the stored secret without exposing the raw key again."
+                            color: root.controller.setupHasApiKey ? root.theme.successStrong : root.theme.warningStrong
+                            font.family: root.theme.bodyFont
+                            font.pixelSize: 13
+                            wrapMode: Text.WordWrap
+                            Layout.fillWidth: true
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Component {
+        id: cameraStepComponent
+
+        Item {
+            anchors.fill: parent
+
+            ColumnLayout {
+                anchors.fill: parent
+                spacing: root.cardGap
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+
+                    Flow {
+                        Layout.fillWidth: true
+                        spacing: 8
+
+                        StatusChip {
+                            theme: root.theme
+                            label: "Camera"
+                            value: root.statusText(root.controller.setupCameraStatus)
+                            tone: root.statusTone(root.controller.setupCameraStatus)
+                        }
+
+                        StatusChip {
+                            theme: root.theme
+                            label: "Focus"
+                            value: (root.controller.setupCameraAutofocusMode || "continuous").toUpperCase()
+                            tone: "warning"
+                        }
+                    }
+
+                    PrimaryButton {
+                        theme: root.theme
+                        tone: "primary"
+                        text: "RUN CAMERA TEST"
+                        implicitWidth: 220
+                        onClicked: root.controller.runCameraTest()
+                    }
+                }
+
+                Text {
+                    text: root.controller.setupCameraMessage.length > 0
+                          ? root.controller.setupCameraMessage
+                          : "Camera ready check"
+                    color: root.statusColor(root.controller.setupCameraStatus)
+                    font.family: root.theme.bodyFont
+                    font.pixelSize: 13
+                    wrapMode: Text.WordWrap
+                    Layout.fillWidth: true
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    radius: 20
+                    color: "#F4F7FB"
+                    border.width: 1
+                    border.color: root.theme.borderSoft
+                    clip: true
+
+                    Image {
+                        anchors.fill: parent
+                        fillMode: Image.PreserveAspectFit
+                        cache: false
+                        visible: root.controller.cameraPreviewAvailable
+                        source: root.controller.cameraPreviewRevision > 0
+                                ? "image://visiondesk/camera/live?seq=" + root.controller.cameraPreviewRevision
+                                : ""
+                    }
+
+                    ColumnLayout {
+                        anchors.centerIn: parent
+                        width: parent.width * 0.6
+                        spacing: 8
+                        visible: !root.controller.cameraPreviewAvailable
+
+                        Rectangle {
+                            Layout.alignment: Qt.AlignHCenter
+                            width: 60
+                            height: 60
+                            radius: 30
+                            color: root.theme.primarySoft
 
                             Rectangle {
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: 360
-                                radius: root.theme.radiusCard
-                                border.width: 2
-                                border.color: root.theme.primary
-                                color: root.theme.surfaceMuted
-                                clip: true
-
-                                Image {
-                                    anchors.fill: parent
-                                    fillMode: Image.PreserveAspectFit
-                                    cache: false
-                                    visible: root.controller.cameraPreviewAvailable
-                                    source: root.controller.cameraPreviewRevision > 0
-                                            ? "image://visiondesk/camera/live?seq=" + root.controller.cameraPreviewRevision
-                                            : ""
-                                }
-
-                                Rectangle {
-                                    anchors.fill: parent
-                                    visible: !root.controller.cameraPreviewAvailable
-                                    color: "#d9d9d9"
-
-                                    ColumnLayout {
-                                        anchors.centerIn: parent
-                                        width: parent.width * 0.7
-                                        spacing: 10
-
-                                        Text {
-                                            text: root.controller.cameraPreviewTitle
-                                            color: root.theme.text
-                                            font.family: root.theme.displayFont
-                                            font.pixelSize: 32
-                                            font.weight: root.theme.weightStrong
-                                            horizontalAlignment: Text.AlignHCenter
-                                            Layout.fillWidth: true
-                                        }
-
-                                        Text {
-                                            text: root.controller.cameraPreviewMessage
-                                            color: root.theme.textSecondary
-                                            font.family: root.theme.bodyFont
-                                            font.pixelSize: 18
-                                            wrapMode: Text.WordWrap
-                                            horizontalAlignment: Text.AlignHCenter
-                                            Layout.fillWidth: true
-                                        }
-                                    }
-                                }
-                            }
-
-                            ActionButton {
-                                theme: root.theme
-                                primary: true
-                                text: "RUN CAMERA TEST"
-                                implicitWidth: 250
-                                onClicked: root.controller.runCameraTest()
-                            }
-
-                            Text {
-                                visible: root.controller.setupCameraMessage.length > 0
-                                text: root.controller.setupCameraMessage
-                                color: root.statusColor(root.controller.setupCameraStatus)
-                                font.family: root.theme.bodyFont
-                                font.pixelSize: 16
-                                wrapMode: Text.WordWrap
-                                Layout.fillWidth: true
+                                anchors.centerIn: parent
+                                width: 26
+                                height: 26
+                                radius: 13
+                                color: root.theme.primaryStrong
                             }
                         }
+
+                        Text {
+                            text: root.controller.cameraPreviewTitle
+                            color: root.theme.text
+                            font.family: root.theme.displayFont
+                            font.pixelSize: 18
+                            font.weight: root.theme.weightStrong
+                            horizontalAlignment: Text.AlignHCenter
+                            Layout.fillWidth: true
+                        }
+
+                        Text {
+                            text: root.controller.cameraPreviewMessage
+                            color: root.theme.textMuted
+                            font.family: root.theme.bodyFont
+                            font.pixelSize: 13
+                            wrapMode: Text.WordWrap
+                            horizontalAlignment: Text.AlignHCenter
+                            Layout.fillWidth: true
+                        }
+                    }
+                }
+
+            }
+        }
+    }
+
+    Component {
+        id: gpioStepComponent
+
+        Item {
+            anchors.fill: parent
+
+            ColumnLayout {
+                anchors.fill: parent
+                spacing: root.cardGap
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 10
+
+                    StatusChip {
+                        theme: root.theme
+                        label: "GPIO"
+                        value: root.statusText(root.controller.setupGpioStatus)
+                        tone: root.statusTone(root.controller.setupGpioStatus)
+                    }
+
+                    PrimaryButton {
+                        theme: root.theme
+                        tone: "success"
+                        text: root.controller.setupGpioActive ? "TEST RUNNING" : "START TEST"
+                        enabled: !root.controller.setupGpioActive
+                        implicitWidth: 180
+                        onClicked: root.controller.startGpioTest()
+                    }
+
+                    SecondaryButton {
+                        theme: root.theme
+                        tone: "neutral"
+                        text: "STOP TEST"
+                        enabled: root.controller.setupGpioActive
+                        implicitWidth: 144
+                        onClicked: root.controller.stopGpioTest()
                     }
 
                     Item {
-                        visible: root.isCurrentStep("gpio")
                         Layout.fillWidth: true
-                        implicitHeight: gpioColumn.implicitHeight
+                    }
+                }
 
-                        ColumnLayout {
-                            id: gpioColumn
-                            anchors.left: parent.left
-                            anchors.right: parent.right
-                            spacing: 16
+                Text {
+                    text: "Press each configured hardware button once. Cards turn green as soon as VisionDesk detects the press."
+                    color: root.theme.textMuted
+                    font.family: root.theme.bodyFont
+                    font.pixelSize: 14
+                    wrapMode: Text.WordWrap
+                    Layout.fillWidth: true
+                }
+
+                Text {
+                    text: root.controller.setupGpioMessage.length > 0
+                          ? root.controller.setupGpioMessage
+                          : "Start the GPIO test and press each configured button once."
+                    color: root.statusColor(root.controller.setupGpioStatus)
+                    font.family: root.theme.bodyFont
+                    font.pixelSize: 13
+                    wrapMode: Text.WordWrap
+                    Layout.fillWidth: true
+                }
+
+                GridLayout {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    columns: 2
+                    columnSpacing: root.cardGap
+                    rowSpacing: root.cardGap
+
+                    Repeater {
+                        model: Math.max(root.controller.gpioRequirementsModel.count, 1)
+
+                        delegate: Rectangle {
+                            required property int index
+                            readonly property bool hasData: index < root.controller.gpioRequirementsModel.count
+                            readonly property var itemData: hasData ? root.controller.gpioRequirementsModel.get(index) : null
+                            readonly property bool pressed: hasData ? Boolean(itemData.pressed) : false
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            Layout.preferredHeight: 84
+                            radius: 20
+                            color: pressed ? root.theme.successFill : root.theme.surface
+                            border.width: 1
+                            border.color: pressed ? root.theme.successStrong : root.theme.borderSoft
 
                             RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 16
+                                anchors.rightMargin: 16
+                                anchors.topMargin: 16
+                                anchors.bottomMargin: 16
                                 spacing: 12
 
-                                StatusPill {
-                                    theme: root.theme
-                                    label: "GPIO"
-                                    value: root.statusText(root.controller.setupGpioStatus)
-                                    tone: root.controller.setupGpioStatus
+                                Rectangle {
+                                    Layout.preferredWidth: 36
+                                    Layout.preferredHeight: 36
+                                    radius: 18
+                                    color: pressed ? "#D9F4E3" : root.theme.mutedFill
+
+                                    Rectangle {
+                                        anchors.centerIn: parent
+                                        width: 10
+                                        height: 10
+                                        radius: 5
+                                        color: pressed ? root.theme.successStrong : root.theme.textMuted
+                                    }
                                 }
 
-                                ActionButton {
-                                    theme: root.theme
-                                    primary: true
-                                    text: root.controller.setupGpioActive ? "TEST RUNNING" : "START TEST"
-                                    enabled: !root.controller.setupGpioActive
-                                    implicitWidth: 220
-                                    onClicked: root.controller.startGpioTest()
-                                }
-
-                                ActionButton {
-                                    theme: root.theme
-                                    text: "STOP TEST"
-                                    enabled: root.controller.setupGpioActive
-                                    implicitWidth: 160
-                                    onClicked: root.controller.stopGpioTest()
-                                }
-                            }
-
-                            Text {
-                                text: "Press each configured hardware button once. Matching rows turn green when their press is detected."
-                                color: root.theme.textSecondary
-                                font.family: root.theme.bodyFont
-                                font.pixelSize: 18
-                                wrapMode: Text.WordWrap
-                                Layout.fillWidth: true
-                            }
-
-                            Repeater {
-                                model: root.controller.gpioRequirementsModel.count
-
-                                delegate: Rectangle {
-                                    required property int index
-                                    readonly property var itemData: root.controller.gpioRequirementsModel.get(index)
+                                ColumnLayout {
                                     Layout.fillWidth: true
-                                    implicitHeight: 62
-                                    radius: root.theme.radiusCardSm
-                                    border.width: 2
-                                    border.color: itemData.pressed ? root.theme.success : root.theme.text
-                                    color: itemData.pressed ? root.theme.successFill : root.theme.surface
+                                    spacing: 2
 
-                                    RowLayout {
-                                        anchors.fill: parent
-                                        anchors.margins: 14
+                                    Text {
+                                        text: hasData ? (itemData.label || "").replace(/_/g, " ") : "No GPIO requirements"
+                                        color: root.theme.text
+                                        font.family: root.theme.displayFont
+                                        font.pixelSize: 17
+                                        font.weight: root.theme.weightStrong
+                                        renderType: Text.NativeRendering
+                                        elide: Text.ElideRight
+                                    }
 
-                                        Text {
-                                            text: (itemData.label || "").replace(/_/g, " ").toUpperCase()
-                                            color: root.theme.text
-                                            font.family: root.theme.displayFont
-                                            font.pixelSize: 20
-                                            font.weight: root.theme.weightHeavy
-                                        }
+                                    Text {
+                                        text: hasData
+                                              ? (pressed ? "Detected" : "Waiting for press")
+                                              : "Nothing to verify for this profile."
+                                        color: pressed ? root.theme.successStrong : root.theme.textMuted
+                                        font.family: root.theme.bodyFont
+                                        font.pixelSize: 13
+                                        font.weight: root.theme.weightStrong
+                                    }
+                                }
 
-                                        Item { Layout.fillWidth: true }
+                                ColumnLayout {
+                                    visible: hasData
+                                    spacing: 1
 
-                                        Text {
-                                            text: "GPIO " + (itemData.pin || "")
-                                            color: root.theme.textSecondary
-                                            font.family: root.theme.displayFont
-                                            font.pixelSize: 18
-                                            font.weight: root.theme.weightStrong
-                                        }
+                                    Text {
+                                        text: "GPIO " + (hasData ? (itemData.pin || "") : "")
+                                        color: root.theme.text
+                                        font.family: root.theme.displayFont
+                                        font.pixelSize: 15
+                                        font.weight: root.theme.weightStrong
+                                    }
 
-                                        Text {
-                                            text: itemData.pressed ? "DETECTED" : "WAITING"
-                                            color: itemData.pressed ? root.theme.success : root.theme.textSecondary
-                                            font.family: root.theme.displayFont
-                                            font.pixelSize: 18
-                                            font.weight: root.theme.weightHeavy
-                                        }
+                                    Text {
+                                        text: pressed ? "OK" : "PENDING"
+                                        color: pressed ? root.theme.successStrong : root.theme.textMuted
+                                        font.family: root.theme.bodyFont
+                                        font.pixelSize: 12
+                                        font.weight: root.theme.weightStrong
                                     }
                                 }
                             }
-
-                            Text {
-                                visible: root.controller.setupGpioMessage.length > 0
-                                text: root.controller.setupGpioMessage
-                                color: root.statusColor(root.controller.setupGpioStatus)
-                                font.family: root.theme.bodyFont
-                                font.pixelSize: 16
-                                wrapMode: Text.WordWrap
-                                Layout.fillWidth: true
-                            }
                         }
                     }
+                }
 
-                    Item {
-                        visible: root.isCurrentStep("finish")
+            }
+        }
+    }
+
+    Component {
+        id: finishStepComponent
+
+        Item {
+            anchors.fill: parent
+
+            ColumnLayout {
+                anchors.fill: parent
+                spacing: root.cardGap
+
+                InfoCard {
+                    theme: root.theme
+                    padding: 16
+                    fillColor: "#FBFCFE"
+                    Layout.fillWidth: true
+
+                    ColumnLayout {
+                        spacing: 10
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 14
+
+                            Rectangle {
+                                Layout.preferredWidth: 72
+                                Layout.preferredHeight: 72
+                                radius: 36
+                                color: root.controller.setupReadyToFinish ? root.theme.successFill : root.theme.warningFill
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: root.controller.setupReadyToFinish ? "\u2713" : "!"
+                                    color: root.controller.setupReadyToFinish ? root.theme.successStrong : root.theme.warningStrong
+                                    font.family: root.theme.displayFont
+                                    font.pixelSize: 34
+                                    font.weight: root.theme.weightHeavy
+                                }
+                            }
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 0
+                                spacing: 4
+
+                                Text {
+                                    text: root.controller.setupReadyToFinish ? "VisionDesk is ready." : "Almost there."
+                                    color: root.theme.text
+                                    font.family: root.theme.displayFont
+                                    font.pixelSize: 24
+                                    font.weight: root.theme.weightHeavy
+                                    Layout.fillWidth: true
+                                }
+
+                                Text {
+                                    text: root.controller.setupReadyToFinish
+                                          ? "All setup gates passed. Launch VisionDesk Home by finishing the wizard."
+                                          : "Finish becomes available only after Wi-Fi, API key verification, camera test, and GPIO test all pass."
+                                    color: root.theme.textMuted
+                                    font.family: root.theme.bodyFont
+                                    font.pixelSize: 14
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                }
+                            }
+                        }
+
+                        PrimaryButton {
+                            theme: root.theme
+                            tone: "success"
+                            text: "LAUNCH VISIONDESK"
+                            enabled: root.controller.setupReadyToFinish
+                            Layout.fillWidth: true
+                            onClicked: root.controller.finishSetup()
+                        }
+                    }
+                }
+
+                GridLayout {
+                    Layout.fillWidth: true
+                    columns: 2
+                    columnSpacing: root.cardGap
+                    rowSpacing: root.cardGap
+
+                    StatusCard {
+                        theme: root.theme
+                        padding: 14
+                        title: "Wi-Fi"
+                        eyebrow: "Gate"
+                        value: root.statusText(root.controller.setupWifiStatus)
+                        message: root.controller.setupWifiSsid.length > 0 ? root.controller.setupWifiSsid : "Network required"
+                        tone: root.statusTone(root.controller.setupWifiStatus)
                         Layout.fillWidth: true
-                        implicitHeight: finishColumn.implicitHeight
+                        Layout.minimumWidth: 0
+                        Layout.preferredWidth: 0
+                        Layout.preferredHeight: 88
+                    }
 
-                        ColumnLayout {
-                            id: finishColumn
-                            anchors.left: parent.left
-                            anchors.right: parent.right
-                            spacing: 16
+                    StatusCard {
+                        theme: root.theme
+                        padding: 14
+                        title: "OpenAI"
+                        eyebrow: "Gate"
+                        value: root.statusText(root.controller.setupOpenAiStatus)
+                        message: root.controller.setupApiKeyVerified ? "Verified successfully" : "API verification required"
+                        tone: root.statusTone(root.controller.setupOpenAiStatus)
+                        Layout.fillWidth: true
+                        Layout.minimumWidth: 0
+                        Layout.preferredWidth: 0
+                        Layout.preferredHeight: 88
+                    }
 
-                            Text {
-                                text: "Finish becomes available only after Wi-Fi, API key verification, camera test, and GPIO test all pass."
-                                color: root.theme.textSecondary
-                                font.family: root.theme.bodyFont
-                                font.pixelSize: 18
-                                wrapMode: Text.WordWrap
-                                Layout.fillWidth: true
-                            }
+                    StatusCard {
+                        theme: root.theme
+                        padding: 14
+                        title: "Camera"
+                        eyebrow: "Gate"
+                        value: root.statusText(root.controller.setupCameraStatus)
+                        message: root.controller.setupCameraMessage.length > 0 ? root.controller.setupCameraMessage : "Camera test required"
+                        tone: root.statusTone(root.controller.setupCameraStatus)
+                        Layout.fillWidth: true
+                        Layout.minimumWidth: 0
+                        Layout.preferredWidth: 0
+                        Layout.preferredHeight: 88
+                    }
 
-                            GridLayout {
-                                columns: 2
-                                columnSpacing: 12
-                                rowSpacing: 12
-                                Layout.fillWidth: true
+                    StatusCard {
+                        theme: root.theme
+                        padding: 14
+                        title: "GPIO"
+                        eyebrow: "Gate"
+                        value: root.statusText(root.controller.setupGpioStatus)
+                        message: root.controller.setupGpioMessage.length > 0 ? root.controller.setupGpioMessage : "GPIO test required"
+                        tone: root.statusTone(root.controller.setupGpioStatus)
+                        Layout.fillWidth: true
+                        Layout.minimumWidth: 0
+                        Layout.preferredWidth: 0
+                        Layout.preferredHeight: 88
+                    }
+                }
 
-                                StatusPill {
-                                    theme: root.theme
-                                    label: "Wi-Fi"
-                                    value: root.statusText(root.controller.setupWifiStatus)
-                                    tone: root.controller.setupWifiStatus
-                                }
+            }
+        }
+    }
 
-                                StatusPill {
-                                    theme: root.theme
-                                    label: "OpenAI"
-                                    value: root.statusText(root.controller.setupOpenAiStatus)
-                                    tone: root.controller.setupOpenAiStatus
-                                }
+    Loader {
+        id: bodyComponentLoader
+        visible: false
+    }
 
-                                StatusPill {
-                                    theme: root.theme
-                                    label: "Camera"
-                                    value: root.statusText(root.controller.setupCameraStatus)
-                                    tone: root.controller.setupCameraStatus
-                                }
+    ColumnLayout {
+        anchors.fill: parent
+        spacing: 10
 
-                                StatusPill {
-                                    theme: root.theme
-                                    label: "GPIO"
-                                    value: root.statusText(root.controller.setupGpioStatus)
-                                    tone: root.controller.setupGpioStatus
-                                }
-                            }
+        SetupStepper {
+            theme: root.theme
+            controller: root.controller
+            steps: root.stepOrder
+            currentStep: root.controller.setupCurrentStep
+            Layout.fillWidth: true
+        }
 
-                            Text {
-                                text: root.controller.setupFinishMessage.length > 0
-                                      ? root.controller.setupFinishMessage
-                                      : root.controller.setupWarningsText.length > 0
-                                        ? root.controller.setupWarningsText
-                                        : root.controller.setupReadyToFinish
-                                          ? "All required checks passed. Finish setup to restart into Home."
-                                          : "Complete the remaining required checks before finishing."
-                                color: root.controller.setupReadyToFinish ? root.theme.success : root.theme.error
-                                font.family: root.theme.bodyFont
-                                font.pixelSize: 17
-                                wrapMode: Text.WordWrap
-                                Layout.fillWidth: true
-                            }
+        Item {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
 
-                            ActionButton {
-                                theme: root.theme
-                                primary: true
-                                text: "FINISH SETUP + RESTART"
-                                enabled: root.controller.setupReadyToFinish
-                                implicitWidth: 320
-                                onClicked: root.controller.finishSetup()
+            Rectangle {
+                anchors.left: contentCard.left
+                anchors.right: contentCard.right
+                anchors.top: contentCard.top
+                anchors.bottom: contentCard.bottom
+                anchors.leftMargin: 4
+                anchors.rightMargin: -2
+                anchors.topMargin: 8
+                anchors.bottomMargin: -6
+                radius: root.theme.radiusSetupCard + 2
+                color: Qt.rgba(0.06, 0.09, 0.16, 0.08)
+            }
+
+            Rectangle {
+                id: contentCard
+                anchors.fill: parent
+                radius: root.theme.radiusSetupCard
+                color: root.theme.surface
+                border.width: 1
+                border.color: root.theme.borderSoft
+            }
+
+            ColumnLayout {
+                anchors.fill: contentCard
+                anchors.margins: 18
+                spacing: 10
+
+                SectionTitle {
+                    theme: root.theme
+                    title: root.stepTitles[root.controller.setupCurrentStep]
+                    subtitle: root.stepSubtitles[root.controller.setupCurrentStep]
+                    Layout.fillWidth: true
+                }
+
+                Item {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    clip: true
+
+                    Loader {
+                        anchors.fill: parent
+                        sourceComponent: {
+                            switch (root.controller.setupCurrentStep) {
+                            case "wifi":
+                                return wifiStepComponent
+                            case "openai":
+                                return openAiStepComponent
+                            case "camera":
+                                return cameraStepComponent
+                            case "gpio":
+                                return gpioStepComponent
+                            case "finish":
+                                return finishStepComponent
+                            default:
+                                return welcomeStepComponent
                             }
                         }
                     }
@@ -821,20 +1182,24 @@ Item {
             Layout.fillWidth: true
             spacing: 16
 
-            ActionButton {
+            SecondaryButton {
                 theme: root.theme
                 text: "BACK"
                 enabled: root.stepIndex(root.controller.setupCurrentStep) > 0
+                implicitWidth: 164
                 onClicked: root.controller.goToSetupPreviousStep()
             }
 
-            Item { Layout.fillWidth: true }
+            Item {
+                Layout.fillWidth: true
+            }
 
-            ActionButton {
+            PrimaryButton {
                 theme: root.theme
-                primary: true
+                tone: "primary"
                 text: root.controller.setupCurrentStep === "finish" ? "READY" : "NEXT"
                 enabled: root.canAdvance() && root.controller.setupCurrentStep !== "finish"
+                implicitWidth: 164
                 onClicked: root.controller.goToSetupNextStep()
             }
         }

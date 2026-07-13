@@ -146,6 +146,10 @@ class SetupController(QObject):
         return str(self._state.get("wifi", {}).get("connect_status", "idle"))
 
     @Property(str, notify=stateChanged)
+    def wifiSsid(self) -> str:
+        return str(self._state.get("wifi", {}).get("ssid", "")).strip()
+
+    @Property(str, notify=stateChanged)
     def openAiMessage(self) -> str:
         return str(self._state.get("openai", {}).get("message", ""))
 
@@ -164,6 +168,20 @@ class SetupController(QObject):
     @Property(str, notify=stateChanged)
     def cameraAutofocusMode(self) -> str:
         return str(self.runtime.settings.camera.autofocus_mode)
+
+    @Property(str, notify=stateChanged)
+    def cameraResolutionLabel(self) -> str:
+        resolution = self.runtime.settings.camera.resolution
+        return f"{resolution.width} x {resolution.height}"
+
+    @Property(str, notify=stateChanged)
+    def cameraPreviewFpsLabel(self) -> str:
+        target_fps = float(self.runtime.settings.camera.preview.target_fps)
+        return f"{target_fps:g}"
+
+    @Property(str, notify=stateChanged)
+    def cameraExposureLabel(self) -> str:
+        return str(self.runtime.settings.camera.exposure)
 
     @Property(str, notify=stateChanged)
     def gpioMessage(self) -> str:

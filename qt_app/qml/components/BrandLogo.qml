@@ -3,6 +3,7 @@ import QtQuick
 Item {
     id: root
     required property QtObject theme
+    property bool compact: false
 
     implicitWidth: logoRow.implicitWidth
     implicitHeight: logoRow.implicitHeight
@@ -17,7 +18,7 @@ Item {
             text: "Vision"
             color: root.theme.text
             font.family: root.theme.displayFont
-            font.pixelSize: 60
+            font.pixelSize: root.compact ? 44 : 60
             font.weight: root.theme.weightHeavy
             renderType: Text.NativeRendering
         }
@@ -26,7 +27,7 @@ Item {
             text: "Desk"
             color: root.theme.logoBlue
             font.family: root.theme.displayFont
-            font.pixelSize: 60
+            font.pixelSize: root.compact ? 44 : 60
             font.weight: root.theme.weightHeavy
             renderType: Text.NativeRendering
         }

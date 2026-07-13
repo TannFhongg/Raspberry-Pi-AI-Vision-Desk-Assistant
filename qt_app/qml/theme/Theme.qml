@@ -16,24 +16,34 @@ Item {
 
     readonly property color shellOuter: "#20132f"
     readonly property color pageBackground: "#ffffff"
+    readonly property color setupPageBackground: "#F6F8FB"
     readonly property color surface: "#ffffff"
+    readonly property color surfaceElevated: "#ffffff"
     readonly property color surfaceMuted: "#d9d9d9"
     readonly property color surfacePanel: "#c4c4c4"
     readonly property color primary: "#2d9cff"
+    readonly property color primarySoft: "#EAF2FF"
     readonly property color primaryStrong: "#1f6bff"
     readonly property color primaryDark: "#1753c7"
     readonly property color logoBlue: "#1f46ff"
     readonly property color text: "#111111"
     readonly property color textSecondary: "#333333"
+    readonly property color textMuted: "#6B7280"
     readonly property color success: "#0da252"
+    readonly property color successStrong: "#2DBE60"
     readonly property color warning: "#b57b00"
+    readonly property color warningStrong: "#F5A623"
     readonly property color error: "#bf3030"
+    readonly property color errorStrong: "#E04E4E"
     readonly property color unavailable: "#5c6773"
     readonly property color mutedFill: "#f2f4f7"
+    readonly property color borderSoft: "#E4E7EC"
+    readonly property color borderMuted: "#D0D5DD"
     readonly property color successFill: "#ecf9f1"
     readonly property color warningFill: "#fff3d9"
     readonly property color errorFill: "#fdeaea"
     readonly property color errorCardFill: "#fff4f4"
+    readonly property color shadowColor: "#0F172A"
 
     readonly property string bodyFont: bodyFontLoader.name || displayFontLoader.name || ""
     readonly property string displayFont: displayFontLoader.name || bodyFontLoader.name || ""
@@ -53,6 +63,8 @@ Item {
     readonly property int radiusCard: 34
     readonly property int radiusCardMd: 30
     readonly property int radiusCardSm: 24
+    readonly property int radiusControl: 16
+    readonly property int radiusSetupCard: 24
     readonly property int radiusPill: 999
     readonly property int borderStrong: 3
     readonly property int dividerStrong: 4
@@ -60,4 +72,5 @@ Item {
     readonly property int healthPillHeight: 72
     readonly property int footerButtonWidth: 164
     readonly property int footerButtonHeight: 54
+    readonly property int controlHeight: 58
 }
