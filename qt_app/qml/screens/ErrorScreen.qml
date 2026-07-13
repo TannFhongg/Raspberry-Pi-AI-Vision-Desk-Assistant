@@ -11,47 +11,64 @@ Item {
 
     ColumnLayout {
         anchors.fill: parent
-        spacing: 18
+        spacing: 12
 
-        Rectangle {
+        RowLayout {
             Layout.fillWidth: true
-            Layout.fillHeight: true
-            radius: root.theme.radiusCard
-            border.width: root.theme.borderStrong
-            border.color: "#d14343"
-            color: root.theme.errorCardFill
+
+            Text {
+                text: "Something needs attention"
+                color: root.theme.text
+                font.family: root.theme.displayFont
+                font.pixelSize: 34
+                font.weight: root.theme.weightHeavy
+                Layout.fillWidth: true
+                renderType: Text.NativeRendering
+            }
+
+            StatusChip {
+                theme: root.theme
+                label: "Status"
+                value: "Retry available"
+                tone: "error"
+            }
+        }
+
+        ContentCard {
+            theme: root.theme
+            padding: 28
+            fillColor: "#FFFDFD"
+            borderColor: "#F2D1D1"
+            Layout.fillWidth: true
+            Layout.preferredHeight: 480
+            Layout.maximumHeight: 480
 
             ColumnLayout {
                 anchors.fill: parent
-                anchors.margins: 42
                 spacing: 18
 
-                Text {
-                    text: "Capture Error"
-                    color: root.theme.text
-                    font.family: root.theme.displayFont
-                    font.pixelSize: 28
-                    font.weight: root.theme.weightStrong
+                StatusCard {
+                    theme: root.theme
+                    padding: 20
+                    title: "Capture error"
+                    eyebrow: "Action needed"
+                    value: root.controller.errorTitle
+                    message: root.controller.errorDetail
+                    tone: "error"
+                    Layout.fillWidth: true
                 }
 
-                Text {
-                    text: root.controller.errorTitle
-                    color: "#ac2b2b"
-                    font.family: root.theme.displayFont
-                    font.pixelSize: 66
-                    font.weight: root.theme.weightHeavy
+                StatusCard {
+                    theme: root.theme
+                    padding: 20
+                    fillColor: root.theme.warningFill
+                    borderColor: "#F1D38C"
                     Layout.fillWidth: true
-                    wrapMode: Text.WordWrap
-                }
-
-                Text {
-                    text: root.controller.errorDetail
-                    color: "#2f3740"
-                    font.family: root.theme.displayFont
-                    font.pixelSize: 28
-                    font.weight: root.theme.weightStrong
-                    Layout.fillWidth: true
-                    wrapMode: Text.WordWrap
+                    title: "What you can do"
+                    eyebrow: "Recovery"
+                    value: "Try the capture again"
+                    message: "Check that the camera view is clear and the device remains connected, then retry. VisionDesk keeps technical traces out of this screen."
+                    tone: "warning"
                 }
 
                 Item { Layout.fillHeight: true }
@@ -60,23 +77,22 @@ Item {
 
         RowLayout {
             Layout.fillWidth: true
-            spacing: 16
+            spacing: 12
 
-            Item { Layout.fillWidth: true }
-
-            ActionButton {
+            SecondaryButton {
                 theme: root.theme
-                text: "HOME"
+                text: "BACK"
                 onClicked: root.controller.clearResult()
             }
 
-            ActionButton {
+            Item { Layout.fillWidth: true }
+
+            PrimaryButton {
                 theme: root.theme
-                primary: true
-                text: "CAPTURE AGAIN"
+                tone: "success"
+                text: "RETRY"
                 onClicked: root.controller.retry()
             }
         }
     }
 }
-

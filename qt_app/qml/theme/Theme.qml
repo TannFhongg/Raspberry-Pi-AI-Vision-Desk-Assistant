@@ -15,7 +15,7 @@ Item {
     }
 
     readonly property color shellOuter: "#20132f"
-    readonly property color pageBackground: "#ffffff"
+    readonly property color pageBackground: "#F6F8FB"
     readonly property color setupPageBackground: "#F6F8FB"
     readonly property color surface: "#ffffff"
     readonly property color surfaceElevated: "#ffffff"
@@ -44,6 +44,7 @@ Item {
     readonly property color errorFill: "#fdeaea"
     readonly property color errorCardFill: "#fff4f4"
     readonly property color shadowColor: "#0F172A"
+    readonly property color cardShadow: "#0F172A"
 
     readonly property string bodyFont: bodyFontLoader.name || displayFontLoader.name || ""
     readonly property string displayFont: displayFontLoader.name || bodyFontLoader.name || ""
@@ -73,4 +74,7 @@ Item {
     readonly property int footerButtonWidth: 164
     readonly property int footerButtonHeight: 54
     readonly property int controlHeight: 58
+    readonly property int minimumTouchTarget: 50
+    readonly property int animationShort: 220
+    readonly property real cardShadowOpacity: 0.08
 }

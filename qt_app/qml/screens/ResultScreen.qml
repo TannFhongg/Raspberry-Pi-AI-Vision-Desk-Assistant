@@ -11,58 +11,105 @@ Item {
 
     ColumnLayout {
         anchors.fill: parent
-        spacing: 18
+        spacing: 12
 
         RowLayout {
             Layout.fillWidth: true
-            Layout.fillHeight: true
-            spacing: 24
+
+            Text {
+                text: "Result"
+                color: root.theme.text
+                font.family: root.theme.displayFont
+                font.pixelSize: 34
+                font.weight: root.theme.weightHeavy
+                Layout.fillWidth: true
+                renderType: Text.NativeRendering
+            }
+
+            StatusChip {
+                theme: root.theme
+                label: "Mode"
+                value: root.controller.selectedModeLabel
+                tone: root.controller.resultState === "ERROR" ? "error"
+                      : root.controller.resultState === "RETRY_PENDING" ? "warning"
+                      : "success"
+            }
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 500
+            Layout.maximumHeight: 500
+            spacing: 12
 
             ColumnLayout {
-                Layout.fillWidth: true
+                Layout.preferredWidth: 352
+                Layout.minimumWidth: 352
+                Layout.maximumWidth: 352
                 Layout.fillHeight: true
-                spacing: 18
+                spacing: 12
 
-                Rectangle {
+                ContentCard {
+                    theme: root.theme
+                    padding: 14
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    radius: root.theme.radiusCard
-                    color: root.theme.surfaceMuted
-                    clip: true
 
-                    Image {
+                    ColumnLayout {
                         anchors.fill: parent
-                        fillMode: Image.PreserveAspectFit
-                        cache: false
-                        visible: root.controller.resultPreviewRevision > 0
-                        source: "image://visiondesk/result/latest?rev=" + root.controller.resultPreviewRevision
-                    }
+                        spacing: 10
 
-                    Text {
-                        anchors.centerIn: parent
-                        width: parent.width * 0.7
-                        visible: root.controller.resultPreviewRevision === 0
-                        text: "No preview image was retained for this result."
-                        color: root.theme.textSecondary
-                        font.family: root.theme.bodyFont
-                        font.pixelSize: 20
-                        horizontalAlignment: Text.AlignHCenter
-                        wrapMode: Text.WordWrap
+                        Text {
+                            text: "Captured image"
+                            color: root.theme.text
+                            font.family: root.theme.displayFont
+                            font.pixelSize: 21
+                            font.weight: root.theme.weightHeavy
+                            Layout.fillWidth: true
+                        }
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            radius: root.theme.radiusControl
+                            color: root.theme.surfaceMuted
+                            clip: true
+
+                            Image {
+                                anchors.fill: parent
+                                fillMode: Image.PreserveAspectFit
+                                cache: false
+                                visible: root.controller.resultPreviewRevision > 0
+                                source: "image://visiondesk/result/latest?rev=" + root.controller.resultPreviewRevision
+                            }
+
+                            Text {
+                                anchors.centerIn: parent
+                                width: parent.width * 0.72
+                                visible: root.controller.resultPreviewRevision === 0
+                                text: "No preview image was retained for this result."
+                                color: root.theme.textMuted
+                                font.family: root.theme.bodyFont
+                                font.pixelSize: 16
+                                horizontalAlignment: Text.AlignHCenter
+                                wrapMode: Text.WordWrap
+                            }
+                        }
                     }
                 }
 
                 ScrollableResultCard {
                     theme: root.theme
-                    title: "Additional Detail"
+                    title: "Additional detail"
                     note: ""
                     html: root.controller.resultDetailVisible
                           ? root.controller.resultDetailHtml
                           : "<p class='answer-empty'>No additional detail available.</p>"
-                    titlePixelSize: 28
-                    bodyPixelSize: 16
-                    notePixelSize: 14
+                    titlePixelSize: 20
+                    bodyPixelSize: 15
+                    notePixelSize: 13
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 240
+                    Layout.preferredHeight: 188
                 }
             }
 
@@ -73,29 +120,30 @@ Item {
                 html: root.controller.resultHtml
                 emphasizeError: root.controller.resultState === "ERROR"
                 emphasizeQueued: root.controller.resultState === "RETRY_PENDING"
-                titlePixelSize: 32
+                titlePixelSize: 30
                 bodyPixelSize: 18
                 notePixelSize: 15
                 Layout.fillWidth: true
                 Layout.fillHeight: true
+                Layout.minimumWidth: 0
             }
         }
 
         RowLayout {
             Layout.fillWidth: true
-            spacing: 16
+            spacing: 12
 
-            Item { Layout.fillWidth: true }
-
-            ActionButton {
+            SecondaryButton {
                 theme: root.theme
                 text: "HOME"
                 onClicked: root.controller.clearResult()
             }
 
-            ActionButton {
+            Item { Layout.fillWidth: true }
+
+            PrimaryButton {
                 theme: root.theme
-                primary: true
+                tone: "success"
                 text: "NEW CAPTURE"
                 onClicked: root.controller.clearResult()
             }

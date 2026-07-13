@@ -17,6 +17,7 @@ Button {
 
     readonly property color fillColor: {
         if (!root.enabled) return root.theme.borderSoft
+        if (root.tone === "secondary" || root.tone === "neutral") return root.theme.surface
         if (root.tone === "success") return root.theme.successStrong
         if (root.tone === "danger") return root.theme.errorStrong
         return root.theme.primaryStrong
@@ -24,12 +25,15 @@ Button {
 
     readonly property color borderColorValue: {
         if (!root.enabled) return root.theme.borderMuted
+        if (root.tone === "secondary" || root.tone === "neutral") return root.theme.borderMuted
         if (root.tone === "success") return "#23964A"
         if (root.tone === "danger") return "#C83E3E"
         return root.theme.primaryDark
     }
 
-    readonly property color textColor: root.enabled ? root.theme.surface : root.theme.unavailable
+    readonly property color textColor: !root.enabled ? root.theme.unavailable
+                                     : root.tone === "secondary" || root.tone === "neutral" ? root.theme.text
+                                     : root.theme.surface
 
     contentItem: Text {
         text: root.text

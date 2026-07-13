@@ -13,81 +13,69 @@ Item {
 
     ColumnLayout {
         anchors.fill: parent
-        spacing: 18
+        spacing: 12
 
         RowLayout {
             Layout.fillWidth: true
-            spacing: 18
+            spacing: 12
 
             ColumnLayout {
                 Layout.fillWidth: true
-                spacing: 6
+                spacing: 2
 
                 Text {
-                    text: root.hasSelection ? root.controller.selectedHistoryModeLabel : "Saved Result"
+                    text: root.hasSelection ? root.controller.selectedHistoryModeLabel : "Saved result"
                     color: root.theme.text
                     font.family: root.theme.displayFont
-                    font.pixelSize: 44
+                    font.pixelSize: 34
                     font.weight: root.theme.weightHeavy
                     Layout.fillWidth: true
-                    wrapMode: Text.WordWrap
+                    elide: Text.ElideRight
+                    renderType: Text.NativeRendering
                 }
 
                 Text {
                     visible: root.hasSelection
                     text: root.controller.selectedHistoryCreatedAt
-                    color: root.theme.textSecondary
+                    color: root.theme.textMuted
                     font.family: root.theme.bodyFont
-                    font.pixelSize: 18
-                    font.weight: root.theme.weightRegular
+                    font.pixelSize: 15
                     Layout.fillWidth: true
                     elide: Text.ElideRight
                 }
             }
 
-            Rectangle {
+            StatusChip {
                 visible: root.hasSelection
-                radius: root.theme.radiusPill
-                border.width: root.theme.borderStrong
-                border.color: root.theme.text
-                color: root.theme.surface
-                implicitWidth: statusText.implicitWidth + 34
-                implicitHeight: statusText.implicitHeight + 22
-
-                Text {
-                    id: statusText
-                    anchors.centerIn: parent
-                    text: root.controller.selectedHistoryStatusLabel
-                    color: root.theme.text
-                    font.family: root.theme.displayFont
-                    font.pixelSize: 18
-                    font.weight: root.theme.weightStrong
-                }
+                theme: root.theme
+                label: "Status"
+                value: root.controller.selectedHistoryStatusLabel
+                tone: root.controller.selectedHistoryStatus === "error" ? "error"
+                      : root.controller.selectedHistoryStatus === "queued" ? "warning"
+                      : "success"
             }
         }
 
-        Rectangle {
+        ContentCard {
             visible: root.hasSelection
+            theme: root.theme
+            padding: 14
+            fillColor: root.theme.primarySoft
+            borderColor: "#C9DCFF"
             Layout.fillWidth: true
-            radius: root.theme.radiusCardSm
-            border.width: 2
-            border.color: "#c6d0da"
-            color: "#f8fafc"
-            implicitHeight: metadataFlow.implicitHeight + 28
+            Layout.preferredHeight: metadataFlow.implicitHeight + 28
 
             Flow {
                 id: metadataFlow
                 anchors.fill: parent
-                anchors.margins: 14
-                spacing: 14
+                spacing: 16
 
                 Text {
                     visible: root.controller.selectedHistoryModelUsed.length > 0
                     text: "Model: " + root.controller.selectedHistoryModelUsed
                     color: root.theme.textSecondary
                     font.family: root.theme.bodyFont
-                    font.pixelSize: 16
-                    font.weight: root.theme.weightRegular
+                    font.pixelSize: 14
                 }
 
                 Text {
@@ -95,8 +83,7 @@ Item {
                     text: "Time: " + root.controller.selectedHistoryDurationLabel
                     color: root.theme.textSecondary
                     font.family: root.theme.bodyFont
-                    font.pixelSize: 16
-                    font.weight: root.theme.weightRegular
+                    font.pixelSize: 14
                 }
 
                 Text {
@@ -104,17 +91,15 @@ Item {
                     text: "Retry: " + root.controller.selectedHistoryRetryStatus
                     color: root.theme.textSecondary
                     font.family: root.theme.bodyFont
-                    font.pixelSize: 16
-                    font.weight: root.theme.weightRegular
+                    font.pixelSize: 14
                 }
 
                 Text {
                     visible: root.controller.selectedHistoryErrorSummary.length > 0
-                    text: "Error: " + root.controller.selectedHistoryErrorSummary
+                    text: "Note: " + root.controller.selectedHistoryErrorSummary
                     color: root.theme.textSecondary
                     font.family: root.theme.bodyFont
-                    font.pixelSize: 16
-                    font.weight: root.theme.weightRegular
+                    font.pixelSize: 14
                 }
             }
         }
@@ -122,8 +107,9 @@ Item {
         RowLayout {
             visible: root.hasSelection
             Layout.fillWidth: true
-            Layout.fillHeight: true
-            spacing: 20
+            Layout.preferredHeight: 385
+            Layout.maximumHeight: 385
+            spacing: 12
 
             ScrollableResultCard {
                 theme: root.theme
@@ -132,67 +118,81 @@ Item {
                 html: root.controller.selectedHistoryResultHtml
                 emphasizeError: root.controller.selectedHistoryStatus === "error"
                 emphasizeQueued: root.controller.selectedHistoryStatus === "queued"
-                titlePixelSize: 30
-                bodyPixelSize: 18
-                notePixelSize: 15
+                titlePixelSize: 28
+                bodyPixelSize: 17
+                notePixelSize: 14
                 Layout.fillWidth: true
                 Layout.fillHeight: true
+                Layout.minimumWidth: 0
             }
 
             ScrollableResultCard {
                 theme: root.theme
-                title: "Additional Detail"
+                title: "Additional detail"
                 note: ""
                 html: root.controller.selectedHistoryDetailHtml
-                titlePixelSize: 30
-                bodyPixelSize: 16
-                notePixelSize: 14
-                Layout.fillWidth: true
+                titlePixelSize: 23
+                bodyPixelSize: 15
+                notePixelSize: 13
+                Layout.preferredWidth: 360
+                Layout.minimumWidth: 360
+                Layout.maximumWidth: 360
                 Layout.fillHeight: true
             }
         }
 
-        Rectangle {
+        ContentCard {
             visible: !root.hasSelection
+            theme: root.theme
+            padding: 24
             Layout.fillWidth: true
             Layout.fillHeight: true
-            radius: root.theme.radiusCard
-            border.width: root.theme.borderStrong
-            border.color: root.theme.text
-            color: root.theme.surface
 
-            Text {
+            ColumnLayout {
                 anchors.centerIn: parent
-                width: parent.width * 0.7
-                text: "This saved result is no longer available."
-                color: root.theme.textSecondary
-                font.family: root.theme.displayFont
-                font.pixelSize: 30
-                font.weight: root.theme.weightStrong
-                horizontalAlignment: Text.AlignHCenter
-                wrapMode: Text.WordWrap
+                width: Math.min(parent.width * 0.58, 500)
+                spacing: 8
+
+                Text {
+                    text: "Saved result unavailable"
+                    color: root.theme.text
+                    font.family: root.theme.displayFont
+                    font.pixelSize: 30
+                    font.weight: root.theme.weightHeavy
+                    horizontalAlignment: Text.AlignHCenter
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                }
+
+                Text {
+                    text: "This record may have been removed during retention cleanup."
+                    color: root.theme.textMuted
+                    font.family: root.theme.bodyFont
+                    font.pixelSize: 16
+                    horizontalAlignment: Text.AlignHCenter
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                }
             }
         }
 
         RowLayout {
             Layout.fillWidth: true
-            spacing: 16
+            spacing: 12
 
-            ActionButton {
+            SecondaryButton {
                 theme: root.theme
                 text: "BACK"
                 onClicked: root.controller.goBack()
             }
 
-            Item {
-                Layout.fillWidth: true
-            }
+            Item { Layout.fillWidth: true }
 
-            ActionButton {
+            SecondaryButton {
                 theme: root.theme
-                destructive: true
+                tone: "danger"
                 text: "DELETE RESULT"
-                implicitWidth: 220
+                implicitWidth: 190
                 enabled: root.hasSelection
                 onClicked: deleteItemDialog.open()
             }
@@ -205,34 +205,33 @@ Item {
         modal: true
         focus: true
         width: 500
-        padding: 0
+        padding: 24
         closePolicy: Popup.CloseOnEscape
         background: Rectangle {
-            radius: root.theme.radiusCard
-            border.width: root.theme.borderStrong
-            border.color: root.theme.text
+            radius: root.theme.radiusSetupCard
+            border.width: 1
+            border.color: root.theme.borderSoft
             color: root.theme.surface
         }
 
         contentItem: ColumnLayout {
-            spacing: 20
+            spacing: 16
 
             Text {
                 text: "Delete this saved result?"
                 color: root.theme.text
                 font.family: root.theme.displayFont
-                font.pixelSize: 30
-                font.weight: root.theme.weightStrong
+                font.pixelSize: 28
+                font.weight: root.theme.weightHeavy
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
             }
 
             Text {
                 text: "This removes the selected history item only."
-                color: root.theme.textSecondary
+                color: root.theme.textMuted
                 font.family: root.theme.bodyFont
-                font.pixelSize: 19
-                font.weight: root.theme.weightRegular
+                font.pixelSize: 16
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
             }
@@ -241,19 +240,17 @@ Item {
                 Layout.fillWidth: true
                 spacing: 12
 
-                Item {
-                    Layout.fillWidth: true
-                }
+                Item { Layout.fillWidth: true }
 
-                ActionButton {
+                SecondaryButton {
                     theme: root.theme
                     text: "CANCEL"
                     onClicked: deleteItemDialog.close()
                 }
 
-                ActionButton {
+                PrimaryButton {
                     theme: root.theme
-                    destructive: true
+                    tone: "danger"
                     text: "DELETE"
                     onClicked: {
                         var entryId = root.controller.selectedHistoryId

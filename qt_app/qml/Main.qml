@@ -12,7 +12,7 @@ ApplicationWindow {
     width: appController.windowWidth
     height: appController.windowHeight
     visible: true
-    color: appController.currentScreen === "setup" ? appTheme.setupPageBackground : appTheme.pageBackground
+    color: appTheme.pageBackground
     title: "VisionDesk Qt"
     readonly property int designWidth: 1200
     readonly property int designHeight: 800
@@ -69,7 +69,7 @@ ApplicationWindow {
 
     Rectangle {
         anchors.fill: parent
-        color: appController.currentScreen === "setup" ? appTheme.setupPageBackground : appTheme.pageBackground
+        color: appTheme.pageBackground
 
         Item {
             id: designCanvas
@@ -85,7 +85,7 @@ ApplicationWindow {
                 anchors.fill: parent
                 anchors.margins: 20
 
-                HeaderBar {
+                AppHeader {
                     id: headerBar
                     theme: appTheme
                     controller: appController

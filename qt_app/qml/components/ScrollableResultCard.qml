@@ -2,18 +2,25 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
-Rectangle {
+Item {
     id: root
     required property QtObject theme
     required property string title
+    Layout.minimumWidth: 0
     property string note: ""
     property string html: ""
     property bool emphasizeError: false
     property bool emphasizeQueued: false
-    property int titlePixelSize: 36
-    property int notePixelSize: 17
-    property int bodyPixelSize: 21
+    property int titlePixelSize: 30
+    property int notePixelSize: 15
+    property int bodyPixelSize: 18
     property string contentFontFamily: root.theme.bodyFont
+    readonly property color accentColor: root.emphasizeError ? root.theme.errorStrong
+                                       : root.emphasizeQueued ? root.theme.warningStrong
+                                       : root.theme.primaryStrong
+    readonly property color surfaceColor: root.emphasizeError ? root.theme.errorCardFill
+                                        : root.emphasizeQueued ? root.theme.warningFill
+                                        : root.theme.surface
     readonly property string styledHtml: {
         var bodyFont = (root.contentFontFamily || root.theme.bodyFont).replace(/'/g, "&apos;")
         var headingFont = (root.theme.displayFont || bodyFont).replace(/'/g, "&apos;")
@@ -34,53 +41,76 @@ Rectangle {
                "</style></head><body>" + root.html + "</body></html>"
     }
 
-    radius: root.theme.radiusCard
-    border.width: root.theme.borderStrong
-    border.color: root.emphasizeError ? "#d14343" : root.emphasizeQueued ? root.theme.primary : root.theme.text
-    color: root.theme.surface
-
-    ColumnLayout {
+    ContentCard {
         anchors.fill: parent
-        anchors.margins: 26
-        spacing: 14
+        theme: root.theme
+        padding: 20
+        fillColor: root.surfaceColor
+        borderColor: root.emphasizeError ? "#F0BABA"
+                     : root.emphasizeQueued ? "#F1D38C"
+                     : root.theme.borderSoft
 
-        Text {
-            text: root.title
-            color: root.theme.text
-            font.family: root.theme.displayFont
-            font.pixelSize: root.titlePixelSize
-            font.weight: root.theme.weightStrong
-            Layout.fillWidth: true
-            wrapMode: Text.WordWrap
-        }
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 10
 
-        Text {
-            visible: root.note.length > 0
-            text: root.note
-            color: root.emphasizeError ? "#ac2b2b" : root.emphasizeQueued ? root.theme.primaryDark : "#5f6975"
-            font.family: root.theme.displayFont
-            font.pixelSize: root.notePixelSize
-            font.weight: root.theme.weightStrong
-            Layout.fillWidth: true
-            wrapMode: Text.WordWrap
-        }
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
 
-        ScrollView {
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            clip: true
+                Rectangle {
+                    visible: root.emphasizeError || root.emphasizeQueued
+                    Layout.preferredWidth: 8
+                    Layout.preferredHeight: 8
+                    radius: 4
+                    color: root.accentColor
+                }
 
-            TextArea {
-                text: root.styledHtml
-                readOnly: true
-                textFormat: TextEdit.RichText
-                wrapMode: TextEdit.Wrap
-                font.family: root.contentFontFamily
-                font.pixelSize: root.bodyPixelSize
-                font.weight: root.theme.weightRegular
-                color: root.theme.text
-                background: null
-                selectByMouse: false
+                Text {
+                    text: root.title
+                    color: root.theme.text
+                    font.family: root.theme.displayFont
+                    font.pixelSize: root.titlePixelSize
+                    font.weight: root.theme.weightHeavy
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                    renderType: Text.NativeRendering
+                }
+            }
+
+            Text {
+                visible: root.note.length > 0
+                text: root.note
+                color: root.accentColor
+                font.family: root.theme.bodyFont
+                font.pixelSize: root.notePixelSize
+                font.weight: root.theme.weightStrong
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+            }
+
+            ScrollView {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+
+                TextArea {
+                    text: root.styledHtml
+                    readOnly: true
+                    textFormat: TextEdit.RichText
+                    wrapMode: TextEdit.Wrap
+                    font.family: root.contentFontFamily
+                    font.pixelSize: root.bodyPixelSize
+                    font.weight: root.theme.weightRegular
+                    color: root.theme.text
+                    background: null
+                    selectByMouse: false
+                    leftPadding: 0
+                    rightPadding: 4
+                    topPadding: 0
+                    bottomPadding: 0
+                }
             }
         }
     }

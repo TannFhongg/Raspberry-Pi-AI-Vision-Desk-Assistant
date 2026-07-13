@@ -26,6 +26,15 @@ Item {
         return seconds.toFixed(2) + "s"
     }
 
+    function toneForStatus(status) {
+        var normalized = String(status || "").toLowerCase()
+        if (normalized.indexOf("error") >= 0 || normalized.indexOf("fail") >= 0)
+            return "error"
+        if (normalized.indexOf("queue") >= 0 || normalized.indexOf("retry") >= 0)
+            return "warning"
+        return "success"
+    }
+
     readonly property bool hasEntries: root.controller.historyEntriesModel.count > 0
     readonly property bool showBanner: root.controller.historyState === "recovered"
                                   || (root.controller.historyState === "error" && hasEntries)
@@ -33,198 +42,198 @@ Item {
 
     ColumnLayout {
         anchors.fill: parent
-        spacing: 18
+        spacing: 12
 
-        Text {
-            text: "Recent Results"
-            color: root.theme.text
-            font.family: root.theme.displayFont
-            font.pixelSize: 46
-            font.weight: root.theme.weightHeavy
+        RowLayout {
             Layout.fillWidth: true
-        }
 
-        Rectangle {
-            visible: root.showBanner
-            Layout.fillWidth: true
-            radius: root.theme.radiusCardSm
-            border.width: root.theme.borderStrong
-            border.color: root.controller.historyState === "error"
-                          ? root.theme.error
-                          : root.controller.historyState === "recovered"
-                            ? root.theme.primary
-                            : root.theme.text
-            color: root.controller.historyState === "error"
-                   ? root.theme.errorFill
-                   : root.controller.historyState === "recovered"
-                     ? "#edf5ff"
-                     : root.theme.mutedFill
-            implicitHeight: bannerText.implicitHeight + 26
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 2
 
-            Text {
-                id: bannerText
-                anchors.fill: parent
-                anchors.margins: 13
-                text: root.controller.historyMessage
-                color: root.theme.text
-                font.family: root.theme.bodyFont
-                font.pixelSize: 20
-                font.weight: root.theme.weightRegular
-                wrapMode: Text.WordWrap
-                verticalAlignment: Text.AlignVCenter
+                Text {
+                    text: "Recent results"
+                    color: root.theme.text
+                    font.family: root.theme.displayFont
+                    font.pixelSize: 34
+                    font.weight: root.theme.weightHeavy
+                    renderType: Text.NativeRendering
+                }
+
+                Text {
+                    text: "Review saved VisionDesk answers on this device."
+                    color: root.theme.textMuted
+                    font.family: root.theme.bodyFont
+                    font.pixelSize: 15
+                    renderType: Text.NativeRendering
+                }
+            }
+
+            StatusChip {
+                theme: root.theme
+                label: "Saved"
+                value: String(root.controller.historyEntriesModel.count)
+                tone: root.hasEntries ? "success" : "info"
             }
         }
 
-        Rectangle {
+        StatusCard {
+            visible: root.showBanner
+            theme: root.theme
+            padding: 14
+            title: "History status"
+            eyebrow: root.controller.historyState === "loading" ? "Loading" : "Notice"
+            value: root.controller.historyState === "loading" ? "Refreshing saved results" : "Saved results available"
+            message: root.controller.historyMessage
+            tone: root.controller.historyState === "error" ? "error"
+                  : root.controller.historyState === "loading" ? "running"
+                  : "info"
             Layout.fillWidth: true
-            Layout.fillHeight: true
-            radius: root.theme.radiusCard
-            border.width: root.theme.borderStrong
-            border.color: root.theme.text
-            color: root.theme.surface
-            clip: true
+            Layout.preferredHeight: 96
+        }
+
+        ContentCard {
+            theme: root.theme
+            padding: 14
+            Layout.fillWidth: true
+            Layout.preferredHeight: 430
+            Layout.maximumHeight: 430
 
             Item {
                 anchors.fill: parent
-                anchors.margins: 20
 
                 ColumnLayout {
-                    anchors.fill: parent
-                    spacing: 14
+                    anchors.centerIn: parent
+                    width: Math.min(parent.width * 0.62, 540)
+                    visible: !root.hasEntries
+                    spacing: 10
+
+                    Rectangle {
+                        Layout.alignment: Qt.AlignHCenter
+                        Layout.preferredWidth: 54
+                        Layout.preferredHeight: 54
+                        radius: 18
+                        color: root.theme.primarySoft
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: "H"
+                            color: root.theme.primaryStrong
+                            font.family: root.theme.displayFont
+                            font.pixelSize: 25
+                            font.weight: root.theme.weightHeavy
+                        }
+                    }
 
                     Text {
-                        visible: !root.hasEntries
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
                         text: root.controller.historyState === "loading"
                               ? "Loading recent results..."
-                              : root.controller.historyMessage
-                        color: root.theme.textSecondary
+                              : "No saved results yet"
+                        color: root.theme.text
                         font.family: root.theme.displayFont
-                        font.pixelSize: 30
-                        font.weight: root.theme.weightStrong
+                        font.pixelSize: 28
+                        font.weight: root.theme.weightHeavy
                         horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
+                        Layout.fillWidth: true
                         wrapMode: Text.WordWrap
                     }
 
-                    ScrollView {
-                        visible: root.hasEntries
+                    Text {
+                        text: root.controller.historyState === "loading"
+                              ? "VisionDesk is reading the local history store."
+                              : root.controller.historyMessage
+                        color: root.theme.textMuted
+                        font.family: root.theme.bodyFont
+                        font.pixelSize: 16
+                        horizontalAlignment: Text.AlignHCenter
                         Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        clip: true
+                        wrapMode: Text.WordWrap
+                    }
+                }
 
-                        Column {
-                            width: parent.width
+                ListView {
+                    id: historyList
+                    anchors.fill: parent
+                    visible: root.hasEntries
+                    clip: true
+                    spacing: 10
+                    model: root.controller.historyEntriesModel.count
+                    boundsBehavior: Flickable.StopAtBounds
+
+                    delegate: ContentCard {
+                        required property int index
+                        readonly property var itemData: root.controller.historyEntriesModel.get(index)
+                        theme: root.theme
+                        padding: 16
+                        width: historyList.width
+                        height: 124
+                        fillColor: root.theme.surface
+
+                        RowLayout {
+                            anchors.fill: parent
                             spacing: 14
 
-                            Repeater {
-                                model: root.controller.historyEntriesModel.count
+                            Rectangle {
+                                Layout.preferredWidth: 44
+                                Layout.preferredHeight: 44
+                                radius: 14
+                                color: root.theme.primarySoft
 
-                                delegate: Rectangle {
-                                    required property int index
-                                    readonly property var itemData: root.controller.historyEntriesModel.get(index)
-                                    width: parent ? parent.width : 0
-                                    height: summaryText.implicitHeight + metaRow.implicitHeight + 68
-                                    radius: root.theme.radiusCardSm
-                                    border.width: root.theme.borderStrong
-                                    border.color: root.theme.text
-                                    color: root.theme.surface
-
-                                    MouseArea {
-                                        anchors.fill: parent
-                                        onClicked: root.controller.openHistoryItem(itemData.id || "")
-                                    }
-
-                                    ColumnLayout {
-                                        anchors.fill: parent
-                                        anchors.margins: 20
-                                        spacing: 10
-
-                                        RowLayout {
-                                            Layout.fillWidth: true
-                                            spacing: 12
-
-                                            Text {
-                                                text: itemData.mode_label || "Saved Result"
-                                                color: root.theme.text
-                                                font.family: root.theme.displayFont
-                                                font.pixelSize: 28
-                                                font.weight: root.theme.weightStrong
-                                                Layout.fillWidth: true
-                                                elide: Text.ElideRight
-                                            }
-
-                                            Text {
-                                                text: root.humanize(itemData.status || "")
-                                                color: root.theme.textSecondary
-                                                font.family: root.theme.displayFont
-                                                font.pixelSize: 16
-                                                font.weight: root.theme.weightStrong
-                                            }
-                                        }
-
-                                        Text {
-                                            text: itemData.created_at || ""
-                                            color: root.theme.textSecondary
-                                            font.family: root.theme.bodyFont
-                                            font.pixelSize: 16
-                                            font.weight: root.theme.weightRegular
-                                            Layout.fillWidth: true
-                                            elide: Text.ElideRight
-                                        }
-
-                                        Text {
-                                            id: summaryText
-                                            text: itemData.summary || ""
-                                            color: root.theme.text
-                                            font.family: root.theme.bodyFont
-                                            font.pixelSize: 20
-                                            font.weight: root.theme.weightRegular
-                                            Layout.fillWidth: true
-                                            wrapMode: Text.WordWrap
-                                            maximumLineCount: 3
-                                            elide: Text.ElideRight
-                                        }
-
-                                        RowLayout {
-                                            id: metaRow
-                                            Layout.fillWidth: true
-                                            spacing: 12
-
-                                            Text {
-                                                visible: (itemData.model_used || "").length > 0
-                                                text: "Model: " + (itemData.model_used || "")
-                                                color: root.theme.textSecondary
-                                                font.family: root.theme.bodyFont
-                                                font.pixelSize: 15
-                                                font.weight: root.theme.weightRegular
-                                                elide: Text.ElideRight
-                                            }
-
-                                            Text {
-                                                visible: root.formatDuration(itemData.duration_seconds || "").length > 0
-                                                text: "Time: " + root.formatDuration(itemData.duration_seconds || "")
-                                                color: root.theme.textSecondary
-                                                font.family: root.theme.bodyFont
-                                                font.pixelSize: 15
-                                                font.weight: root.theme.weightRegular
-                                                elide: Text.ElideRight
-                                            }
-
-                                            Text {
-                                                visible: (itemData.retry_status || "").length > 0
-                                                text: "Retry: " + root.humanize(itemData.retry_status || "")
-                                                color: root.theme.textSecondary
-                                                font.family: root.theme.bodyFont
-                                                font.pixelSize: 15
-                                                font.weight: root.theme.weightRegular
-                                                elide: Text.ElideRight
-                                            }
-                                        }
-                                    }
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: (itemData.mode_label || "R").slice(0, 1).toUpperCase()
+                                    color: root.theme.primaryStrong
+                                    font.family: root.theme.displayFont
+                                    font.pixelSize: 20
+                                    font.weight: root.theme.weightHeavy
                                 }
                             }
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 3
+
+                                Text {
+                                    text: itemData.mode_label || "Saved Result"
+                                    color: root.theme.text
+                                    font.family: root.theme.displayFont
+                                    font.pixelSize: 22
+                                    font.weight: root.theme.weightHeavy
+                                    Layout.fillWidth: true
+                                    elide: Text.ElideRight
+                                }
+
+                                Text {
+                                    text: itemData.summary || ""
+                                    color: root.theme.textMuted
+                                    font.family: root.theme.bodyFont
+                                    font.pixelSize: 15
+                                    Layout.fillWidth: true
+                                    maximumLineCount: 2
+                                    wrapMode: Text.WordWrap
+                                    elide: Text.ElideRight
+                                }
+
+                                Text {
+                                    text: [itemData.created_at || "", root.formatDuration(itemData.duration_seconds || "")].filter(function(value) { return value.length > 0 }).join("  |  ")
+                                    color: root.theme.textMuted
+                                    font.family: root.theme.bodyFont
+                                    font.pixelSize: 13
+                                    Layout.fillWidth: true
+                                    elide: Text.ElideRight
+                                }
+                            }
+
+                            StatusChip {
+                                theme: root.theme
+                                label: root.humanize(itemData.status || "Saved")
+                                tone: root.toneForStatus(itemData.status || "")
+                            }
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: root.controller.openHistoryItem(itemData.id || itemData.entry_id || "")
                         }
                     }
                 }
@@ -233,23 +242,21 @@ Item {
 
         RowLayout {
             Layout.fillWidth: true
-            spacing: 16
+            spacing: 12
 
-            ActionButton {
+            SecondaryButton {
                 theme: root.theme
                 text: "BACK"
                 onClicked: root.controller.goBack()
             }
 
-            Item {
-                Layout.fillWidth: true
-            }
+            Item { Layout.fillWidth: true }
 
-            ActionButton {
+            SecondaryButton {
                 theme: root.theme
-                destructive: true
+                tone: "danger"
                 text: "CLEAR HISTORY"
-                implicitWidth: 220
+                implicitWidth: 190
                 enabled: root.hasEntries && root.controller.historyState !== "loading"
                 onClicked: clearHistoryDialog.open()
             }
@@ -262,34 +269,33 @@ Item {
         modal: true
         focus: true
         width: 500
-        padding: 0
+        padding: 24
         closePolicy: Popup.CloseOnEscape
         background: Rectangle {
-            radius: root.theme.radiusCard
-            border.width: root.theme.borderStrong
-            border.color: root.theme.text
+            radius: root.theme.radiusSetupCard
+            border.width: 1
+            border.color: root.theme.borderSoft
             color: root.theme.surface
         }
 
         contentItem: ColumnLayout {
-            spacing: 20
+            spacing: 16
 
             Text {
                 text: "Clear saved history?"
                 color: root.theme.text
                 font.family: root.theme.displayFont
-                font.pixelSize: 30
-                font.weight: root.theme.weightStrong
+                font.pixelSize: 28
+                font.weight: root.theme.weightHeavy
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
             }
 
             Text {
                 text: "This removes stored text results only. Wi-Fi setup and your OpenAI key stay untouched."
-                color: root.theme.textSecondary
+                color: root.theme.textMuted
                 font.family: root.theme.bodyFont
-                font.pixelSize: 19
-                font.weight: root.theme.weightRegular
+                font.pixelSize: 16
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
             }
@@ -298,19 +304,17 @@ Item {
                 Layout.fillWidth: true
                 spacing: 12
 
-                Item {
-                    Layout.fillWidth: true
-                }
+                Item { Layout.fillWidth: true }
 
-                ActionButton {
+                SecondaryButton {
                     theme: root.theme
                     text: "CANCEL"
                     onClicked: clearHistoryDialog.close()
                 }
 
-                ActionButton {
+                PrimaryButton {
                     theme: root.theme
-                    destructive: true
+                    tone: "danger"
                     text: "CLEAR"
                     onClicked: {
                         clearHistoryDialog.close()

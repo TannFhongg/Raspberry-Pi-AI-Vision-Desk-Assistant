@@ -9,112 +9,118 @@ Item {
     required property QtObject theme
     required property var controller
 
-    RowLayout {
+    ColumnLayout {
         anchors.fill: parent
-        spacing: 30
+        spacing: 12
 
-        Rectangle {
+        RowLayout {
             Layout.fillWidth: true
-            Layout.fillHeight: true
-            radius: root.theme.radiusCard
-            border.width: root.theme.borderStrong
-            border.color: root.theme.text
-            color: root.theme.surface
 
-            ColumnLayout {
-                anchors.fill: parent
-                anchors.margins: 34
-                spacing: 28
+            Text {
+                text: "Processing"
+                color: root.theme.text
+                font.family: root.theme.displayFont
+                font.pixelSize: 34
+                font.weight: root.theme.weightHeavy
+                Layout.fillWidth: true
+                renderType: Text.NativeRendering
+            }
 
-                Text {
-                    text: root.controller.processingTitle
-                    color: root.theme.text
-                    font.family: root.theme.displayFont
-                    font.pixelSize: 64
-                    font.weight: root.theme.weightHeavy
-                    Layout.fillWidth: true
-                    wrapMode: Text.WordWrap
-                }
-
-                Text {
-                    text: root.controller.processingSubtitle
-                    color: root.theme.textSecondary
-                    font.family: root.theme.displayFont
-                    font.pixelSize: 28
-                    font.weight: root.theme.weightStrong
-                    Layout.fillWidth: true
-                    wrapMode: Text.WordWrap
-                }
-
-                ProgressSteps {
-                    theme: root.theme
-                    model: root.controller.progressStepsModel
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                }
+            StatusChip {
+                theme: root.theme
+                label: "Mode"
+                value: root.controller.processingModeLabel
+                tone: "info"
             }
         }
 
-        Rectangle {
-            Layout.preferredWidth: 300
-            Layout.fillHeight: true
-            radius: root.theme.radiusCard
-            border.width: root.theme.borderStrong
-            border.color: root.controller.processingStatusTone === "error" ? root.theme.error
-                         : root.controller.processingStatusTone === "queued" ? root.theme.warning
-                         : root.controller.processingStatusTone === "done" ? root.theme.success
-                         : root.theme.primary
-            color: root.controller.processingStatusTone === "error" ? root.theme.errorFill
-                 : root.controller.processingStatusTone === "queued" ? root.theme.warningFill
-                 : root.controller.processingStatusTone === "done" ? root.theme.successFill
-                 : root.theme.surface
+        ContentCard {
+            theme: root.theme
+            padding: 28
+            Layout.fillWidth: true
+            Layout.preferredHeight: 540
+            Layout.maximumHeight: 540
 
             ColumnLayout {
                 anchors.fill: parent
-                anchors.margins: 24
-                spacing: 18
+                spacing: 20
 
-                Text {
-                    text: "Current Mode"
-                    color: root.theme.text
-                    font.family: root.theme.displayFont
-                    font.pixelSize: 26
-                    font.weight: root.theme.weightHeavy
+                ColumnLayout {
+                    Layout.alignment: Qt.AlignHCenter
+                    Layout.maximumWidth: 620
                     Layout.fillWidth: true
-                }
-
-                Text {
-                    text: root.controller.processingModeLabel
-                    color: root.theme.text
-                    font.family: root.theme.displayFont
-                    font.pixelSize: 24
-                    font.weight: root.theme.weightStrong
-                    wrapMode: Text.WordWrap
-                    Layout.fillWidth: true
-                }
-
-                Rectangle {
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    radius: 28
-                    border.width: root.theme.borderStrong
-                    border.color: parent.parent.border.color
-                    color: parent.parent.color
+                    spacing: 6
 
                     Text {
-                        anchors.centerIn: parent
-                        width: parent.width - 36
-                        text: root.controller.processingStatusMessage
+                        text: root.controller.processingTitle
                         color: root.theme.text
                         font.family: root.theme.displayFont
-                        font.pixelSize: 26
-                        font.weight: root.theme.weightStrong
+                        font.pixelSize: 44
+                        font.weight: root.theme.weightHeavy
                         horizontalAlignment: Text.AlignHCenter
+                        Layout.fillWidth: true
+                        wrapMode: Text.WordWrap
+                    }
+
+                    Text {
+                        text: root.controller.processingSubtitle
+                        color: root.theme.textMuted
+                        font.family: root.theme.bodyFont
+                        font.pixelSize: 18
+                        font.weight: root.theme.weightRegular
+                        horizontalAlignment: Text.AlignHCenter
+                        Layout.fillWidth: true
                         wrapMode: Text.WordWrap
                     }
                 }
+
+                PipelineProgress {
+                    theme: root.theme
+                    backendState: root.controller.applicationState
+                    tone: root.controller.processingStatusTone
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 94
+                }
+
+                Item { Layout.fillHeight: true }
+
+                StatusCard {
+                    theme: root.theme
+                    padding: 20
+                    fillColor: root.controller.processingStatusTone === "error" ? root.theme.errorFill
+                               : root.controller.processingStatusTone === "queued" ? root.theme.warningFill
+                               : root.theme.primarySoft
+                    borderColor: root.controller.processingStatusTone === "error" ? "#F0BABA"
+                                 : root.controller.processingStatusTone === "queued" ? "#F1D38C"
+                                 : "#C9DCFF"
+                    Layout.alignment: Qt.AlignHCenter
+                    Layout.maximumWidth: 620
+                    Layout.fillWidth: true
+                    title: "Live pipeline status"
+                    eyebrow: root.controller.processingStatusTone === "queued" ? "Retry queued" : "In progress"
+                    value: root.controller.processingStatusMessage
+                    message: "Progress reflects the active capture and analysis worker."
+                    tone: root.controller.processingStatusTone
+
+                    Rectangle {
+                        visible: root.controller.processingStatusTone === "active"
+                        Layout.alignment: Qt.AlignHCenter
+                        Layout.preferredWidth: 9
+                        Layout.preferredHeight: 9
+                        radius: 5
+                        color: root.theme.primaryStrong
+
+                        SequentialAnimation on opacity {
+                            running: root.controller.processingStatusTone === "active"
+                            loops: Animation.Infinite
+                            NumberAnimation { to: 0.28; duration: 650 }
+                            NumberAnimation { to: 1.0; duration: 650 }
+                        }
+                    }
+                }
+
+                Item { Layout.fillHeight: true }
             }
         }
     }
 }
-

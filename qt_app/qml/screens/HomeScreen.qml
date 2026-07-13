@@ -14,13 +14,6 @@ Item {
     property string pendingResetDescription: ""
     property bool pendingRemoveWifiProfile: false
 
-    function cardWidthFor(index, availableWidth) {
-        if (index >= 3) {
-            return Math.max(280, (availableWidth - 26) / 2)
-        }
-        return Math.max(240, (availableWidth - (26 * 2)) / 3)
-    }
-
     function configureReset(mode) {
         pendingResetMode = mode
         pendingRemoveWifiProfile = false
@@ -60,38 +53,78 @@ Item {
         root.controller.deleteAllData()
     }
 
+    function openDeviceActionsPreview() {
+        deviceActionsDialog.open()
+    }
+
     ColumnLayout {
         anchors.fill: parent
-        spacing: 24
+        spacing: 12
 
-        Text {
-            text: "What would you like to do?"
-            color: root.theme.text
-            font.family: root.theme.displayFont
-            font.pixelSize: 54
-            font.weight: root.theme.weightHeavy
+        RowLayout {
             Layout.fillWidth: true
+
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 2
+
+                Text {
+                    text: "Choose a task"
+                    color: root.theme.text
+                    font.family: root.theme.displayFont
+                    font.pixelSize: 34
+                    font.weight: root.theme.weightHeavy
+                    renderType: Text.NativeRendering
+                }
+
+                Text {
+                    text: "Select the assistant mode that best matches what is in front of the camera."
+                    color: root.theme.textMuted
+                    font.family: root.theme.bodyFont
+                    font.pixelSize: 15
+                    font.weight: root.theme.weightRegular
+                    renderType: Text.NativeRendering
+                }
+            }
+
+            StatusChip {
+                theme: root.theme
+                label: "Device"
+                value: root.controller.applicationState === "READY" ? "Ready" : root.controller.applicationState
+                tone: root.controller.applicationState === "READY" ? "success" : "info"
+            }
         }
 
-        Flow {
-            id: modeFlow
+        ContentCard {
+            theme: root.theme
+            padding: 18
             Layout.fillWidth: true
-            Layout.fillHeight: true
-            spacing: 26
+            Layout.preferredHeight: 430
+            Layout.maximumHeight: 430
 
-            Repeater {
-                model: root.controller.modeCardsModel.count
+            GridLayout {
+                anchors.fill: parent
+                columns: 3
+                columnSpacing: 14
+                rowSpacing: 14
 
-                delegate: ModeCard {
-                    required property int index
-                    property var itemData: root.controller.modeCardsModel.get(index)
-                    theme: root.theme
-                    title: itemData.name || ""
-                    description: itemData.description || ""
-                    selected: (itemData.id || "") === root.controller.selectedMode
-                    width: root.cardWidthFor(index, modeFlow.width)
-                    height: 170
-                    onClicked: root.controller.selectMode(itemData.id || "")
+                Repeater {
+                    model: root.controller.modeCardsModel.count
+
+                    delegate: ModeCard {
+                        required property int index
+                        property var itemData: root.controller.modeCardsModel.get(index)
+                        theme: root.theme
+                        modeId: itemData.id || itemData.mode_id || ""
+                        title: itemData.name || ""
+                        description: itemData.description || ""
+                        selected: (itemData.id || itemData.mode_id || "") === root.controller.selectedMode
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        Layout.minimumWidth: 0
+                        Layout.preferredHeight: 142
+                        onClicked: root.controller.selectMode(itemData.id || itemData.mode_id || "")
+                    }
                 }
             }
         }
@@ -102,16 +135,16 @@ Item {
             text: root.controller.deviceActionsStatus
             color: root.actionStatusColor()
             font.family: root.theme.bodyFont
-            font.pixelSize: 20
+            font.pixelSize: 15
             font.weight: root.theme.weightStrong
             wrapMode: Text.WordWrap
         }
 
         RowLayout {
             Layout.fillWidth: true
-            spacing: 16
+            spacing: 12
 
-            ActionButton {
+            SecondaryButton {
                 theme: root.theme
                 text: "RECENT RESULTS"
                 implicitWidth: 248
@@ -122,9 +155,9 @@ Item {
                 Layout.fillWidth: true
             }
 
-            ActionButton {
+            SecondaryButton {
                 theme: root.theme
-                destructive: true
+                tone: "danger"
                 text: "DEVICE ACTIONS"
                 implicitWidth: 248
                 enabled: !root.controller.deviceActionsBusy
@@ -138,160 +171,284 @@ Item {
         anchors.centerIn: parent
         modal: true
         focus: true
-        width: 620
-        padding: 0
+        width: 860
+        padding: 24
         closePolicy: Popup.CloseOnEscape
         background: Rectangle {
-            radius: root.theme.radiusCard
-            border.width: root.theme.borderStrong
-            border.color: root.theme.text
+            radius: root.theme.radiusSetupCard
+            border.width: 1
+            border.color: root.theme.borderSoft
             color: root.theme.surface
         }
 
         contentItem: ColumnLayout {
-            spacing: 18
+            spacing: 16
 
-            Text {
-                text: "Device Actions"
-                color: root.theme.text
-                font.family: root.theme.displayFont
-                font.pixelSize: 34
-                font.weight: root.theme.weightStrong
+            RowLayout {
                 Layout.fillWidth: true
-            }
-
-            Text {
-                text: "Use these tools carefully. Configuration Reset returns to Setup Wizard. User-Data Reset keeps setup in place. Full Factory Reset clears both."
-                color: root.theme.textSecondary
-                font.family: root.theme.bodyFont
-                font.pixelSize: 19
-                font.weight: root.theme.weightRegular
-                Layout.fillWidth: true
-                wrapMode: Text.WordWrap
-            }
-
-            Rectangle {
-                Layout.fillWidth: true
-                radius: root.theme.radiusCardSm
-                color: root.theme.mutedFill
-                border.width: 1
-                border.color: "#d2dae3"
+                spacing: 16
 
                 ColumnLayout {
-                    anchors.fill: parent
-                    anchors.margins: 18
-                    spacing: 12
+                    Layout.fillWidth: true
+                    spacing: 2
 
                     Text {
-                        text: "User-Data Reset"
+                        text: "Device Actions"
                         color: root.theme.text
                         font.family: root.theme.displayFont
-                        font.pixelSize: 28
-                        font.weight: root.theme.weightStrong
+                        font.pixelSize: 32
+                        font.weight: root.theme.weightHeavy
+                        renderType: Text.NativeRendering
                     }
 
                     Text {
-                        text: "Clears history, retry queue, cached previews, and private media."
-                        color: root.theme.textSecondary
+                        text: "Choose exactly what to reset. VisionDesk and its installed service remain in place."
+                        color: root.theme.textMuted
                         font.family: root.theme.bodyFont
-                        font.pixelSize: 18
-                        wrapMode: Text.WordWrap
+                        font.pixelSize: 15
                         Layout.fillWidth: true
+                        wrapMode: Text.WordWrap
                     }
+                }
 
-                    ActionButton {
-                        theme: root.theme
-                        text: "CLEAR USER DATA"
-                        enabled: !root.controller.deviceActionsBusy
-                        onClicked: {
-                            root.configureReset("user_data")
-                            deviceActionsDialog.close()
-                            confirmResetDialog.open()
-                        }
-                    }
+                StatusChip {
+                    theme: root.theme
+                    label: "Safety"
+                    value: "3 reset modes"
+                    tone: "warning"
                 }
             }
 
-            Rectangle {
+            GridLayout {
+                columns: 3
+                columnSpacing: 14
                 Layout.fillWidth: true
-                radius: root.theme.radiusCardSm
-                color: root.theme.warningFill
-                border.width: 1
-                border.color: "#e2c16b"
 
-                ColumnLayout {
-                    anchors.fill: parent
-                    anchors.margins: 18
-                    spacing: 12
+                ContentCard {
+                    theme: root.theme
+                    padding: 16
+                    fillColor: root.theme.surface
+                    borderColor: "#C9DCFF"
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: 0
+                    Layout.preferredHeight: 248
 
-                    Text {
-                        text: "Configuration Reset"
-                        color: root.theme.text
-                        font.family: root.theme.displayFont
-                        font.pixelSize: 28
-                        font.weight: root.theme.weightStrong
-                    }
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: 10
 
-                    Text {
-                        text: "Clears the OpenAI key, setup completion, and device overrides. VisionDesk restarts directly into Setup Wizard."
-                        color: root.theme.textSecondary
-                        font.family: root.theme.bodyFont
-                        font.pixelSize: 18
-                        wrapMode: Text.WordWrap
-                        Layout.fillWidth: true
-                    }
+                        RowLayout {
+                            Layout.fillWidth: true
 
-                    ActionButton {
-                        theme: root.theme
-                        text: "RESET CONFIGURATION"
-                        enabled: !root.controller.deviceActionsBusy
-                        onClicked: {
-                            root.configureReset("configuration")
-                            deviceActionsDialog.close()
-                            confirmResetDialog.open()
+                            Rectangle {
+                                Layout.preferredWidth: 42
+                                Layout.preferredHeight: 42
+                                radius: 14
+                                color: root.theme.primarySoft
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "DATA"
+                                    color: root.theme.primaryStrong
+                                    font.family: root.theme.displayFont
+                                    font.pixelSize: 11
+                                    font.weight: root.theme.weightHeavy
+                                }
+                            }
+
+                            Item { Layout.fillWidth: true }
+
+                            StatusChip {
+                                theme: root.theme
+                                label: "Keeps setup"
+                                tone: "info"
+                            }
+                        }
+
+                        Text {
+                            text: "Clear user data"
+                            color: root.theme.text
+                            font.family: root.theme.displayFont
+                            font.pixelSize: 23
+                            font.weight: root.theme.weightHeavy
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                        }
+
+                        Text {
+                            text: "Remove history, retry queue, cached previews, and private media."
+                            color: root.theme.textMuted
+                            font.family: root.theme.bodyFont
+                            font.pixelSize: 14
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                        }
+
+                        Item { Layout.fillHeight: true }
+
+                        PrimaryButton {
+                            theme: root.theme
+                            text: "CLEAR DATA"
+                            Layout.fillWidth: true
+                            enabled: !root.controller.deviceActionsBusy
+                            onClicked: {
+                                root.configureReset("user_data")
+                                deviceActionsDialog.close()
+                                confirmResetDialog.open()
+                            }
                         }
                     }
                 }
-            }
 
-            Rectangle {
-                Layout.fillWidth: true
-                radius: root.theme.radiusCardSm
-                color: root.theme.errorFill
-                border.width: 1
-                border.color: "#d98282"
+                ContentCard {
+                    theme: root.theme
+                    padding: 16
+                    fillColor: root.theme.surface
+                    borderColor: "#F1D38C"
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: 0
+                    Layout.preferredHeight: 248
 
-                ColumnLayout {
-                    anchors.fill: parent
-                    anchors.margins: 18
-                    spacing: 12
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: 10
 
-                    Text {
-                        text: "Full Factory Reset"
-                        color: root.theme.text
-                        font.family: root.theme.displayFont
-                        font.pixelSize: 28
-                        font.weight: root.theme.weightStrong
+                        RowLayout {
+                            Layout.fillWidth: true
+
+                            Rectangle {
+                                Layout.preferredWidth: 42
+                                Layout.preferredHeight: 42
+                                radius: 14
+                                color: root.theme.warningFill
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "CFG"
+                                    color: root.theme.warningStrong
+                                    font.family: root.theme.displayFont
+                                    font.pixelSize: 11
+                                    font.weight: root.theme.weightHeavy
+                                }
+                            }
+
+                            Item { Layout.fillWidth: true }
+
+                            StatusChip {
+                                theme: root.theme
+                                label: "Returns to setup"
+                                tone: "warning"
+                            }
+                        }
+
+                        Text {
+                            text: "Reset configuration"
+                            color: root.theme.text
+                            font.family: root.theme.displayFont
+                            font.pixelSize: 23
+                            font.weight: root.theme.weightHeavy
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                        }
+
+                        Text {
+                            text: "Clear the OpenAI key, setup completion, and device overrides."
+                            color: root.theme.textMuted
+                            font.family: root.theme.bodyFont
+                            font.pixelSize: 14
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                        }
+
+                        Item { Layout.fillHeight: true }
+
+                        PrimaryButton {
+                            theme: root.theme
+                            text: "RESET CONFIG"
+                            Layout.fillWidth: true
+                            enabled: !root.controller.deviceActionsBusy
+                            onClicked: {
+                                root.configureReset("configuration")
+                                deviceActionsDialog.close()
+                                confirmResetDialog.open()
+                            }
+                        }
                     }
+                }
 
-                    Text {
-                        text: "Clears configuration plus all user data. This keeps the installed app and service, then relaunches into Setup Wizard."
-                        color: root.theme.textSecondary
-                        font.family: root.theme.bodyFont
-                        font.pixelSize: 18
-                        wrapMode: Text.WordWrap
-                        Layout.fillWidth: true
-                    }
+                ContentCard {
+                    theme: root.theme
+                    padding: 16
+                    fillColor: root.theme.surface
+                    borderColor: "#F0BABA"
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: 0
+                    Layout.preferredHeight: 248
 
-                    ActionButton {
-                        theme: root.theme
-                        destructive: true
-                        text: "FULL FACTORY RESET"
-                        enabled: !root.controller.deviceActionsBusy
-                        onClicked: {
-                            root.configureReset("factory_reset")
-                            deviceActionsDialog.close()
-                            fullResetDialog.open()
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: 10
+
+                        RowLayout {
+                            Layout.fillWidth: true
+
+                            Rectangle {
+                                Layout.preferredWidth: 42
+                                Layout.preferredHeight: 42
+                                radius: 14
+                                color: root.theme.errorFill
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "!"
+                                    color: root.theme.errorStrong
+                                    font.family: root.theme.displayFont
+                                    font.pixelSize: 24
+                                    font.weight: root.theme.weightHeavy
+                                }
+                            }
+
+                            Item { Layout.fillWidth: true }
+
+                            StatusChip {
+                                theme: root.theme
+                                label: "Most destructive"
+                                tone: "error"
+                            }
+                        }
+
+                        Text {
+                            text: "Full factory reset"
+                            color: root.theme.text
+                            font.family: root.theme.displayFont
+                            font.pixelSize: 23
+                            font.weight: root.theme.weightHeavy
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                        }
+
+                        Text {
+                            text: "Clear configuration and all private data, then return to Setup."
+                            color: root.theme.textMuted
+                            font.family: root.theme.bodyFont
+                            font.pixelSize: 14
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                        }
+
+                        Item { Layout.fillHeight: true }
+
+                        PrimaryButton {
+                            theme: root.theme
+                            tone: "danger"
+                            text: "FULL RESET"
+                            Layout.fillWidth: true
+                            enabled: !root.controller.deviceActionsBusy
+                            onClicked: {
+                                root.configureReset("factory_reset")
+                                deviceActionsDialog.close()
+                                fullResetDialog.open()
+                            }
                         }
                     }
                 }
@@ -301,11 +458,15 @@ Item {
                 Layout.fillWidth: true
                 spacing: 14
 
-                Item {
+                Text {
+                    text: "All reset actions require confirmation."
+                    color: root.theme.textMuted
+                    font.family: root.theme.bodyFont
+                    font.pixelSize: 13
                     Layout.fillWidth: true
                 }
 
-                ActionButton {
+                SecondaryButton {
                     theme: root.theme
                     text: "CLOSE"
                     onClicked: deviceActionsDialog.close()
@@ -319,68 +480,120 @@ Item {
         anchors.centerIn: parent
         modal: true
         focus: true
-        width: 560
-        padding: 0
+        width: 600
+        padding: 24
         closePolicy: Popup.CloseOnEscape
         background: Rectangle {
-            radius: root.theme.radiusCard
-            border.width: root.theme.borderStrong
-            border.color: root.theme.text
+            radius: root.theme.radiusSetupCard
+            border.width: 1
+            border.color: root.theme.borderSoft
             color: root.theme.surface
         }
 
         contentItem: ColumnLayout {
-            spacing: 20
+            spacing: 16
 
-            Text {
-                text: root.pendingResetTitle
-                color: root.theme.text
-                font.family: root.theme.displayFont
-                font.pixelSize: 32
-                font.weight: root.theme.weightStrong
+            RowLayout {
                 Layout.fillWidth: true
-                wrapMode: Text.WordWrap
+
+                Rectangle {
+                    Layout.preferredWidth: 42
+                    Layout.preferredHeight: 42
+                    radius: 14
+                    color: root.pendingResetMode === "configuration" ? root.theme.warningFill : root.theme.errorFill
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "!"
+                        color: root.pendingResetMode === "configuration" ? root.theme.warningStrong : root.theme.errorStrong
+                        font.family: root.theme.displayFont
+                        font.pixelSize: 24
+                        font.weight: root.theme.weightHeavy
+                    }
+                }
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 1
+
+                    Text {
+                        text: "Confirm action"
+                        color: root.theme.textMuted
+                        font.family: root.theme.bodyFont
+                        font.pixelSize: 13
+                        font.weight: root.theme.weightStrong
+                    }
+
+                    Text {
+                        text: root.pendingResetTitle
+                        color: root.theme.text
+                        font.family: root.theme.displayFont
+                        font.pixelSize: 28
+                        font.weight: root.theme.weightHeavy
+                        Layout.fillWidth: true
+                        wrapMode: Text.WordWrap
+                    }
+                }
             }
 
             Text {
                 text: root.pendingResetDescription
                 color: root.theme.textSecondary
                 font.family: root.theme.bodyFont
-                font.pixelSize: 20
-                font.weight: root.theme.weightRegular
+                font.pixelSize: 16
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
             }
 
-            Text {
-                text: root.pendingResetMode === "configuration"
-                    ? "Affected areas: /etc/visiondesk/visiondesk.env, /etc/visiondesk/device.yaml, and /var/lib/visiondesk/setup_state.json."
-                    : "Affected areas: /var/lib/visiondesk/private, /var/lib/visiondesk/result_history.json, /var/lib/visiondesk/latest_result.txt, and retry queue data."
-                color: root.theme.text
-                font.family: root.theme.bodyFont
-                font.pixelSize: 18
-                font.weight: root.theme.weightStrong
+            ContentCard {
+                theme: root.theme
+                padding: 16
+                fillColor: root.pendingResetMode === "configuration" ? root.theme.warningFill : root.theme.errorFill
+                borderColor: root.pendingResetMode === "configuration" ? "#F1D38C" : "#F0BABA"
                 Layout.fillWidth: true
-                wrapMode: Text.WordWrap
+                Layout.preferredHeight: 94
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    spacing: 5
+
+                    Text {
+                        text: "Affected areas"
+                        color: root.pendingResetMode === "configuration" ? root.theme.warningStrong : root.theme.errorStrong
+                        font.family: root.theme.bodyFont
+                        font.pixelSize: 13
+                        font.weight: root.theme.weightStrong
+                    }
+
+                    Text {
+                        text: root.pendingResetMode === "configuration"
+                            ? "/etc/visiondesk/visiondesk.env, device.yaml, and setup state."
+                            : "Private media, saved results, retry queue, and cached previews."
+                        color: root.theme.text
+                        font.family: root.theme.bodyFont
+                        font.pixelSize: 15
+                        font.weight: root.theme.weightRegular
+                        Layout.fillWidth: true
+                        wrapMode: Text.WordWrap
+                    }
+                }
             }
 
             RowLayout {
                 Layout.fillWidth: true
-                spacing: 14
+                spacing: 12
 
-                Item {
-                    Layout.fillWidth: true
-                }
+                Item { Layout.fillWidth: true }
 
-                ActionButton {
+                SecondaryButton {
                     theme: root.theme
                     text: "CANCEL"
                     onClicked: confirmResetDialog.close()
                 }
 
-                ActionButton {
+                PrimaryButton {
                     theme: root.theme
-                    destructive: true
+                    tone: root.pendingResetMode === "configuration" ? "primary" : "danger"
                     text: root.pendingResetMode === "configuration" ? "RESET NOW" : "CLEAR NOW"
                     enabled: !root.controller.deviceActionsBusy
                     onClicked: {
@@ -397,78 +610,163 @@ Item {
         anchors.centerIn: parent
         modal: true
         focus: true
-        width: 620
-        padding: 0
+        width: 640
+        padding: 24
         closePolicy: Popup.CloseOnEscape
         background: Rectangle {
-            radius: root.theme.radiusCard
-            border.width: root.theme.borderStrong
-            border.color: root.theme.text
+            radius: root.theme.radiusSetupCard
+            border.width: 1
+            border.color: root.theme.borderSoft
             color: root.theme.surface
         }
 
         contentItem: ColumnLayout {
-            spacing: 20
+            spacing: 16
 
-            Text {
-                text: "Full Factory Reset"
-                color: root.theme.text
-                font.family: root.theme.displayFont
-                font.pixelSize: 34
-                font.weight: root.theme.weightStrong
+            RowLayout {
                 Layout.fillWidth: true
+
+                Rectangle {
+                    Layout.preferredWidth: 44
+                    Layout.preferredHeight: 44
+                    radius: 15
+                    color: root.theme.errorFill
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "!"
+                        color: root.theme.errorStrong
+                        font.family: root.theme.displayFont
+                        font.pixelSize: 25
+                        font.weight: root.theme.weightHeavy
+                    }
+                }
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 1
+
+                    Text {
+                        text: "Full Factory Reset"
+                        color: root.theme.text
+                        font.family: root.theme.displayFont
+                        font.pixelSize: 30
+                        font.weight: root.theme.weightHeavy
+                    }
+
+                    Text {
+                        text: "Strongest recovery path"
+                        color: root.theme.errorStrong
+                        font.family: root.theme.bodyFont
+                        font.pixelSize: 13
+                        font.weight: root.theme.weightStrong
+                    }
+                }
             }
 
-            Text {
-                text: "This is the strongest reset path. It clears configuration, setup completion, saved history, retry data, and private media. The installed app stays in place."
-                color: root.theme.textSecondary
-                font.family: root.theme.bodyFont
-                font.pixelSize: 20
+            ContentCard {
+                theme: root.theme
+                padding: 16
+                fillColor: root.theme.errorFill
+                borderColor: "#F0BABA"
                 Layout.fillWidth: true
-                wrapMode: Text.WordWrap
+                Layout.preferredHeight: 88
+
+                Text {
+                    anchors.fill: parent
+                    text: "This clears configuration, setup completion, saved history, retry data, and private media. VisionDesk remains installed and then relaunches into Setup."
+                    color: root.theme.textSecondary
+                    font.family: root.theme.bodyFont
+                    font.pixelSize: 15
+                    wrapMode: Text.WordWrap
+                    verticalAlignment: Text.AlignVCenter
+                }
             }
 
             CheckBox {
                 id: removeWifiCheckbox
-                text: "Also remove the saved Wi-Fi profile after the final confirmation"
+                text: "Also remove the saved Wi-Fi profile after final confirmation"
                 checked: false
+                Layout.fillWidth: true
                 onToggled: root.pendingRemoveWifiProfile = checked
+
+                indicator: Rectangle {
+                    implicitWidth: 22
+                    implicitHeight: 22
+                    x: removeWifiCheckbox.leftPadding
+                    y: (removeWifiCheckbox.height - height) / 2
+                    radius: 7
+                    color: removeWifiCheckbox.checked ? root.theme.primaryStrong : root.theme.surface
+                    border.width: 1
+                    border.color: removeWifiCheckbox.checked ? root.theme.primaryStrong : root.theme.borderMuted
+
+                    Text {
+                        anchors.centerIn: parent
+                        visible: removeWifiCheckbox.checked
+                        text: "OK"
+                        color: root.theme.surface
+                        font.family: root.theme.displayFont
+                        font.pixelSize: 10
+                        font.weight: root.theme.weightHeavy
+                    }
+                }
+
+                contentItem: Text {
+                    text: removeWifiCheckbox.text
+                    leftPadding: removeWifiCheckbox.indicator.width + 10
+                    color: root.theme.textSecondary
+                    font.family: root.theme.bodyFont
+                    font.pixelSize: 15
+                    wrapMode: Text.WordWrap
+                    verticalAlignment: Text.AlignVCenter
+                }
             }
 
-            Text {
-                text: "Type ERASE VISIONDESK to unlock the final safety step."
-                color: root.theme.text
-                font.family: root.theme.bodyFont
-                font.pixelSize: 18
-                font.weight: root.theme.weightStrong
+            ColumnLayout {
                 Layout.fillWidth: true
-                wrapMode: Text.WordWrap
-            }
+                spacing: 6
 
-            TextField {
-                id: fullResetPhraseField
-                Layout.fillWidth: true
-                placeholderText: "ERASE VISIONDESK"
-                color: root.theme.text
-                font.family: root.theme.bodyFont
-                font.pixelSize: 20
-                background: Rectangle {
-                    radius: root.theme.radiusCardSm
-                    border.width: 2
-                    border.color: fullResetPhraseField.activeFocus ? root.theme.primaryStrong : "#c7d0da"
-                    color: root.theme.surface
+                Text {
+                    text: "Safety phrase"
+                    color: root.theme.text
+                    font.family: root.theme.bodyFont
+                    font.pixelSize: 13
+                    font.weight: root.theme.weightStrong
+                }
+
+                Text {
+                    text: "Type ERASE VISIONDESK to unlock the final confirmation."
+                    color: root.theme.textMuted
+                    font.family: root.theme.bodyFont
+                    font.pixelSize: 14
+                }
+
+                TextField {
+                    id: fullResetPhraseField
+                    Layout.fillWidth: true
+                    implicitHeight: 50
+                    placeholderText: "ERASE VISIONDESK"
+                    color: root.theme.text
+                    font.family: root.theme.bodyFont
+                    font.pixelSize: 18
+                    leftPadding: 16
+                    rightPadding: 16
+                    background: Rectangle {
+                        radius: root.theme.radiusControl
+                        border.width: 1
+                        border.color: fullResetPhraseField.activeFocus ? root.theme.primaryStrong : root.theme.borderMuted
+                        color: root.theme.surface
+                    }
                 }
             }
 
             RowLayout {
                 Layout.fillWidth: true
-                spacing: 14
+                spacing: 12
 
-                Item {
-                    Layout.fillWidth: true
-                }
+                Item { Layout.fillWidth: true }
 
-                ActionButton {
+                SecondaryButton {
                     theme: root.theme
                     text: "CANCEL"
                     onClicked: {
@@ -479,9 +777,9 @@ Item {
                     }
                 }
 
-                ActionButton {
+                PrimaryButton {
                     theme: root.theme
-                    destructive: true
+                    tone: "danger"
                     text: "CONTINUE"
                     enabled: fullResetPhraseField.text.trim() === "ERASE VISIONDESK" && !root.controller.deviceActionsBusy
                     onClicked: {
@@ -500,60 +798,111 @@ Item {
         modal: true
         focus: true
         width: 620
-        padding: 0
+        padding: 24
         closePolicy: Popup.CloseOnEscape
         background: Rectangle {
-            radius: root.theme.radiusCard
-            border.width: root.theme.borderStrong
-            border.color: root.theme.text
+            radius: root.theme.radiusSetupCard
+            border.width: 1
+            border.color: root.theme.borderSoft
             color: root.theme.surface
         }
 
         contentItem: ColumnLayout {
-            spacing: 20
+            spacing: 16
 
-            Text {
-                text: "Final Confirmation"
-                color: root.theme.text
-                font.family: root.theme.displayFont
-                font.pixelSize: 34
-                font.weight: root.theme.weightStrong
+            RowLayout {
                 Layout.fillWidth: true
+
+                Rectangle {
+                    Layout.preferredWidth: 42
+                    Layout.preferredHeight: 42
+                    radius: 14
+                    color: root.theme.errorFill
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "!"
+                        color: root.theme.errorStrong
+                        font.family: root.theme.displayFont
+                        font.pixelSize: 24
+                        font.weight: root.theme.weightHeavy
+                    }
+                }
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 1
+
+                    Text {
+                        text: "Final confirmation"
+                        color: root.theme.text
+                        font.family: root.theme.displayFont
+                        font.pixelSize: 29
+                        font.weight: root.theme.weightHeavy
+                    }
+
+                    Text {
+                        text: "Press and hold is required"
+                        color: root.theme.errorStrong
+                        font.family: root.theme.bodyFont
+                        font.pixelSize: 13
+                        font.weight: root.theme.weightStrong
+                    }
+                }
             }
 
             Text {
                 text: root.pendingRemoveWifiProfile
-                    ? "Press and hold to erase VisionDesk and remove the saved Wi-Fi profile."
-                    : "Press and hold to erase VisionDesk and relaunch into Setup Wizard."
+                    ? "Keep holding to erase VisionDesk and remove the saved Wi-Fi profile."
+                    : "Keep holding to erase VisionDesk and relaunch into Setup Wizard."
                 color: root.theme.textSecondary
                 font.family: root.theme.bodyFont
-                font.pixelSize: 20
+                font.pixelSize: 16
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
             }
 
             Rectangle {
+                id: holdSurface
                 Layout.fillWidth: true
-                implicitHeight: 96
-                radius: root.theme.radiusPill
-                border.width: root.theme.borderStrong
-                border.color: root.controller.deviceActionsBusy ? "#bbc4ce" : root.theme.text
-                color: root.controller.deviceActionsBusy ? root.theme.mutedFill : root.theme.errorFill
+                Layout.preferredHeight: 100
+                radius: root.theme.radiusControl
+                color: root.controller.deviceActionsBusy ? root.theme.mutedFill : root.theme.errorStrong
+                border.width: 1
+                border.color: root.controller.deviceActionsBusy ? root.theme.borderMuted : "#C83E3E"
 
-                Text {
+                ColumnLayout {
                     anchors.centerIn: parent
-                    text: root.controller.deviceActionsBusy ? "RESETTING..." : "PRESS AND HOLD TO ERASE"
-                    color: root.theme.text
-                    font.family: root.theme.displayFont
-                    font.pixelSize: 26
-                    font.weight: root.theme.weightStrong
+                    spacing: 3
+
+                    Text {
+                        text: root.controller.deviceActionsBusy ? "RESETTING..." : "PRESS AND HOLD TO ERASE"
+                        color: root.controller.deviceActionsBusy ? root.theme.unavailable : root.theme.surface
+                        font.family: root.theme.displayFont
+                        font.pixelSize: 23
+                        font.weight: root.theme.weightHeavy
+                        Layout.alignment: Qt.AlignHCenter
+                    }
+
+                    Text {
+                        visible: !root.controller.deviceActionsBusy
+                        text: "Hold for 1.6 seconds"
+                        color: Qt.rgba(1, 1, 1, 0.78)
+                        font.family: root.theme.bodyFont
+                        font.pixelSize: 13
+                        Layout.alignment: Qt.AlignHCenter
+                    }
                 }
 
                 MouseArea {
                     anchors.fill: parent
                     enabled: !root.controller.deviceActionsBusy
                     pressAndHoldInterval: 1600
+                    onPressed: holdSurface.opacity = 0.86
+                    onReleased: holdSurface.opacity = 1.0
+                    onCanceled: holdSurface.opacity = 1.0
                     onPressAndHold: {
+                        holdSurface.opacity = 1.0
                         holdResetDialog.close()
                         root.launchSelectedReset()
                     }
@@ -563,10 +912,10 @@ Item {
             Text {
                 text: root.controller.deviceActionsBusy
                     ? root.controller.deviceActionsStatus
-                    : "Keep holding until the action starts."
+                    : "Release at any time to cancel this final action."
                 color: root.actionStatusColor()
                 font.family: root.theme.bodyFont
-                font.pixelSize: 18
+                font.pixelSize: 14
                 font.weight: root.theme.weightStrong
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
@@ -574,13 +923,10 @@ Item {
 
             RowLayout {
                 Layout.fillWidth: true
-                spacing: 14
 
-                Item {
-                    Layout.fillWidth: true
-                }
+                Item { Layout.fillWidth: true }
 
-                ActionButton {
+                SecondaryButton {
                     theme: root.theme
                     text: "BACK"
                     enabled: !root.controller.deviceActionsBusy
