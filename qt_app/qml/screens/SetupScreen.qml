@@ -758,6 +758,7 @@ Item {
                         anchors.fill: parent
                         fillMode: Image.PreserveAspectFit
                         cache: false
+                        smooth: true
                         visible: root.controller.cameraPreviewAvailable
                         source: root.controller.cameraPreviewRevision > 0
                                 ? "image://visiondesk/camera/live?seq=" + root.controller.cameraPreviewRevision

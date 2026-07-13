@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import replace
-import io
 import logging
 import sys
 import threading
 import time
 from typing import Any, Iterator
 
+from PySide6.QtCore import QBuffer, QIODevice
+from PySide6.QtGui import QImage
 from PIL import Image, ImageDraw
 
 from camera.capture import (
@@ -109,11 +110,15 @@ class LivePreviewService:
         self._preview_size = (preview_width, preview_height)
         self._linux_snapshot_fallback = bool(prefer_snapshot_on_linux and self._linux_mode)
         self._condition = threading.Condition()
-        self._latest_frame = _build_placeholder_frame(
+        # Keep one detached image only. QImage implicit sharing lets the Qt UI consume
+        # this frame without the JPEG encode/decode cycle used by the legacy stream.
+        self._latest_image = _build_placeholder_image(
             "Starting live camera feed...",
             size=self._preview_size,
         )
         self._frame_version = 0
+        self._latest_jpeg: bytes | None = None
+        self._latest_jpeg_version = -1
         self._paused = False
         self._source_active = False
         self._stop_requested = False
@@ -122,9 +127,18 @@ class LivePreviewService:
         self._worker: threading.Thread | None = None
 
     def get_jpeg_frame(self, timeout_seconds: float = 1.0) -> bytes:
-        """Return the latest JPEG frame, waiting for the worker when needed."""
-        frame_bytes, _ = self._wait_for_frame(after_version=None, timeout_seconds=timeout_seconds)
-        return frame_bytes
+        """Return a JPEG only for legacy browser/MJPEG consumers."""
+        image, version = self._wait_for_image(after_version=None, timeout_seconds=timeout_seconds)
+        return self._jpeg_for_image(image, version)
+
+    def get_image_frame(self, timeout_seconds: float = 1.0) -> QImage:
+        """Return the latest preview QImage for the native Qt UI.
+
+        The returned value is an implicitly shared, immutable image. The preview worker
+        replaces rather than mutates its cached frame, so callers do not need a deep copy.
+        """
+        image, _ = self._wait_for_image(after_version=None, timeout_seconds=timeout_seconds)
+        return QImage(image)
 
     def iter_mjpeg_stream(
         self,
@@ -138,11 +152,12 @@ class LivePreviewService:
 
         try:
             while True:
-                frame_bytes, frame_version = self._wait_for_frame(
+                image, frame_version = self._wait_for_image(
                     after_version=last_version,
                     timeout_seconds=timeout_seconds,
                 )
                 last_version = frame_version
+                frame_bytes = self._jpeg_for_image(image, frame_version)
                 yield (
                     b"--" + separator + b"\r\n"
                     b"Content-Type: image/jpeg\r\n"
@@ -155,13 +170,13 @@ class LivePreviewService:
         except GeneratorExit:
             return
 
-    def _wait_for_frame(
+    def _wait_for_image(
         self,
         *,
         after_version: int | None,
         timeout_seconds: float,
-    ) -> tuple[bytes, int]:
-        """Return the latest frame, optionally waiting for a newer version."""
+    ) -> tuple[QImage, int]:
+        """Return the latest image, optionally waiting for a newer version."""
         with self._condition:
             paused = self._paused
 
@@ -171,27 +186,40 @@ class LivePreviewService:
 
         with self._condition:
             while not self._stop_requested:
-                has_frame = self._latest_frame is not None
+                has_frame = not self._latest_image.isNull()
                 version_ready = after_version is None or self._frame_version > after_version
                 if has_frame and version_ready:
-                    return self._latest_frame, self._frame_version
+                    return QImage(self._latest_image), self._frame_version
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     break
                 self._condition.wait(timeout=remaining)
 
-            fallback_frame = self._latest_frame
+            fallback_image = QImage(self._latest_image)
             fallback_version = self._frame_version
 
-        if fallback_frame is not None:
-            return fallback_frame, fallback_version
+        if not fallback_image.isNull():
+            return fallback_image, fallback_version
         return (
-            _build_placeholder_frame(
+            _build_placeholder_image(
                 "Live camera feed unavailable.",
                 size=self._preview_size,
             ),
             fallback_version,
         )
+
+    def _jpeg_for_image(self, image: QImage, version: int) -> bytes:
+        """Encode one JPEG per frame only when a legacy consumer asks for it."""
+        with self._condition:
+            if self._latest_jpeg_version == version and self._latest_jpeg is not None:
+                return self._latest_jpeg
+
+        encoded = _encode_preview_frame(image)
+        with self._condition:
+            if self._frame_version == version:
+                self._latest_jpeg = encoded
+                self._latest_jpeg_version = version
+        return encoded
 
     def pause(self, timeout_seconds: float = 2.0) -> bool:
         """Stop the preview and wait for the current camera handle to be released."""
@@ -311,7 +339,7 @@ class LivePreviewService:
                         LOGGER.warning("Live preview unavailable: %s", exc)
                         self._record_frame_failure(str(exc))
                         self._update_frame(
-                            _build_placeholder_frame(
+                            _build_placeholder_image(
                                 "Live camera feed unavailable.",
                                 subtitle=str(exc),
                                 size=self._preview_size,
@@ -333,9 +361,9 @@ class LivePreviewService:
                     finally:
                         if not source.holds_camera_between_reads():
                             self._mark_source_active(False)
-                    jpeg_bytes = _encode_preview_frame(frame)
+                    image = _frame_to_qimage(frame)
                     self._record_frame_success()
-                    self._update_frame(jpeg_bytes)
+                    self._update_frame(image)
                 except Exception as exc:
                     if self._linux_mode and isinstance(source, _OpenCVFrameSource):
                         self._linux_snapshot_fallback = True
@@ -346,7 +374,7 @@ class LivePreviewService:
                     LOGGER.warning("Live preview frame failed: %s", exc)
                     self._record_frame_failure(str(exc))
                     self._update_frame(
-                        _build_placeholder_frame(
+                        _build_placeholder_image(
                             "Reconnecting live camera feed...",
                             size=self._preview_size,
                         )
@@ -373,11 +401,15 @@ class LivePreviewService:
             else:
                 self._mark_source_active(False)
 
-    def _update_frame(self, frame_bytes: bytes) -> None:
-        """Persist the newest preview frame and wake any waiting readers."""
+    def _update_frame(self, image: QImage) -> None:
+        """Replace the bounded in-memory frame and wake waiting readers."""
+        if image.isNull():
+            raise LivePreviewError("Live preview produced an empty image.")
         with self._condition:
-            self._latest_frame = frame_bytes
+            self._latest_image = QImage(image)
             self._frame_version += 1
+            self._latest_jpeg = None
+            self._latest_jpeg_version = -1
             self._condition.notify_all()
 
     def _mark_source_active(self, active: bool) -> None:
@@ -476,23 +508,97 @@ def _open_frame_source(
     return _OpenCVFrameSource(request)
 
 
-def _encode_preview_frame(frame: Any) -> bytes:
-    """Convert an RGB image array into a JPEG byte string."""
+def _frame_to_qimage(frame: Any) -> QImage:
+    """Detach a captured frame into a QImage suitable for cross-thread use."""
+    if isinstance(frame, QImage):
+        if frame.isNull():
+            raise LivePreviewError("Live preview produced an empty QImage.")
+        return QImage(frame)
+
+    if isinstance(frame, (bytes, bytearray, memoryview)):
+        image = QImage.fromData(bytes(frame))
+        if image.isNull():
+            raise LivePreviewError("Live preview could not decode the camera JPEG frame.")
+        return image
+
+    shape = getattr(frame, "shape", None)
+    strides = getattr(frame, "strides", None)
+    if not shape or not strides:
+        raise LivePreviewError("Live preview returned an unsupported frame type.")
+
+    height, width = int(shape[0]), int(shape[1])
+    if height <= 0 or width <= 0:
+        raise LivePreviewError("Live preview returned an empty camera frame.")
+    bytes_per_line = int(strides[0])
+
+    if len(shape) == 2:
+        image_format = QImage.Format.Format_Grayscale8
+    elif len(shape) == 3 and int(shape[2]) == 3:
+        image_format = QImage.Format.Format_RGB888
+    elif len(shape) == 3 and int(shape[2]) == 4:
+        image_format = QImage.Format.Format_RGBA8888
+    else:
+        raise LivePreviewError("Live preview returned an unsupported camera pixel format.")
+
+    # copy() detaches from OpenCV's next VideoCapture buffer while retaining one frame only.
+    return QImage(frame.data, width, height, bytes_per_line, image_format).copy()
+
+
+def _opencv_frame_to_qimage(frame: Any) -> QImage:
+    """Convert an OpenCV BGR frame without a full RGB array conversion."""
+    shape = getattr(frame, "shape", None)
+    strides = getattr(frame, "strides", None)
+    if not shape or not strides:
+        raise LivePreviewError("OpenCV preview returned an unsupported frame type.")
+
+    height, width = int(shape[0]), int(shape[1])
+    if height <= 0 or width <= 0:
+        raise LivePreviewError("OpenCV preview returned an empty camera frame.")
+    bytes_per_line = int(strides[0])
+
+    if len(shape) == 2:
+        image_format = QImage.Format.Format_Grayscale8
+        image_data = frame.data
+        bytes_per_line = int(strides[0])
+    elif len(shape) == 3 and int(shape[2]) == 3:
+        image_format = QImage.Format.Format_BGR888
+        image_data = frame.data
+        bytes_per_line = int(strides[0])
+    elif len(shape) == 3 and int(shape[2]) == 4:
+        rgba_frame = frame[:, :, [2, 1, 0, 3]].copy()
+        image_format = QImage.Format.Format_RGBA8888
+        image_data = rgba_frame.data
+        bytes_per_line = int(rgba_frame.strides[0])
+    else:
+        raise LivePreviewError("OpenCV preview returned an unsupported camera pixel format.")
+
+    return QImage(image_data, width, height, bytes_per_line, image_format).copy()
+
+
+def _encode_preview_frame(frame: Any, *, quality: int = 82) -> bytes:
+    """Encode a frame only for legacy JPEG stream consumers."""
     if isinstance(frame, (bytes, bytearray)):
         return bytes(frame)
-    image = Image.fromarray(frame)
-    buffer = io.BytesIO()
-    image.save(buffer, format="JPEG", quality=82)
-    return buffer.getvalue()
+
+    image = _frame_to_qimage(frame)
+    buffer = QBuffer()
+    if not buffer.open(QIODevice.OpenModeFlag.WriteOnly):
+        raise LivePreviewError("Live preview could not prepare a JPEG buffer.")
+    try:
+        if not image.save(buffer, "JPEG", max(1, min(100, int(quality)))):
+            raise LivePreviewError("Live preview could not encode a JPEG frame.")
+        return bytes(buffer.data())
+    finally:
+        buffer.close()
 
 
-def _build_placeholder_frame(
+def _build_placeholder_image(
     message: str,
     *,
     subtitle: str = "",
     size: tuple[int, int],
-) -> bytes:
-    """Render a simple preview placeholder JPEG when no live frame is ready yet."""
+) -> QImage:
+    """Render a simple preview placeholder without a JPEG round trip."""
     width, height = size
     image = Image.new("RGB", size, color=(9, 12, 18))
     draw = ImageDraw.Draw(image)
@@ -505,9 +611,14 @@ def _build_placeholder_frame(
     if subtitle:
         draw.text((24, subtitle_y), subtitle, fill=(192, 201, 214))
 
-    buffer = io.BytesIO()
-    image.save(buffer, format="JPEG", quality=82)
-    return buffer.getvalue()
+    pixels = image.tobytes("raw", "RGB")
+    return QImage(
+        pixels,
+        width,
+        height,
+        width * 3,
+        QImage.Format.Format_RGB888,
+    ).copy()
 
 
 class _BaseFrameSource:
@@ -553,7 +664,7 @@ class _OpenCVFrameSource(_BaseFrameSource):
         self._stream_summary = _describe_opencv_stream(self._camera, cv2)
 
     def read_frame(self) -> Any:
-        """Read the newest frame and convert it from BGR into RGB."""
+        """Read the newest frame and detach it directly into a QImage."""
         if self._camera is None:
             raise LivePreviewError("OpenCV preview is not running.")
 
@@ -561,11 +672,7 @@ class _OpenCVFrameSource(_BaseFrameSource):
         if frame is None or getattr(frame, "size", 0) <= 0:
             raise LivePreviewError("OpenCV preview could not read a frame.")
 
-        if len(frame.shape) == 2:
-            return frame
-        if frame.shape[2] == 4:
-            return frame[:, :, [2, 1, 0, 3]].copy()
-        return frame[:, :, ::-1].copy()
+        return _opencv_frame_to_qimage(frame)
 
     def holds_camera_between_reads(self) -> bool:
         """Persistent preview keeps a camera handle open between frames."""

@@ -8,6 +8,8 @@ import time
 import unittest
 from unittest.mock import patch
 
+from PySide6.QtGui import QImage
+
 from camera.live_preview import (
     DEFAULT_PREVIEW_STREAM_RESOLUTION,
     LivePreviewService,
@@ -308,6 +310,40 @@ class LivePreviewServiceTests(unittest.TestCase):
         self.assertTrue(service.has_recent_frame(max_age_seconds=1.0))
         self.assertEqual(frame, b"frame")
 
+    def test_service_exposes_qimage_without_encoding_a_jpeg_for_qt(self) -> None:
+        request = _build_request()
+        source = _ImmediateFrameSource()
+
+        with (
+            patch("camera.live_preview.build_camera_request", return_value=request),
+            patch("camera.live_preview._open_frame_source", return_value=source),
+            patch("camera.live_preview._encode_preview_frame") as encoder,
+        ):
+            service = LivePreviewService(
+                backend="opencv",
+                camera_index=0,
+                width=640,
+                height=480,
+                autofocus_mode="continuous",
+                exposure="auto",
+                brightness=0.0,
+                frame_interval_seconds=0.02,
+            )
+
+            try:
+                service._ensure_worker_started()
+                deadline = time.monotonic() + 1.0
+                while time.monotonic() < deadline and not service.has_recent_frame(max_age_seconds=1.0):
+                    time.sleep(0.01)
+                frame = service.get_image_frame(timeout_seconds=0.1)
+            finally:
+                service.close()
+
+        self.assertFalse(frame.isNull())
+        self.assertEqual(frame.size().width(), 4)
+        self.assertEqual(frame.size().height(), 4)
+        encoder.assert_not_called()
+
 
 class _BlockingFrameSource:
     """Preview source double that blocks reads until the test releases it."""
@@ -320,7 +356,7 @@ class _BlockingFrameSource:
     def read_frame(self):
         self.read_started.set()
         self.allow_read_to_finish.wait(timeout=2.0)
-        return object()
+        return _test_image()
 
     def close(self) -> None:
         self.closed_event.set()
@@ -344,7 +380,7 @@ class _ImmediateFrameSource:
 
     def read_frame(self):
         self.read_called.set()
-        return object()
+        return _test_image()
 
     def close(self) -> None:
         self.closed_event.set()
@@ -371,6 +407,13 @@ def _build_request() -> CameraControlRequest:
         brightness=0.0,
         capture_delay_seconds=0.0,
     )
+
+
+def _test_image() -> QImage:
+    """Return a tiny valid frame for preview coordination tests."""
+    image = QImage(4, 4, QImage.Format.Format_RGB888)
+    image.fill(0x2C6BF3)
+    return image
 
 
 if __name__ == "__main__":

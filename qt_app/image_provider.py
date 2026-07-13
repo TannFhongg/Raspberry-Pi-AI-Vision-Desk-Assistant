@@ -35,8 +35,16 @@ class CachedImageStore:
         image = QImage()
         if not image.loadFromData(bytes(data)):
             return False
+        return self.set_image(image)
+
+    def set_image(self, image: QImage) -> bool:
+        """Update the cache from an already-decoded image without re-decoding JPEG."""
+        if image.isNull():
+            return False
         with self._lock:
-            self._image = image
+            # QImage is implicitly shared. Preview frames are immutable after publishing,
+            # so this avoids a deep copy on each UI refresh.
+            self._image = QImage(image)
             self._revision += 1
         return True
 
@@ -51,11 +59,11 @@ class CachedImageStore:
         return self.set_bytes(data)
 
     def image(self) -> QImage:
-        """Return a detached copy of the current image."""
+        """Return an implicitly shared immutable copy of the current image."""
         with self._lock:
             if self._image.isNull():
                 return QImage()
-            return self._image.copy()
+            return QImage(self._image)
 
 
 class VisionDeskImageProvider(QQuickImageProvider):
@@ -79,4 +87,3 @@ class VisionDeskImageProvider(QQuickImageProvider):
             size.setWidth(image.width())
             size.setHeight(image.height())
         return image
-

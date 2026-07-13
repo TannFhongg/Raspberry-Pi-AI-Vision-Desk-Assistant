@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 
 from PIL import Image, ImageDraw
+from PySide6.QtGui import QImage
 
 from pipeline.runner import PipelineResult
 from visiondesk.paths import resolve_visiondesk_paths
@@ -47,6 +48,7 @@ class MockLivePreviewService:
             subtitle="Mock hardware mode is running.",
             size=self._size,
         )
+        self._image = QImage.fromData(self._frame)
         self._last_success_monotonic = time.monotonic()
 
     def get_jpeg_frame(self, timeout_seconds: float = 1.0) -> bytes:
@@ -55,6 +57,14 @@ class MockLivePreviewService:
             self._recent = self._active
             self._last_success_monotonic = time.monotonic()
             return self._frame
+
+    def get_image_frame(self, timeout_seconds: float = 1.0) -> QImage:
+        """Return the cached mock image through the same API as real preview."""
+        del timeout_seconds
+        with self._lock:
+            self._recent = self._active
+            self._last_success_monotonic = time.monotonic()
+            return QImage(self._image)
 
     def pause(self, timeout_seconds: float = 2.0) -> bool:
         del timeout_seconds
@@ -72,6 +82,7 @@ class MockLivePreviewService:
                 subtitle="Mock camera frames are updating in memory.",
                 size=self._size,
             )
+            self._image = QImage.fromData(self._frame)
             self._last_success_monotonic = time.monotonic()
 
     def is_camera_active(self) -> bool:

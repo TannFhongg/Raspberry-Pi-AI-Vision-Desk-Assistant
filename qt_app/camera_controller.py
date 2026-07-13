@@ -85,8 +85,8 @@ class CameraController(QObject):
     def _refresh_frame(self) -> None:
         """Read the latest in-memory preview frame and update provider state."""
         try:
-            frame_bytes = self.runtime.live_preview.get_jpeg_frame(timeout_seconds=0.05)
-            if self.image_store.set_bytes(frame_bytes):
+            frame = self.runtime.live_preview.get_image_frame(timeout_seconds=0.05)
+            if self.image_store.set_image(frame):
                 self.previewRevisionChanged.emit()
         except Exception as exc:
             LOGGER.debug("Preview refresh failed: %s", exc)
