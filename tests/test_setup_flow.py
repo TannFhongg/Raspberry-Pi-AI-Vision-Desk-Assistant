@@ -414,6 +414,52 @@ def test_setup_controller_verify_api_key_updates_state(qapp, qtbot, tmp_path, mo
 
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 is not installed")
+def test_setup_controller_clear_api_key_removes_secret_and_verification(
+    qapp, qtbot, tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-key-to-clear")
+    runtime = build_runtime(tmp_path)
+    upsert_env_value(runtime.paths.env_file_path, "OPENAI_MODEL", "gpt-5.4-mini")
+    upsert_env_value(runtime.paths.env_file_path, "OPENAI_API_KEY", "sk-test-key-to-clear")
+    runtime.setup_state_store.write_state(
+        {
+            "current_step": "openai",
+            "openai": {
+                "status": "pass",
+                "key_present": True,
+                "api_key_verified": True,
+                "verification": verified_openai_metadata(runtime),
+                "message": "OpenAI API key verified.",
+            },
+        }
+    )
+    controller = SetupController(runtime)
+
+    assert controller.hasApiKey is True
+    controller.clearApiKey()
+
+    qtbot.waitUntil(lambda: not controller.setupBusy and not controller.hasApiKey, timeout=3000)
+    env_text = runtime.paths.env_file_path.read_text(encoding="utf-8")
+    assert "OPENAI_API_KEY=" not in env_text
+    assert "OPENAI_MODEL=gpt-5.4-mini" in env_text
+    assert controller.apiKeyVerified is False
+    assert controller.openAiStatus == "idle"
+    assert "OPENAI_API_KEY" not in os.environ
+    controller.close()
+    runtime.shutdown()
+
+
+def test_setup_qml_clear_key_handles_draft_and_stored_secret() -> None:
+    source = Path("qt_app/qml/screens/SetupScreen.qml").read_text(encoding="utf-8")
+
+    assert "function clearApiKeyEntry()" in source
+    assert 'root.apiKeyDraft = ""' in source
+    assert "root.showApiKey = false" in source
+    assert "root.controller.clearApiKey()" in source
+    assert "root.controller.setupHasApiKey || root.apiKeyDraft.trim().length > 0" in source
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 is not installed")
 def test_setup_api_key_presentation_exposes_only_safe_status(qapp, qtbot, tmp_path, monkeypatch, caplog) -> None:
     """The setup presentation layer must not receive key-derived information."""
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)

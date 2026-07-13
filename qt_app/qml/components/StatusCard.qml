@@ -8,6 +8,7 @@ InfoCard {
     property string message: ""
     property string tone: "info"
     property string eyebrow: ""
+    property bool compact: false
 
     readonly property string normalizedTone: (root.tone || "").toLowerCase()
     readonly property color accentColor: {
@@ -27,7 +28,7 @@ InfoCard {
     borderColor: Qt.rgba(accentColor.r, accentColor.g, accentColor.b, 0.20)
 
     ColumnLayout {
-        spacing: 8
+        spacing: root.compact ? 5 : 8
 
         RowLayout {
             spacing: 7
@@ -43,9 +44,13 @@ InfoCard {
                 text: root.eyebrow.length > 0 ? root.eyebrow : root.title
                 color: root.accentColor
                 font.family: root.theme.bodyFont
-                font.pixelSize: 12
+                font.pixelSize: root.compact ? 11 : 12
                 font.weight: root.theme.weightStrong
                 renderType: Text.NativeRendering
+                elide: Text.ElideRight
+                maximumLineCount: 1
+                Layout.fillWidth: true
+                Layout.minimumWidth: 0
             }
         }
 
@@ -53,11 +58,14 @@ InfoCard {
             text: root.value.length > 0 ? root.value : root.title
             color: root.theme.text
             font.family: root.theme.displayFont
-            font.pixelSize: 22
+            font.pixelSize: root.compact ? 19 : 22
             font.weight: root.theme.weightHeavy
             wrapMode: Text.WordWrap
             renderType: Text.NativeRendering
+            maximumLineCount: root.compact ? 1 : 2
+            elide: Text.ElideRight
             Layout.fillWidth: true
+            Layout.minimumWidth: 0
         }
 
         Text {
@@ -68,9 +76,10 @@ InfoCard {
             font.pixelSize: 13
             font.weight: root.theme.weightRegular
             wrapMode: Text.WordWrap
-            maximumLineCount: 3
+            maximumLineCount: root.compact ? 2 : 3
             elide: Text.ElideRight
             Layout.fillWidth: true
+            Layout.minimumWidth: 0
         }
     }
 }

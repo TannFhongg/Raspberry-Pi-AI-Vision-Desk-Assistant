@@ -225,6 +225,16 @@ class SetupController(QObject):
         with self._action_lock:
             return bool(self._active_actions)
 
+    @Property(bool, notify=stateChanged)
+    def deviceChecksBusy(self) -> bool:
+        with self._action_lock:
+            return "device_checks" in self._active_actions
+
+    @Property(bool, notify=stateChanged)
+    def apiKeyBusy(self) -> bool:
+        with self._action_lock:
+            return bool({"api_verify", "api_clear"} & self._active_actions)
+
     def refresh_state(self) -> None:
         """Reload setup state plus derived warning/model payloads."""
         self._state = self.runtime.setup_state_store.load_state()

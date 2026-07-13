@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
-from config import DeviceSettings, load_device_settings
+from config import DeviceSettings, load_device_settings, update_device_config
 from system.device_setup import remove_env_value
 from system.storage import atomic_write_json, atomic_write_text, safe_rmtree, safe_unlink
 from visiondesk.paths import VisionDeskPaths, resolve_visiondesk_paths
@@ -158,6 +158,13 @@ def _restore_default_config(
     if content and not content.endswith("\n"):
         content += "\n"
     atomic_write_text(destination, content, encoding="utf-8")
+    update_device_config(
+        {
+            "setup": {"completed": False, "completed_at": "", "version": 0},
+            "network": {"wifi": {"ssid": "", "connection_name": ""}},
+        },
+        config_path=destination,
+    )
 
 
 def _clear_user_data(paths: VisionDeskPaths) -> None:

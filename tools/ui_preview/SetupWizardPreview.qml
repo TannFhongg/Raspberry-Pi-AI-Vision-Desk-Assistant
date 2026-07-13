@@ -61,8 +61,10 @@ Rectangle {
         property string setupWarningsText: ""
         property bool setupHasApiKey: true
         property bool setupApiKeyVerified: true
+        property bool setupApiKeyBusy: false
         property string setupApiKeyDisplayText: setupHasApiKey ? "API key saved" : "No API key configured"
         property string setupDeviceChecksStatus: "pass"
+        property bool setupDeviceChecksBusy: false
         property string setupDeviceChecksMessage: "All required first-boot diagnostics passed."
         property string setupWifiMessage: "Connected to VisionDesk Lab on 5 GHz."
         property string setupWifiScanStatus: "pass"
@@ -192,6 +194,7 @@ Rectangle {
                 setupGpioStatus = "idle"
                 setupGpioMessage = "GPIO verification happens after the camera step."
                 setupWarningsText = "Finish remains locked until Wi-Fi, OpenAI, camera, and GPIO all pass."
+                setMetric(0, "Preparing", "warning", "System setup is still in progress.")
                 setMetric(3, "Pending", "warning", "Wi-Fi has not been configured yet.")
                 setMetric(4, "Standby", "warning", "Camera test still pending.")
                 setAllPressed(false)

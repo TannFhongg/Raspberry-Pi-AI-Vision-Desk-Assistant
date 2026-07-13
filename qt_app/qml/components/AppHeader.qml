@@ -34,15 +34,16 @@ Item {
             delegate: SetupMetricChip {
                 required property int index
                 property var itemData: root.controller.healthMetricsModel.get(index)
+                readonly property bool hasLongValue: String(itemData.value || "").length >= 8
                 theme: root.theme
                 label: itemData.label || ""
                 value: itemData.value || "--"
                 state: itemData.state || "unavailable"
                 message: itemData.message || ""
                 Layout.alignment: Qt.AlignVCenter
-                Layout.preferredWidth: 110
-                Layout.minimumWidth: 110
-                Layout.maximumWidth: 110
+                Layout.preferredWidth: hasLongValue ? 126 : 110
+                Layout.minimumWidth: hasLongValue ? 126 : 110
+                Layout.maximumWidth: hasLongValue ? 126 : 110
             }
         }
     }

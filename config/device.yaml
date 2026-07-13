@@ -50,7 +50,7 @@ startup:
   behavior: kiosk
 
 setup:
-  completed: false
+  completed: true
   completed_at: "2026-07-11T00:00:00"
   version: 1
 

@@ -90,6 +90,10 @@ def test_configuration_reset_clears_openai_and_restores_setup_state(tmp_path) ->
     assert "OPENAI_API_KEY" not in paths.env_file_path.read_text(encoding="utf-8")
     restored_config = load_device_settings(config_path=paths.config_path)
     assert restored_config.setup.completed is False
+    assert restored_config.setup.completed_at == ""
+    assert restored_config.setup.version == 0
+    assert restored_config.network.wifi.ssid == ""
+    assert restored_config.network.wifi.connection_name == ""
     setup_state = json.loads(paths.setup_state_path.read_text(encoding="utf-8"))
     assert setup_state["setup_complete"] is False
     assert setup_state["current_step"] == "welcome"

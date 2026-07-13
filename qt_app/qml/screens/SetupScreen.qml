@@ -120,6 +120,15 @@ Item {
         return value.length > 0 ? value.toUpperCase() : "OPEN"
     }
 
+    function clearApiKeyEntry() {
+        const hasStoredKey = root.controller.setupHasApiKey
+        root.apiKeyDraft = ""
+        root.showApiKey = false
+        if (hasStoredKey) {
+            root.controller.clearApiKey()
+        }
+    }
+
     Component.onCompleted: {
         if (root.controller.deviceChecksModel.count === 0
                 && root.controller.setupDeviceChecksStatus === "idle") {
@@ -144,7 +153,9 @@ Item {
 
                 RowLayout {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 176
+                    Layout.preferredHeight: 182
+                    Layout.minimumHeight: 182
+                    Layout.maximumHeight: 182
                     spacing: root.cardGap
 
                     InfoCard {
@@ -159,9 +170,9 @@ Item {
                             spacing: 16
 
                             Rectangle {
-                                Layout.preferredWidth: 108
-                                Layout.preferredHeight: 108
-                                radius: 28
+                                Layout.preferredWidth: 92
+                                Layout.preferredHeight: 92
+                                radius: 24
                                 color: root.theme.primarySoft
 
                                 Rectangle {
@@ -194,9 +205,11 @@ Item {
                                     text: "Before VisionDesk goes live, we verify the essentials that keep a kiosk deployment stable."
                                     color: root.theme.text
                                     font.family: root.theme.displayFont
-                                    font.pixelSize: 17
+                                    font.pixelSize: 16
                                     font.weight: root.theme.weightStrong
                                     wrapMode: Text.WordWrap
+                                    maximumLineCount: 2
+                                    elide: Text.ElideRight
                                     Layout.fillWidth: true
                                 }
 
@@ -226,9 +239,11 @@ Item {
                                             text: root.welcomeHighlights[index]
                                             color: root.theme.textMuted
                                             font.family: root.theme.bodyFont
-                                            font.pixelSize: 14
+                                            font.pixelSize: 13
                                             font.weight: root.theme.weightRegular
                                             wrapMode: Text.WordWrap
+                                            maximumLineCount: 2
+                                            elide: Text.ElideRight
                                             Layout.fillWidth: true
                                         }
                                     }
@@ -243,42 +258,46 @@ Item {
 
                     InfoCard {
                         theme: root.theme
-                        padding: root.cardPadding
+                        padding: 14
                         fillColor: "#FBFCFE"
                         Layout.preferredWidth: 272
+                        Layout.minimumHeight: 0
                         Layout.fillHeight: true
 
                         ColumnLayout {
-                            spacing: 14
+                            spacing: 10
 
                             StatusChip {
                                 theme: root.theme
                                 label: "Checks"
-                                value: root.statusText(root.controller.setupDeviceChecksStatus)
-                                tone: root.statusTone(root.controller.setupDeviceChecksStatus)
+                                value: root.controller.setupDeviceChecksBusy
+                                       ? "Running"
+                                       : root.statusText(root.controller.setupDeviceChecksStatus)
+                                tone: root.controller.setupDeviceChecksBusy
+                                      ? "warning"
+                                      : root.statusTone(root.controller.setupDeviceChecksStatus)
                             }
 
                             Text {
                                 text: root.controller.setupDeviceChecksMessage.length > 0
                                       ? root.controller.setupDeviceChecksMessage
-                                      : "Run the first-boot diagnostic pass to confirm config, storage, display session, camera, GPIO, and NetworkManager readiness."
+                                      : "Check config, storage, display, camera, GPIO, and network readiness."
                                 color: root.controller.setupDeviceChecksMessage.length > 0
                                        ? root.statusColor(root.controller.setupDeviceChecksStatus)
                                        : root.theme.textMuted
                                 font.family: root.theme.bodyFont
-                                font.pixelSize: 14
+                                font.pixelSize: 13
                                 wrapMode: Text.WordWrap
+                                maximumLineCount: 3
+                                elide: Text.ElideRight
                                 Layout.fillWidth: true
-                            }
-
-                            Item {
-                                Layout.fillHeight: true
                             }
 
                             PrimaryButton {
                                 theme: root.theme
                                 tone: "success"
-                                text: root.controller.setupDeviceChecksStatus === "running" ? "RUNNING CHECKS..." : "RUN CHECKS"
+                                text: root.controller.setupDeviceChecksBusy ? "RUNNING..." : "RUN CHECKS"
+                                enabled: !root.controller.setupDeviceChecksBusy
                                 Layout.fillWidth: true
                                 onClicked: root.controller.runSetupDeviceChecks()
                             }
@@ -290,6 +309,7 @@ Item {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     columns: 3
+                    rows: 2
                     columnSpacing: root.cardGap
                     rowSpacing: root.cardGap
 
@@ -301,14 +321,16 @@ Item {
                             readonly property bool hasData: index < root.controller.deviceChecksModel.count
                             readonly property var itemData: hasData ? root.controller.deviceChecksModel.get(index) : null
                             theme: root.theme
-                            padding: 16
+                            padding: 14
+                            compact: true
                             Layout.fillWidth: true
                             Layout.fillHeight: true
-                            Layout.preferredHeight: 90
+                            Layout.minimumHeight: 0
+                            Layout.preferredHeight: 98
                             title: hasData ? ((itemData.name || "").replace(/_/g, " ")) : "Pending check"
-                            eyebrow: hasData ? "Device Check" : "Waiting"
-                            value: hasData ? root.statusText(itemData.status || "") : "Not run yet"
-                            message: hasData ? (itemData.message || "") : "Diagnostic results will appear here after the check run completes."
+                            eyebrow: hasData ? "Device check" : "Pending"
+                            value: hasData ? root.statusText(itemData.status || "") : "Waiting"
+                            message: hasData ? (itemData.message || "") : "Run diagnostics to populate this check."
                             tone: hasData ? root.statusTone(itemData.status || "") : "info"
                         }
                     }
@@ -587,10 +609,13 @@ Item {
                     SecondaryButton {
                         theme: root.theme
                         tone: "danger"
-                        text: "CLEAR KEY"
+                        text: root.controller.setupApiKeyBusy && root.controller.setupHasApiKey
+                              ? "CLEARING..."
+                              : "CLEAR KEY"
                         implicitWidth: 132
-                        enabled: root.controller.setupHasApiKey
-                        onClicked: root.controller.clearApiKey()
+                        enabled: !root.controller.setupApiKeyBusy
+                                 && (root.controller.setupHasApiKey || root.apiKeyDraft.trim().length > 0)
+                        onClicked: root.clearApiKeyEntry()
                     }
 
                     Item {
@@ -601,7 +626,8 @@ Item {
                 PrimaryButton {
                     theme: root.theme
                     tone: "success"
-                    text: "SAVE + VERIFY"
+                    text: root.controller.setupApiKeyBusy ? "WORKING..." : "SAVE + VERIFY"
+                    enabled: !root.controller.setupApiKeyBusy && root.apiKeyDraft.trim().length > 0
                     Layout.fillWidth: true
                     onClicked: {
                         root.controller.verifyApiKey(root.apiKeyDraft)
@@ -644,7 +670,7 @@ Item {
                         }
 
                         Text {
-                            text: "VisionDesk stores the key in the protected environment file and only returns masked state back to QML."
+                            text: "VisionDesk stores the key in the protected environment file. QML receives only saved and verified status."
                             color: root.theme.textMuted
                             font.family: root.theme.bodyFont
                             font.pixelSize: 13
@@ -653,7 +679,7 @@ Item {
                         }
 
                         Text {
-                            text: "Masked after save. Clear Key replaces the stored secret without exposing the raw key again."
+                            text: "Clear Key removes the stored secret without returning raw or masked key data to the UI."
                             color: root.controller.setupHasApiKey ? root.theme.successStrong : root.theme.warningStrong
                             font.family: root.theme.bodyFont
                             font.pixelSize: 13

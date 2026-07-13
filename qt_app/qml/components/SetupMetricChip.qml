@@ -24,6 +24,7 @@ Rectangle {
     color: root.theme.surface
     border.width: 1
     border.color: root.theme.borderSoft
+    clip: true
 
     RowLayout {
         anchors.fill: parent
@@ -59,16 +60,23 @@ Rectangle {
                 font.pixelSize: 12
                 font.weight: root.theme.weightStrong
                 renderType: Text.NativeRendering
+                elide: Text.ElideRight
+                maximumLineCount: 1
+                Layout.fillWidth: true
+                Layout.minimumWidth: 0
             }
 
             Text {
                 text: root.value
                 color: root.theme.text
                 font.family: root.theme.displayFont
-                font.pixelSize: 18
+                font.pixelSize: root.value.length >= 8 ? 15 : root.value.length >= 6 ? 16 : 18
                 font.weight: root.theme.weightHeavy
                 renderType: Text.NativeRendering
                 elide: Text.ElideRight
+                maximumLineCount: 1
+                Layout.fillWidth: true
+                Layout.minimumWidth: 0
             }
         }
     }

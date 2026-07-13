@@ -286,9 +286,17 @@ class AppController(QObject):
     def setupApiKeyDisplayText(self) -> str:
         return self.setup_controller.apiKeyDisplayText
 
+    @Property(bool, notify=viewStateChanged)
+    def setupApiKeyBusy(self) -> bool:
+        return self.setup_controller.apiKeyBusy
+
     @Property(str, notify=viewStateChanged)
     def setupDeviceChecksStatus(self) -> str:
         return self.setup_controller.deviceChecksStatus
+
+    @Property(bool, notify=viewStateChanged)
+    def setupDeviceChecksBusy(self) -> bool:
+        return self.setup_controller.deviceChecksBusy
 
     @Property(str, notify=viewStateChanged)
     def setupDeviceChecksMessage(self) -> str:
