@@ -45,6 +45,7 @@ VisionDesk is a native `PySide6 + Qt Quick/QML` kiosk application. The Qt app is
 - `system/migrations.py`: update/install migration entrypoint
 - `system/ui_presenters.py`: sanitized answer formatting, detail rendering, progress, and health shaping
 - `system/offline_retry.py`: deferred retry queue and private media retention
+- `system/readiness.py`: non-secret startup marker used to verify an updated release
 
 ## Persisted data
 
@@ -56,6 +57,7 @@ Production locations:
 - `/var/lib/visiondesk/result_history.json`: saved text-only result history
 - `/var/lib/visiondesk/latest_result.txt`: latest non-sensitive result summary
 - `/var/lib/visiondesk/private/`: private current media, retry media, cache, queue metadata, and quarantine files
+- `/var/lib/visiondesk/runtime/readiness.json`: ephemeral non-secret application readiness marker
 - `/var/lib/visiondesk/factory_reset_state.json`: reset recovery marker
 - `/var/log/visiondesk/`: lifecycle and service logs
 
@@ -70,9 +72,11 @@ Development defaults:
 
 - no public image-serving path
 - text-only history by default
+- OpenAI candidate keys are verified before persistence; Qt/QML receives no raw or masked key value
 - bounded retry retention
 - atomic JSON/text writes
 - quarantine on corrupt persisted files
+- updates require a fresh matching readiness marker and a stable service, otherwise the prior release is restored
 - `User-Data Reset` does not remove device config or secrets
 - uninstall preserves `/etc/visiondesk`, `/var/lib/visiondesk`, and `/var/log/visiondesk` unless `--purge` is explicitly requested
 

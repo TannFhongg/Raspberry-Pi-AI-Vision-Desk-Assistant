@@ -11,6 +11,8 @@ VisionDesk is a Raspberry Pi 5 assistant appliance built around a native `PySide
 - offline retry queue with bounded private storage
 - health header and GPIO integration
 - privacy-first local persistence with user-data reset, configuration reset, and full factory reset flows
+- OpenAI candidate-key verification before persistence, without exposing raw or masked keys to QML
+- readiness-verified release updates with automatic rollback on failed application startup
 
 ## Technical shape
 
@@ -18,7 +20,7 @@ VisionDesk is a Raspberry Pi 5 assistant appliance built around a native `PySide
 - shared backend modules for camera, preprocessing, pipeline, AI, hardware, health, setup, reset, and result history
 - shared production/dev path resolution through `visiondesk/paths.py`
 - production persistence under `/etc/visiondesk`, `/var/lib/visiondesk`, `/var/log/visiondesk`, and `/opt/visiondesk`
-- versioned appliance lifecycle scripts for install, local-archive update, uninstall, and factory reset
+- versioned appliance lifecycle scripts for install, local-archive update, readiness-verified rollback, uninstall, and factory reset
 
 ## Run modes
 

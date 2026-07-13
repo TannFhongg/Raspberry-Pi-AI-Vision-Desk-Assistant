@@ -28,6 +28,7 @@ Qt/QML UI
 - `system/diagnostics.py` provides install/setup smoke checks and friendly device diagnostics.
 - `system/result_history.py` provides text-only history persistence, corruption recovery, single-item delete, and clear-history support.
 - `system/offline_retry.py` provides durable retry queue behavior with private storage bounds.
+- `system/readiness.py` atomically publishes and validates a minimal, non-secret startup marker for updates.
 - `system/factory_reset.py` provides configuration reset, user-data reset, full factory reset, and reset recovery markers.
 - `system/migrations.py` is the release migration entrypoint used by install/update flows.
 - `system/ui_presenters.py` provides answer sanitization, result/detail shaping, progress copy, and health/header shaping.
@@ -37,7 +38,7 @@ Qt/QML UI
 - `install.sh` validates the Raspberry Pi target, installs system packages, stages a versioned release under `/opt/visiondesk/releases/<version>`, seeds config on first install, renders `visiondesk.service`, runs smoke checks, and rolls back on failure.
 - `deployment/visiondesk.service` starts the Qt app only.
 - `deployment/visiondesk-launch.sh` waits for a usable X11/Wayland session and then executes `python -m qt_app.main`.
-- `update.sh` validates local archives using `manifest.json` plus checksums, builds an isolated venv, runs migrations and diagnostics, flips `/opt/visiondesk/current`, restarts the service, and records rollback metadata.
+- `update.sh` validates local archives using `manifest.json` plus checksums, builds an isolated venv, runs migrations and diagnostics, atomically flips `/opt/visiondesk/current`, then requires a fresh matching readiness marker and stable service before recording success. Failed updates roll back and verify the previous release.
 - `uninstall.sh` removes the app and service while preserving config/data/logs by default.
 - `factory-reset.sh` is a thin CLI wrapper over the shared Python reset backend.
 
@@ -57,6 +58,7 @@ Production layout:
 - `/var/lib/visiondesk/private/cache/`: cached preview artifacts
 - `/var/lib/visiondesk/private/retry_queue.json`: queued retry metadata
 - `/var/lib/visiondesk/private/quarantine/`: corrupt persisted files and leftovers
+- `/var/lib/visiondesk/runtime/readiness.json`: ephemeral non-secret marker used by the updater
 - `/var/lib/visiondesk/factory_reset_state.json`: reset recovery marker
 - `/var/log/visiondesk/`: install, update, and runtime logs
 
@@ -76,8 +78,9 @@ Both layouts are resolved through `visiondesk/paths.py`. Production/dev override
 
 - setup routing is driven by the authoritative setup-state file, not by repo-local temporary state and not by config flags alone
 - setup completion is mirrored into `device.yaml` for compatibility, but the setup-state file is the source of truth for UI routing
-- the OpenAI key is written to `visiondesk.env` and only Qt-facing masked state is exposed to QML
+- OpenAI candidate keys are validated before persistence in `visiondesk.env`; QML gets only generic configured/not-configured state, never raw or masked key material
 - reset operations write a recovery marker before modifying persistent state so startup can resume interrupted cleanup safely
+- the startup marker is written only after QML has loaded and the app window is shown; it is cleared during shutdown
 
 ## Privacy model
 
