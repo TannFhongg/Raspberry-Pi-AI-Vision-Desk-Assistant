@@ -15,6 +15,7 @@ def test_resolve_paths_defaults_to_repo_relative_layout() -> None:
     assert paths.env_file_path == paths.repo_root / ".env"
     assert paths.data_dir == paths.repo_root / "data"
     assert paths.logs_dir == paths.repo_root / "logs"
+    assert paths.readiness_path == paths.repo_root / "data" / "runtime" / "readiness.json"
 
 
 def test_resolve_paths_honors_production_overrides() -> None:
@@ -35,3 +36,4 @@ def test_resolve_paths_honors_production_overrides() -> None:
     assert paths.data_dir == Path("/srv/visiondesk/data")
     assert paths.logs_dir == Path("/srv/visiondesk/logs")
     assert paths.app_root == Path("/srv/visiondesk/current")
+    assert paths.readiness_path == Path("/srv/visiondesk/data/runtime/readiness.json")

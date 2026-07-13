@@ -15,6 +15,8 @@ from PySide6.QtWidgets import QApplication
 from qt_app.app_controller import AppController
 from qt_app.image_provider import CachedImageStore, VisionDeskImageProvider
 from qt_app.runtime import VisionDeskRuntime
+from system.readiness import clear_readiness_marker, write_readiness_marker
+from visiondesk.paths import resolve_visiondesk_paths
 from visiondesk.version import __version__
 
 
@@ -86,6 +88,9 @@ def main(argv: list[str] | None = None) -> int:
     app.setApplicationVersion(__version__)
     QGuiApplication.setQuitOnLastWindowClosed(True)
 
+    # A restarted service must publish a fresh readiness marker for this process.
+    startup_readiness_path = resolve_visiondesk_paths().readiness_path
+    clear_readiness_marker(startup_readiness_path)
     runtime = VisionDeskRuntime(mock_hardware=args.mock_hardware)
     camera_store = CachedImageStore()
     result_store = CachedImageStore()
@@ -115,9 +120,21 @@ def main(argv: list[str] | None = None) -> int:
     else:
         root.showFullScreen()
 
+    write_readiness_marker(
+        runtime.paths.readiness_path,
+        version=__version__,
+        state=controller.applicationState,
+        qml_loaded=True,
+    )
+
     cursor_hider = FullscreenCursorHider(app, enabled=not args.windowed)
     cursor_hider.start()
-    app.aboutToQuit.connect(controller.shutdown)
+
+    def shutdown_runtime() -> None:
+        clear_readiness_marker(runtime.paths.readiness_path)
+        controller.shutdown()
+
+    app.aboutToQuit.connect(shutdown_runtime)
     app.exec()
     return runtime.requested_exit_code
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import logging
 import time
 from pathlib import Path
@@ -21,6 +22,8 @@ from qt_app.image_provider import CachedImageStore
 from qt_app.mock_backend import build_mock_pipeline_result, build_mock_preview_bytes
 from qt_app.models import DictListModel
 from qt_app.runtime import VisionDeskRuntime
+from system.error_mapping import redact_technical_detail
+from system.offline_retry import OfflineRetryQueueError, OfflineRetryQueueFullError
 from system.ui_presenters import (
     build_progress_steps,
     humanize_error,
@@ -50,12 +53,14 @@ class _PipelineWorker(QObject):
         self.runtime = runtime
         self.selected_mode = selected_mode
         self.selected_mode_internal = selected_mode_internal
+        self._terminal_emitted = False
 
     @Slot()
     def run(self) -> None:
-        """Execute one full capture/analyze request."""
+        """Execute one capture request and emit exactly one terminal payload."""
         captured_path = None
         processed_path = None
+        payload: dict[str, Any] | None = None
         try:
             if self.runtime.mock_hardware:
                 for message in (
@@ -98,41 +103,50 @@ class _PipelineWorker(QObject):
                 self.selected_mode,
                 self.selected_mode_internal,
             )
-            self.finished.emit(
-                {
-                    "kind": "success",
-                    "result": result,
-                    "history_entry": history_entry,
-                    "preview_bytes": preview_bytes,
-                    "selected_mode": self.selected_mode,
-                    "selected_mode_internal": self.selected_mode_internal,
-                }
-            )
+            payload = {
+                "kind": "success",
+                "terminal_state": "DONE",
+                "result": result,
+                "history_entry": history_entry,
+                "preview_bytes": preview_bytes,
+                "selected_mode": self.selected_mode,
+                "selected_mode_internal": self.selected_mode_internal,
+            }
         except PipelineError as exc:
-            payload = self._retry_or_error_payload(exc)
-            self.finished.emit(payload)
+            try:
+                payload = self._retry_or_error_payload(exc)
+            except Exception as enqueue_error:
+                payload = self._retry_enqueue_failure_payload(exc, enqueue_error)
         except Exception as exc:
             LOGGER.exception("Unexpected pipeline worker failure")
-            self.finished.emit(
-                {
-                    "kind": "error",
-                    "friendly_error": humanize_error(f"Unexpected error: {exc}"),
-                    "technical_error": f"Unexpected error: {exc}",
-                    "selected_mode": self.selected_mode,
-                    "selected_mode_internal": self.selected_mode_internal,
-                }
-            )
+            payload = self._unexpected_error_payload(exc)
         finally:
-            self.runtime.cleanup_current_private_media()
+            try:
+                self.runtime.cleanup_current_private_media()
+            except Exception:
+                LOGGER.exception("Could not clean private pipeline media after terminal outcome")
+            if payload is None:
+                payload = self._unexpected_error_payload(RuntimeError("Pipeline did not produce an outcome"))
+            self._emit_terminal(payload)
 
     def _retry_or_error_payload(self, exc: PipelineError) -> dict[str, Any]:
         queue = self.runtime.offline_retry_queue
         processed_path = getattr(exc, "processed_path", None)
+        retry_asset_available = isinstance(processed_path, Path) and processed_path.is_file()
+        if bool(getattr(exc, "retryable", False)) and retry_asset_available and queue is None:
+            return {
+                "kind": "error",
+                "terminal_state": "ERROR",
+                "error_code": "RETRY_DISABLED",
+                "friendly_error": "Offline retry is not available for this capture.",
+                "technical_error": f"RETRY_DISABLED: {exc}",
+                "selected_mode": self.selected_mode,
+                "selected_mode_internal": self.selected_mode_internal,
+            }
         if (
             queue is not None
             and bool(getattr(exc, "retryable", False))
-            and isinstance(processed_path, Path)
-            and processed_path.is_file()
+            and retry_asset_available
         ):
             entry = queue.enqueue(
                 selected_mode=self.selected_mode,
@@ -144,7 +158,11 @@ class _PipelineWorker(QObject):
                 error_message=str(exc),
                 error_category=humanize_error(str(exc)).lower().replace(" ", "_"),
             )
-            queue_position = queue.pending_count()
+            try:
+                queue_position = queue.pending_count()
+            except Exception:
+                LOGGER.exception("Could not read offline retry queue position after enqueue")
+                queue_position = 0
             friendly_error = humanize_error(str(exc))
             queued_message = (
                 "Saved for automatic retry.\n"
@@ -163,9 +181,13 @@ class _PipelineWorker(QObject):
                 retry_status="queued",
                 error_summary=friendly_error,
             )
-            save_latest_result(queued_result, output_path=str(self.runtime.paths.latest_result_path))
+            try:
+                save_latest_result(queued_result, output_path=str(self.runtime.paths.latest_result_path))
+            except OSError:
+                LOGGER.exception("Could not save latest result for an already-queued retry")
             return {
                 "kind": "queued",
+                "terminal_state": "RETRY_QUEUED",
                 "result": queued_result,
                 "history_entry": None,
                 "preview_bytes": self._read_preview_bytes(queue.resolve_processed_path(entry)),
@@ -176,11 +198,62 @@ class _PipelineWorker(QObject):
             }
         return {
             "kind": "error",
+            "terminal_state": "ERROR",
             "friendly_error": humanize_error(str(exc)),
             "technical_error": str(exc),
             "selected_mode": self.selected_mode,
             "selected_mode_internal": self.selected_mode_internal,
         }
+
+    def _retry_enqueue_failure_payload(self, original_error: PipelineError, enqueue_error: Exception) -> dict[str, Any]:
+        """Return ERROR when a retryable result cannot be durably queued."""
+        error_code = self._retry_enqueue_error_code(enqueue_error)
+        LOGGER.error(
+            "Offline retry enqueue failed code=%s original_error=%s enqueue_error=%s",
+            error_code,
+            redact_technical_detail(original_error),
+            redact_technical_detail(enqueue_error),
+        )
+        return {
+            "kind": "error",
+            "terminal_state": "ERROR",
+            "error_code": error_code,
+            "friendly_error": "VisionDesk could not save this capture for retry.",
+            "technical_error": f"{error_code}: {original_error}",
+            "selected_mode": self.selected_mode,
+            "selected_mode_internal": self.selected_mode_internal,
+        }
+
+    @staticmethod
+    def _retry_enqueue_error_code(error: Exception) -> str:
+        if isinstance(error, OfflineRetryQueueFullError):
+            return "RETRY_QUEUE_FULL"
+        if isinstance(error, OSError) and error.errno == errno.ENOSPC:
+            return "DISK_FULL"
+        if isinstance(error, OfflineRetryQueueError):
+            detail = str(error).lower()
+            if "corrupt" in detail or "invalid" in detail:
+                return "RETRY_STATE_CORRUPT"
+            return "RETRY_STORAGE_ERROR"
+        return "RETRY_STORAGE_ERROR"
+
+    def _unexpected_error_payload(self, error: Exception) -> dict[str, Any]:
+        return {
+            "kind": "error",
+            "terminal_state": "ERROR",
+            "friendly_error": "VisionDesk could not complete this capture.",
+            "technical_error": f"Unexpected error: {error}",
+            "selected_mode": self.selected_mode,
+            "selected_mode_internal": self.selected_mode_internal,
+        }
+
+    def _emit_terminal(self, payload: dict[str, Any]) -> None:
+        """Prevent duplicate terminal signals if a worker is invoked unexpectedly."""
+        if self._terminal_emitted:
+            LOGGER.error("Pipeline worker attempted to emit a duplicate terminal payload")
+            return
+        self._terminal_emitted = True
+        self.finished.emit(payload)
 
     @staticmethod
     def _read_preview_bytes(path: str | Path | None) -> bytes:
@@ -220,6 +293,7 @@ class PipelineController(QObject):
         self._current_step = -1
         self._thread: QThread | None = None
         self._worker: _PipelineWorker | None = None
+        self._terminal_received = False
         self._update_progress_models()
 
     @Property(bool, notify=busyChanged)
@@ -270,6 +344,7 @@ class PipelineController(QObject):
             )
             return False
         self._last_start_error = ""
+        self._terminal_received = False
         self._set_busy(True)
         self._set_progress(
             progress_state="CAPTURING",
@@ -380,6 +455,10 @@ class PipelineController(QObject):
         )
 
     def _on_worker_finished(self, payload: dict[str, Any]) -> None:
+        if self._terminal_received:
+            LOGGER.error("Ignoring duplicate pipeline terminal payload")
+            return
+        self._terminal_received = True
         kind = payload.get("kind")
         if kind == "success":
             self._set_progress(

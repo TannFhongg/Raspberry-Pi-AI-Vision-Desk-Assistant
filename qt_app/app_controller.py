@@ -274,14 +274,6 @@ class AppController(QObject):
     def setupWarningsText(self) -> str:
         return self.setup_controller.warningsText
 
-    @Property(str, notify=viewStateChanged)
-    def setupMaskedOpenAiKey(self) -> str:
-        return self.setup_controller.maskedOpenAiKey
-
-    @Property(str, notify=viewStateChanged)
-    def setupMaskedApiKey(self) -> str:
-        return self.setup_controller.maskedApiKey
-
     @Property(bool, notify=viewStateChanged)
     def setupHasApiKey(self) -> bool:
         return self.setup_controller.hasApiKey
@@ -289,6 +281,10 @@ class AppController(QObject):
     @Property(bool, notify=viewStateChanged)
     def setupApiKeyVerified(self) -> bool:
         return self.setup_controller.apiKeyVerified
+
+    @Property(str, notify=viewStateChanged)
+    def setupApiKeyDisplayText(self) -> str:
+        return self.setup_controller.apiKeyDisplayText
 
     @Property(str, notify=viewStateChanged)
     def setupDeviceChecksStatus(self) -> str:
@@ -755,7 +751,7 @@ class AppController(QObject):
 
     def _map_pipeline_error(self, payload: dict[str, Any], *, retryable: bool) -> PublicError:
         """Log backend detail while retaining only mapped data for the QML layer."""
-        detail = payload.get("technical_error") or payload.get("friendly_error") or ""
+        detail = payload.get("error_code") or payload.get("technical_error") or payload.get("friendly_error") or ""
         public_error = map_public_error(detail, retryable=retryable)
         LOGGER.error(
             "Pipeline failed code=%s retryable=%s detail=%s",

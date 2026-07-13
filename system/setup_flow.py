@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import json
 import os
 from pathlib import Path
@@ -11,7 +11,9 @@ from typing import Any, Callable
 
 from system.storage import atomic_write_json, quarantine_file, safe_unlink
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+OPENAI_VERIFICATION_SCHEMA_VERSION = 1
+OPENAI_VERIFICATION_MAX_AGE_DAYS = 30
 
 
 class SetupStateStore:
@@ -62,6 +64,56 @@ class SetupStateStore:
         """Prevent already-running setup workers from applying stale results."""
         return self.begin_operation()
 
+    def is_operation_current(self, operation_id: int) -> bool:
+        """Return whether a worker is still permitted to commit external changes."""
+        with self._state_lock:
+            return operation_id == self._operation_generation
+
+    @staticmethod
+    def _empty_openai_verification() -> dict[str, Any]:
+        return {
+            "verified": False,
+            "verified_at": "",
+            "verification_schema_version": OPENAI_VERIFICATION_SCHEMA_VERSION,
+            "provider": "openai",
+            "model": "",
+        }
+
+    def _verification_timestamp_is_fresh(self, value: object) -> bool:
+        try:
+            verified_at = datetime.fromisoformat(str(value).strip().replace("Z", "+00:00"))
+            now = datetime.fromisoformat(self.timestamp_provider().strip().replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            return False
+
+        if verified_at.tzinfo is not None:
+            verified_at = verified_at.astimezone(timezone.utc).replace(tzinfo=None)
+        if now.tzinfo is not None:
+            now = now.astimezone(timezone.utc).replace(tzinfo=None)
+        age = now - verified_at
+        return timedelta(0) <= age <= timedelta(days=OPENAI_VERIFICATION_MAX_AGE_DAYS)
+
+    def _coerce_openai_verification(self, value: Any, *, key_present: bool) -> dict[str, Any]:
+        raw_verification = value if isinstance(value, dict) else {}
+        try:
+            schema_version = int(raw_verification.get("verification_schema_version", 0))
+        except (TypeError, ValueError):
+            schema_version = 0
+        verified_at = str(raw_verification.get("verified_at", "")).strip()
+        is_current = (
+            key_present
+            and bool(raw_verification.get("verified", False))
+            and schema_version == OPENAI_VERIFICATION_SCHEMA_VERSION
+            and self._verification_timestamp_is_fresh(verified_at)
+        )
+        return {
+            "verified": is_current,
+            "verified_at": verified_at if is_current else "",
+            "verification_schema_version": OPENAI_VERIFICATION_SCHEMA_VERSION,
+            "provider": "openai",
+            "model": str(raw_verification.get("model", "")).strip() if is_current else "",
+        }
+
     def coerce_step(self, value: Any) -> str:
         """Normalize a persisted wizard step value."""
         normalized = str(value or "").strip().lower()
@@ -75,7 +127,7 @@ class SetupStateStore:
         wifi_ssid = str(self.current_wifi_ssid() or "").strip()
         openai_key_present = self.has_configured_openai_key(self.current_openai_key())
         wifi_status = "pass" if wifi_ssid else "idle"
-        openai_status = "pass" if openai_key_present else "idle"
+        openai_status = "idle"
         camera_status = "idle"
         gpio_status = "idle"
         finish_status = "idle"
@@ -142,8 +194,9 @@ class SetupStateStore:
             "openai": {
                 "status": openai_status,
                 "key_present": openai_key_present,
-                "api_key_verified": openai_status == "pass",
-                "message": "OpenAI API key is already configured." if openai_status == "pass" else "",
+                "api_key_verified": False,
+                "verification": self._empty_openai_verification(),
+                "message": "API key saved. Verification required." if openai_key_present else "",
             },
             "camera": {
                 "status": camera_status,
@@ -256,7 +309,18 @@ class SetupStateStore:
     def setup_openai_verified(state: dict[str, Any]) -> bool:
         """Return True when setup has a verified OpenAI key state."""
         openai = state.get("openai", {}) if isinstance(state, dict) else {}
-        return str(openai.get("status", "")).strip().lower() == "pass"
+        verification = openai.get("verification", {}) if isinstance(openai, dict) else {}
+        try:
+            verification_schema_version = int(verification.get("verification_schema_version", 0) or 0)
+        except (AttributeError, TypeError, ValueError):
+            verification_schema_version = 0
+        return (
+            str(openai.get("status", "")).strip().lower() == "pass"
+            and bool(openai.get("key_present", False))
+            and bool(openai.get("api_key_verified", False))
+            and bool(verification.get("verified", False))
+            and verification_schema_version == OPENAI_VERIFICATION_SCHEMA_VERSION
+        )
 
     @staticmethod
     def setup_camera_passed(state: dict[str, Any]) -> bool:
@@ -376,6 +440,19 @@ class SetupStateStore:
         steps = raw_state.get("steps", {})
         openai = raw_state.get("openai", {})
         camera = raw_state.get("camera", {})
+        key_present = bool(openai.get("key_present", default_state["openai"]["key_present"]))
+        verification = self._coerce_openai_verification(openai.get("verification"), key_present=key_present)
+        raw_openai_status = str(openai.get("status", default_state["openai"]["status"])).strip().lower()
+        if verification["verified"]:
+            openai_status = "pass"
+            openai_message = "OpenAI API key verified."
+        elif raw_openai_status in {"fail", "running"}:
+            openai_status = raw_openai_status
+            openai_message = str(openai.get("message", "")).strip()
+        else:
+            openai_status = "idle"
+            openai_message = "API key saved. Verification required." if key_present else ""
+
         normalized_state = {
             "schema_version": int(raw_state.get("schema_version", SCHEMA_VERSION) or SCHEMA_VERSION),
             "setup_complete": bool(raw_state.get("setup_complete", default_state["setup_complete"])),
@@ -431,12 +508,11 @@ class SetupStateStore:
                 "managed_by": str(wifi.get("managed_by", default_state["wifi"]["managed_by"])) or "nmcli",
             },
             "openai": {
-                "status": str(openai.get("status", default_state["openai"]["status"])),
-                "key_present": bool(openai.get("key_present", default_state["openai"]["key_present"])),
-                "api_key_verified": bool(
-                    openai.get("api_key_verified", default_state["openai"]["api_key_verified"])
-                ),
-                "message": str(openai.get("message", "")),
+                "status": openai_status,
+                "key_present": key_present,
+                "api_key_verified": bool(verification["verified"]),
+                "verification": verification,
+                "message": openai_message,
             },
             "camera": {
                 "status": str(camera.get("status", default_state["camera"]["status"])),
@@ -580,19 +656,53 @@ def looks_like_openai_api_key(value: str) -> bool:
     return normalized.startswith("sk-")
 
 
-def mask_secret_value(value: str | None) -> str:
-    """Return a commercially safe masked representation of a secret value."""
-    normalized = str(value or "").strip()
-    if not normalized:
-        return ""
-    if normalized.startswith("sk-proj-"):
-        prefix = "sk-proj-"
-    elif normalized.startswith("sk-"):
-        prefix = "sk-"
-    else:
-        prefix = normalized[: min(4, len(normalized))]
-    masked_count = max(8, len(normalized) - len(prefix))
-    return f"{prefix}{'*' * masked_count}"
+def _unverified_openai_metadata() -> dict[str, Any]:
+    return {
+        "verified": False,
+        "verified_at": "",
+        "verification_schema_version": OPENAI_VERIFICATION_SCHEMA_VERSION,
+        "provider": "openai",
+        "model": "",
+    }
+
+
+def _verified_openai_metadata(store: SetupStateStore, result: Any) -> dict[str, Any]:
+    return {
+        "verified": True,
+        "verified_at": store.timestamp_provider(),
+        "verification_schema_version": OPENAI_VERIFICATION_SCHEMA_VERSION,
+        "provider": "openai",
+        "model": str(getattr(result, "model", "")).strip(),
+    }
+
+
+def _safe_openai_verification_message(result: Any | None) -> str:
+    """Convert provider outcomes into fixed setup messages without diagnostic detail."""
+    if result is None:
+        return "The API key could not be verified. Existing configuration was not changed."
+    if bool(getattr(result, "passed", False)):
+        return "OpenAI API key verified."
+
+    code = str(getattr(result, "code", "")).strip().lower()
+    detail = str(getattr(result, "message", "")).strip().lower()
+    if code in {"authentication", "authorization"} or any(
+        token in detail for token in ("authentication", "invalid api", "api key", "access denied")
+    ):
+        return "The API key was not accepted. Check it and try again."
+    if code == "network" or any(token in detail for token in ("network", "connection", "internet")):
+        return "Network unavailable. The API key was not changed."
+    if code == "timeout" or "timed out" in detail or "timeout" in detail:
+        return "API verification timed out. The API key was not changed."
+    if code == "rate_limit" or "rate limit" in detail or "quota" in detail:
+        return "OpenAI is rate limiting verification. Try again later."
+    if code in {"service_unavailable", "service_error"} or "service unavailable" in detail:
+        return "OpenAI service is unavailable. Try again later."
+    return "The API key could not be verified. Existing configuration was not changed."
+
+
+def _setup_operation_is_current(store: SetupStateStore) -> bool:
+    checker = getattr(store, "is_current", None)
+    return True if checker is None else bool(checker())
 
 
 def sync_setup_gpio_state(
@@ -737,42 +847,81 @@ def run_setup_openai_key(
     api_key: str,
     env_file_path: str | Path,
     upsert_env_value: Callable[[str | Path, str, str], Path],
-    check_openai_reachable: Callable[[], Any],
+    check_openai_reachable: Callable[[str], Any],
 ) -> None:
-    """Persist and verify the OpenAI API key for the device."""
+    """Verify a candidate key before atomically replacing protected credentials."""
     normalized_key = api_key.strip()
-    if (
-        not store.has_configured_openai_key(normalized_key)
-        or not looks_like_openai_api_key(normalized_key)
-    ):
+    state = store.load_state()
+    key_present = bool(state.get("openai", {}).get("key_present", False))
+
+    def write_failure(message: str) -> None:
         store.write_state(
             {
                 "current_step": "openai",
                 "finish_message": "",
                 "openai": {
                     "status": "fail",
-                    "key_present": False,
+                    "key_present": key_present,
                     "api_key_verified": False,
-                    "message": "Enter a valid OPENAI_API_KEY starting with sk- before continuing.",
+                    "verification": _unverified_openai_metadata(),
+                    "message": message,
                 },
             }
         )
+
+    if (
+        not store.has_configured_openai_key(normalized_key)
+        or not looks_like_openai_api_key(normalized_key)
+    ):
+        write_failure("Enter a valid OPENAI_API_KEY starting with sk- before continuing.")
         return
 
-    upsert_env_value(env_file_path, "OPENAI_API_KEY", normalized_key)
+    # Invalidate any previous verification while the replacement is in flight.
+    store.write_state(
+        {
+            "current_step": "openai",
+            "finish_message": "",
+            "openai": {
+                "status": "running",
+                "key_present": key_present,
+                "api_key_verified": False,
+                "verification": _unverified_openai_metadata(),
+                "message": "Verifying API key...",
+            },
+        }
+    )
+
+    try:
+        result = check_openai_reachable(normalized_key)
+    except Exception:
+        result = None
+
+    if result is None or not bool(getattr(result, "passed", False)):
+        write_failure(_safe_openai_verification_message(result))
+        return
+
+    if not _setup_operation_is_current(store):
+        return
+
+    try:
+        upsert_env_value(env_file_path, "OPENAI_API_KEY", normalized_key)
+    except OSError:
+        write_failure("The API key could not be saved. Existing configuration was not changed.")
+        return
+
     os.environ["OPENAI_API_KEY"] = normalized_key
-    state = store.load_state()
-    result = check_openai_reachable()
-    next_step = "camera" if result.passed and store.setup_wifi_connected(state) else "openai"
+    latest_state = store.load_state()
+    next_step = "camera" if store.setup_wifi_connected(latest_state) else "openai"
     store.write_state(
         {
             "current_step": next_step,
             "finish_message": "",
             "openai": {
-                "status": "pass" if result.passed else "fail",
+                "status": "pass",
                 "key_present": True,
-                "api_key_verified": bool(result.passed),
-                "message": result.message,
+                "api_key_verified": True,
+                "verification": _verified_openai_metadata(store, result),
+                "message": _safe_openai_verification_message(result),
             },
         }
     )

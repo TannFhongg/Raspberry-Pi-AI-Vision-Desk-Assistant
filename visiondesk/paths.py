@@ -90,6 +90,10 @@ class VisionDeskPaths:
         return self.data_dir / "factory_reset_state.json"
 
     @property
+    def readiness_path(self) -> Path:
+        return self.data_dir / "runtime" / "readiness.json"
+
+    @property
     def debug_dir(self) -> Path:
         if self.path_mode == "production":
             return self.data_dir / "debug"

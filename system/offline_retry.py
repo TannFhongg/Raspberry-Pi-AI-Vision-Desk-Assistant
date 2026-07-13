@@ -248,31 +248,36 @@ class OfflineRetryQueue:
 
             entry_id = uuid4().hex
             entry_dir = self.storage_dir / entry_id
-            entry_dir.mkdir(parents=True, exist_ok=False)
-            queued_processed_path = entry_dir / f"processed{processed_file.suffix.lower() or '.jpg'}"
-            shutil.copy2(processed_file, queued_processed_path)
-            checksum = _sha256_file(queued_processed_path)
-            now = _now_iso()
-            entry = OfflineRetryEntry(
-                id=entry_id,
-                created_at=now,
-                updated_at=now,
-                expires_at=_future_iso(self.retention_hours * 3600.0),
-                selected_mode=selected_mode,
-                selected_mode_internal=selected_mode_internal,
-                processed_filename=f"{entry_id}/{queued_processed_path.name}",
-                camera_backend_used=camera_backend_used or "",
-                camera_resolution=camera_resolution,
-                last_error=error_message.strip(),
-                last_error_category=(error_category or _categorize_error_message(error_message)).strip(),
-                attempt_count=0,
-                next_attempt_at=_future_iso(self.initial_delay_seconds),
-                status="pending",
-                checksum=checksum,
-                processing_started_at="",
-            )
-            entries.append(entry)
-            self._write_entries_locked(entries)
+            try:
+                entry_dir.mkdir(parents=True, exist_ok=False)
+                queued_processed_path = entry_dir / f"processed{processed_file.suffix.lower() or '.jpg'}"
+                shutil.copy2(processed_file, queued_processed_path)
+                checksum = _sha256_file(queued_processed_path)
+                now = _now_iso()
+                entry = OfflineRetryEntry(
+                    id=entry_id,
+                    created_at=now,
+                    updated_at=now,
+                    expires_at=_future_iso(self.retention_hours * 3600.0),
+                    selected_mode=selected_mode,
+                    selected_mode_internal=selected_mode_internal,
+                    processed_filename=f"{entry_id}/{queued_processed_path.name}",
+                    camera_backend_used=camera_backend_used or "",
+                    camera_resolution=camera_resolution,
+                    last_error=error_message.strip(),
+                    last_error_category=(error_category or _categorize_error_message(error_message)).strip(),
+                    attempt_count=0,
+                    next_attempt_at=_future_iso(self.initial_delay_seconds),
+                    status="pending",
+                    checksum=checksum,
+                    processing_started_at="",
+                )
+                entries.append(entry)
+                self._write_entries_locked(entries)
+            except Exception:
+                # A failed metadata write must not retain an untracked copy of the image.
+                safe_rmtree(entry_dir)
+                raise
 
         self._wake_event.set()
         LOGGER.warning(

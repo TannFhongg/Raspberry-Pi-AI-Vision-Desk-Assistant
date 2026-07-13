@@ -25,7 +25,6 @@ from system.diagnostics import run_setup_device_checks
 from system.setup_flow import (
     SetupStateStore,
     finish_setup,
-    mask_secret_value,
     run_setup_camera_test,
     run_setup_openai_key,
     run_setup_wifi_connect,
@@ -48,6 +47,9 @@ class _OperationScopedSetupStateStore:
 
     def write_device_checks(self, checks: list[dict[str, Any]]) -> dict[str, Any] | None:
         return self._store.write_device_checks(checks, operation_id=self.operation_id)
+
+    def is_current(self) -> bool:
+        return self._store.is_operation_current(self.operation_id)
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._store, name)
@@ -137,14 +139,9 @@ class SetupController(QObject):
         return bool(self._state.get("openai", {}).get("api_key_verified", False))
 
     @Property(str, notify=stateChanged)
-    def maskedApiKey(self) -> str:
-        openai_state = self._state.get("openai", {})
-        should_show = bool(openai_state.get("key_present")) or self.runtime.setup_is_complete()
-        return mask_secret_value(os.getenv("OPENAI_API_KEY", "")) if should_show else ""
-
-    @Property(str, notify=stateChanged)
-    def maskedOpenAiKey(self) -> str:
-        return self.maskedApiKey
+    def apiKeyDisplayText(self) -> str:
+        """Return fixed status text without reading or deriving from the key."""
+        return "API key saved" if self.hasApiKey else "No API key configured"
 
     @Property(str, notify=stateChanged)
     def deviceChecksStatus(self) -> str:
@@ -441,6 +438,13 @@ class SetupController(QObject):
                     "status": "idle",
                     "key_present": False,
                     "api_key_verified": False,
+                    "verification": {
+                        "verified": False,
+                        "verified_at": "",
+                        "verification_schema_version": 1,
+                        "provider": "openai",
+                        "model": "",
+                    },
                     "message": "OpenAI API key cleared. Enter a new key to continue.",
                 },
             }

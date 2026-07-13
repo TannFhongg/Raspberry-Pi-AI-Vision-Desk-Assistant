@@ -27,6 +27,7 @@ class HardwareCheckResult:
     status: str
     message: str
     required: bool = True
+    code: str = ""
 
     @property
     def passed(self) -> bool:
@@ -203,14 +204,15 @@ def check_internet_connection(
     )
 
 
-def check_openai_reachable() -> HardwareCheckResult:
-    """Verify API key presence and that the OpenAI API can be reached."""
-    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+def check_openai_reachable(api_key: str | None = None) -> HardwareCheckResult:
+    """Verify a supplied API key without requiring it to be written to the environment."""
+    api_key = str(api_key if api_key is not None else os.getenv("OPENAI_API_KEY", "")).strip()
     if not api_key:
         return HardwareCheckResult(
             name="openai",
             status="fail",
             message="Missing OPENAI_API_KEY.",
+            code="missing_key",
         )
 
     model = os.getenv("OPENAI_MODEL", "gpt-5.4-mini").strip() or "gpt-5.4-mini"
@@ -222,7 +224,8 @@ def check_openai_reachable() -> HardwareCheckResult:
         return HardwareCheckResult(
             name="openai",
             status="fail",
-            message=f"OpenAI SDK is not installed. {exc}",
+            message="OpenAI SDK is not available for API verification.",
+            code="sdk_unavailable",
         )
 
     try:
@@ -245,54 +248,68 @@ def check_openai_reachable() -> HardwareCheckResult:
             name="openai",
             status="fail",
             message="OpenAI authentication failed. Check OPENAI_API_KEY.",
+            code="authentication",
         )
     except openai.PermissionDeniedError:
         return HardwareCheckResult(
             name="openai",
             status="fail",
-            message=f"OpenAI access denied for model '{model}'.",
+            message="OpenAI access was denied for this API key.",
+            code="authorization",
         )
     except openai.NotFoundError:
         return HardwareCheckResult(
             name="openai",
             status="fail",
-            message=f"OpenAI model '{model}' was not found.",
+            message="The configured OpenAI model is unavailable.",
+            code="service_error",
         )
     except openai.RateLimitError:
         return HardwareCheckResult(
             name="openai",
             status="fail",
             message="OpenAI rate limit or quota reached.",
+            code="rate_limit",
         )
-    except openai.APIConnectionError as exc:
+    except openai.APIConnectionError:
         return HardwareCheckResult(
             name="openai",
             status="fail",
-            message=f"Could not connect to OpenAI. {exc}",
+            message="Network connection to OpenAI is unavailable.",
+            code="network",
         )
     except openai.APITimeoutError:
         return HardwareCheckResult(
             name="openai",
             status="fail",
             message="OpenAI request timed out.",
+            code="timeout",
         )
     except openai.APIStatusError as exc:
+        status_code = int(exc.status_code or 0)
         return HardwareCheckResult(
             name="openai",
             status="fail",
-            message=f"OpenAI API error with status {exc.status_code}.",
+            message=(
+                "OpenAI service is temporarily unavailable."
+                if status_code >= 500
+                else "OpenAI could not complete API verification."
+            ),
+            code="service_unavailable" if status_code >= 500 else "service_error",
         )
-    except openai.OpenAIError as exc:
+    except openai.OpenAIError:
         return HardwareCheckResult(
             name="openai",
             status="fail",
-            message=f"OpenAI SDK error: {exc}",
+            message="OpenAI could not complete API verification.",
+            code="service_error",
         )
 
     return HardwareCheckResult(
         name="openai",
         status="pass",
         message=f"OpenAI API reachable with model '{model}'.",
+        code="verified",
     )
 
 

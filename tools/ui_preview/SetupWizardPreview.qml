@@ -59,9 +59,9 @@ Rectangle {
         property string setupCurrentStep: window.normalizeStep(String(window.requestedStep || "").toLowerCase())
         property string setupFinishMessage: "Setup complete. VisionDesk will relaunch into Home after the wizard finishes."
         property string setupWarningsText: ""
-        property string setupMaskedApiKey: "sk-proj-...7A4F"
         property bool setupHasApiKey: true
         property bool setupApiKeyVerified: true
+        property string setupApiKeyDisplayText: setupHasApiKey ? "API key saved" : "No API key configured"
         property string setupDeviceChecksStatus: "pass"
         property string setupDeviceChecksMessage: "All required first-boot diagnostics passed."
         property string setupWifiMessage: "Connected to VisionDesk Lab on 5 GHz."
@@ -145,7 +145,6 @@ Rectangle {
         function resetScenario() {
             setupFinishMessage = "Setup complete. VisionDesk will relaunch into Home after the wizard finishes."
             setupWarningsText = ""
-            setupMaskedApiKey = "sk-proj-...7A4F"
             setupHasApiKey = true
             setupApiKeyVerified = true
             setupDeviceChecksStatus = "pass"
@@ -188,7 +187,6 @@ Rectangle {
                 setupOpenAiMessage = ""
                 setupHasApiKey = false
                 setupApiKeyVerified = false
-                setupMaskedApiKey = ""
                 setupCameraStatus = "idle"
                 setupCameraMessage = "Camera test will run later in the wizard."
                 setupGpioStatus = "idle"
@@ -204,7 +202,6 @@ Rectangle {
                 setupOpenAiMessage = ""
                 setupHasApiKey = false
                 setupApiKeyVerified = false
-                setupMaskedApiKey = ""
                 setupCameraStatus = "idle"
                 setupCameraMessage = "Camera test pending."
                 setupGpioStatus = "idle"
@@ -217,7 +214,6 @@ Rectangle {
                 setupOpenAiMessage = "API key saved to the protected environment file and verified successfully."
                 setupHasApiKey = true
                 setupApiKeyVerified = true
-                setupMaskedApiKey = "sk-proj-...7A4F"
                 setupCameraStatus = "idle"
                 setupCameraMessage = "Camera test pending."
                 setupGpioStatus = "idle"
@@ -300,14 +296,12 @@ Rectangle {
                 setupApiKeyVerified = false
                 setupOpenAiStatus = "fail"
                 setupOpenAiMessage = "Enter a valid OPENAI_API_KEY starting with sk- before continuing."
-                setupMaskedApiKey = ""
                 return
             }
             setupHasApiKey = true
             setupApiKeyVerified = true
             setupOpenAiStatus = "pass"
             setupOpenAiMessage = "API key saved to the protected environment file and verified successfully."
-            setupMaskedApiKey = "sk-proj-...7A4F"
         }
 
         function clearApiKey() {
@@ -315,7 +309,6 @@ Rectangle {
             setupApiKeyVerified = false
             setupOpenAiStatus = "idle"
             setupOpenAiMessage = "OpenAI API key cleared. Enter a new key to continue."
-            setupMaskedApiKey = ""
         }
 
         function runCameraTest() {

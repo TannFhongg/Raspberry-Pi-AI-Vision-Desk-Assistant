@@ -31,7 +31,7 @@ def redact_technical_detail(detail: object) -> str:
 
 def map_public_error(detail: object, *, retryable: bool = False) -> PublicError:
     """Return a stable public error without exposing backend detail."""
-    normalized = str(detail or "").lower()
+    normalized = str(detail or "").lower().replace("_", " ")
     if "camera" in normalized and ("busy" in normalized or "exclusive camera" in normalized):
         return PublicError(
             "Camera is busy",
@@ -75,6 +75,27 @@ def map_public_error(detail: object, *, retryable: bool = False) -> PublicError:
             "Retry queue is full",
             "Saved retry storage is full. Wait for queued work to finish or clear local data.",
             "RETRY_QUEUE_FULL",
+            False,
+        )
+    if "retry disabled" in normalized:
+        return PublicError(
+            "Retry is unavailable",
+            "This capture could not be saved for retry. Check the retry storage settings and try again.",
+            "RETRY_DISABLED",
+            False,
+        )
+    if "retry state corrupt" in normalized:
+        return PublicError(
+            "Retry storage needs attention",
+            "Saved retry storage could not be read safely. Clear the retry queue and try again.",
+            "RETRY_STATE_CORRUPT",
+            False,
+        )
+    if "retry storage error" in normalized:
+        return PublicError(
+            "Retry storage error",
+            "This capture could not be saved for retry. Check available storage and try again.",
+            "RETRY_STORAGE_ERROR",
             False,
         )
     if any(token in normalized for token in ("network", "connection", "internet", "dns", "offline")):

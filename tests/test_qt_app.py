@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import errno
 import json
 import threading
 from pathlib import Path
@@ -19,12 +20,13 @@ if PY_SIDE6_AVAILABLE:
     from PySide6.QtTest import QSignalSpy
     from PySide6.QtWidgets import QApplication
 
-    from pipeline.runner import PipelineResult
+    from pipeline.runner import PipelineError, PipelineResult
     from qt_app.app_controller import AppController
     from qt_app.gpio_controller import GPIOController
     from qt_app.image_provider import CachedImageStore, VisionDeskImageProvider
-    from qt_app.pipeline_controller import PipelineController
+    from qt_app.pipeline_controller import PipelineController, _PipelineWorker
     from qt_app.runtime import RuntimePaths, VisionDeskRuntime
+    from system.offline_retry import OfflineRetryQueue, OfflineRetryQueueFullError
 
 
 @pytest.fixture(scope="session")
@@ -84,6 +86,13 @@ def build_runtime(tmp_path: Path, *, setup_completed: bool) -> VisionDeskRuntime
                     "status": "pass",
                     "key_present": True,
                     "api_key_verified": True,
+                    "verification": {
+                        "verified": True,
+                        "verified_at": runtime.timestamp(),
+                        "verification_schema_version": 1,
+                        "provider": "openai",
+                        "model": "",
+                    },
                     "message": "Configured.",
                 },
                 "camera": {
@@ -100,6 +109,10 @@ def build_runtime(tmp_path: Path, *, setup_completed: bool) -> VisionDeskRuntime
             }
         )
     return runtime
+
+
+def _raise(error: Exception):
+    raise error
 
 
 def append_history_entry(
@@ -307,6 +320,186 @@ def test_pipeline_failure_restarts_preview_unless_reset_is_active(qapp, tmp_path
     controller._on_worker_finished(payload)
     assert preview.resume_calls == 1
     controller.close()
+    runtime.shutdown()
+
+
+def test_retry_queue_full_reaches_error_once_unlocks_pipeline_and_allows_recapture(qapp, qtbot, tmp_path, monkeypatch) -> None:
+    runtime = build_runtime(tmp_path, setup_completed=True)
+    runtime.mock_hardware = False
+    processed_path = runtime.paths.private_current_path / "processed.jpg"
+    processed_path.parent.mkdir(parents=True, exist_ok=True)
+    processed_path.write_bytes(b"private processed image")
+    pipeline_error = PipelineError(
+        "network unavailable",
+        retryable=True,
+        processed_path=processed_path,
+    )
+
+    class FullQueue:
+        def enqueue(self, **_kwargs):
+            raise OfflineRetryQueueFullError("offline retry queue full")
+
+        def close(self) -> bool:
+            return True
+
+    runtime.offline_retry_queue = FullQueue()
+    monkeypatch.setattr("qt_app.pipeline_controller.run_capture_analyze", lambda **_kwargs: _raise(pipeline_error))
+    controller = PipelineController(runtime, result_image_store=CachedImageStore())
+    payloads: list[dict[str, object]] = []
+    controller.payloadReady.connect(payloads.append)
+
+    assert controller.start_capture(selected_mode="read_text", selected_mode_internal="document_reader") is True
+    qtbot.waitUntil(lambda: len(payloads) == 1 and not controller.busy, timeout=3000)
+    qtbot.waitUntil(lambda: controller._thread is None, timeout=3000)
+
+    assert payloads[0]["kind"] == "error"
+    assert payloads[0]["terminal_state"] == "ERROR"
+    assert payloads[0]["error_code"] == "RETRY_QUEUE_FULL"
+    assert controller.progressState == "ERROR"
+    assert not processed_path.exists()
+    assert controller.start_capture(selected_mode="read_text", selected_mode_internal="document_reader") is True
+    qtbot.waitUntil(lambda: len(payloads) == 2 and not controller.busy, timeout=3000)
+    assert len(payloads) == 2
+    controller.close()
+    runtime.shutdown()
+
+
+def test_retry_metadata_write_failure_cleans_orphaned_media_and_emits_error(qapp, tmp_path, monkeypatch) -> None:
+    runtime = build_runtime(tmp_path, setup_completed=True)
+    runtime.mock_hardware = False
+    processed_path = runtime.paths.private_current_path / "processed.jpg"
+    processed_path.parent.mkdir(parents=True, exist_ok=True)
+    processed_path.write_bytes(b"private processed image")
+    queue = OfflineRetryQueue(
+        queue_path=runtime.paths.offline_retry_queue_path,
+        storage_dir=runtime.paths.private_retry_path,
+        min_free_bytes=1,
+        max_storage_bytes=1024 * 1024,
+    )
+    runtime.offline_retry_queue = queue
+    monkeypatch.setattr(queue, "_write_entries_locked", lambda entries: _raise(OSError("metadata write failed")))
+    monkeypatch.setattr(
+        "qt_app.pipeline_controller.run_capture_analyze",
+        lambda **_kwargs: _raise(PipelineError("network unavailable", retryable=True, processed_path=processed_path)),
+    )
+    worker = _PipelineWorker(runtime, selected_mode="read_text", selected_mode_internal="document_reader")
+    payloads: list[dict[str, object]] = []
+    worker.finished.connect(payloads.append)
+
+    worker.run()
+
+    assert len(payloads) == 1
+    assert payloads[0]["kind"] == "error"
+    assert payloads[0]["error_code"] == "RETRY_STORAGE_ERROR"
+    assert not processed_path.exists()
+    assert not list(runtime.paths.private_retry_path.glob("*"))
+    runtime.shutdown()
+
+
+def test_disk_full_during_retry_enqueue_emits_terminal_error_and_unlocks(qapp, qtbot, tmp_path, monkeypatch) -> None:
+    runtime = build_runtime(tmp_path, setup_completed=True)
+    runtime.mock_hardware = False
+    processed_path = runtime.paths.private_current_path / "processed.jpg"
+    processed_path.parent.mkdir(parents=True, exist_ok=True)
+    processed_path.write_bytes(b"private processed image")
+
+    class DiskFullQueue:
+        def enqueue(self, **_kwargs):
+            raise OSError(errno.ENOSPC, "No space left on device")
+
+        def close(self) -> bool:
+            return True
+
+    runtime.offline_retry_queue = DiskFullQueue()
+    monkeypatch.setattr(
+        "qt_app.pipeline_controller.run_capture_analyze",
+        lambda **_kwargs: _raise(PipelineError("network unavailable", retryable=True, processed_path=processed_path)),
+    )
+    controller = PipelineController(runtime, result_image_store=CachedImageStore())
+    payloads: list[dict[str, object]] = []
+    controller.payloadReady.connect(payloads.append)
+
+    assert controller.start_capture(selected_mode="read_text", selected_mode_internal="document_reader") is True
+    qtbot.waitUntil(lambda: len(payloads) == 1 and not controller.busy, timeout=3000)
+
+    assert payloads[0]["kind"] == "error"
+    assert payloads[0]["error_code"] == "DISK_FULL"
+    assert controller.progressState == "ERROR"
+    assert not processed_path.exists()
+    controller.close()
+    runtime.shutdown()
+
+
+def test_successful_offline_enqueue_reports_retry_queued_and_keeps_only_queued_asset(qapp, tmp_path, monkeypatch) -> None:
+    runtime = build_runtime(tmp_path, setup_completed=True)
+    runtime.mock_hardware = False
+    processed_path = runtime.paths.private_current_path / "processed.jpg"
+    processed_path.parent.mkdir(parents=True, exist_ok=True)
+    processed_path.write_bytes(b"private processed image")
+    queue = OfflineRetryQueue(
+        queue_path=runtime.paths.offline_retry_queue_path,
+        storage_dir=runtime.paths.private_retry_path,
+        min_free_bytes=1,
+        max_storage_bytes=1024 * 1024,
+    )
+    runtime.offline_retry_queue = queue
+    monkeypatch.setattr(
+        "qt_app.pipeline_controller.run_capture_analyze",
+        lambda **_kwargs: _raise(PipelineError("network unavailable", retryable=True, processed_path=processed_path)),
+    )
+    worker = _PipelineWorker(runtime, selected_mode="read_text", selected_mode_internal="document_reader")
+    payloads: list[dict[str, object]] = []
+    worker.finished.connect(payloads.append)
+
+    worker.run()
+
+    assert len(payloads) == 1
+    assert payloads[0]["kind"] == "queued"
+    assert payloads[0]["terminal_state"] == "RETRY_QUEUED"
+    assert queue.pending_count() == 1
+    assert not processed_path.exists()
+    assert len(list(runtime.paths.private_retry_path.glob("*/processed.jpg"))) == 1
+    runtime.shutdown()
+
+
+def test_retry_disabled_returns_terminal_error_without_retaining_current_media(qapp, tmp_path, monkeypatch) -> None:
+    runtime = build_runtime(tmp_path, setup_completed=True)
+    runtime.mock_hardware = False
+    runtime.offline_retry_queue = None
+    processed_path = runtime.paths.private_current_path / "processed.jpg"
+    processed_path.parent.mkdir(parents=True, exist_ok=True)
+    processed_path.write_bytes(b"private processed image")
+    monkeypatch.setattr(
+        "qt_app.pipeline_controller.run_capture_analyze",
+        lambda **_kwargs: _raise(PipelineError("network unavailable", retryable=True, processed_path=processed_path)),
+    )
+    worker = _PipelineWorker(runtime, selected_mode="read_text", selected_mode_internal="document_reader")
+    payloads: list[dict[str, object]] = []
+    worker.finished.connect(payloads.append)
+
+    worker.run()
+
+    assert len(payloads) == 1
+    assert payloads[0]["kind"] == "error"
+    assert payloads[0]["error_code"] == "RETRY_DISABLED"
+    assert not processed_path.exists()
+    runtime.shutdown()
+
+
+def test_unexpected_pipeline_exception_still_emits_one_terminal_error(qapp, tmp_path, monkeypatch) -> None:
+    runtime = build_runtime(tmp_path, setup_completed=True)
+    runtime.mock_hardware = False
+    monkeypatch.setattr("qt_app.pipeline_controller.run_capture_analyze", lambda **_kwargs: _raise(RuntimeError("boom")))
+    worker = _PipelineWorker(runtime, selected_mode="read_text", selected_mode_internal="document_reader")
+    payloads: list[dict[str, object]] = []
+    worker.finished.connect(payloads.append)
+
+    worker.run()
+    worker.run()
+
+    assert len(payloads) == 1
+    assert payloads[0]["kind"] == "error"
+    assert payloads[0]["terminal_state"] == "ERROR"
     runtime.shutdown()
 
 

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import importlib.util
+import logging
+import os
 import threading
 from pathlib import Path
 from types import SimpleNamespace
@@ -10,7 +12,12 @@ from types import SimpleNamespace
 import pytest
 
 from system.device_setup import upsert_env_value
-from system.setup_flow import finish_setup, run_setup_openai_key, run_setup_wifi_connect
+from system.setup_flow import (
+    OPENAI_VERIFICATION_SCHEMA_VERSION,
+    finish_setup,
+    run_setup_openai_key,
+    run_setup_wifi_connect,
+)
 
 PY_SIDE6_AVAILABLE = importlib.util.find_spec("PySide6") is not None
 
@@ -68,6 +75,16 @@ def build_runtime(tmp_path: Path, *, setup_completed: bool = False) -> VisionDes
     return runtime
 
 
+def verified_openai_metadata(runtime: VisionDeskRuntime) -> dict[str, object]:
+    return {
+        "verified": True,
+        "verified_at": runtime.timestamp(),
+        "verification_schema_version": OPENAI_VERIFICATION_SCHEMA_VERSION,
+        "provider": "openai",
+        "model": "",
+    }
+
+
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 is not installed")
 def test_setup_state_defaults_to_welcome_when_authoritative_file_is_missing(tmp_path) -> None:
     runtime = build_runtime(tmp_path)
@@ -118,7 +135,8 @@ def test_run_setup_wifi_connect_persists_network_metadata_and_advances_step(tmp_
 
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 is not installed")
-def test_run_setup_openai_key_rejects_invalid_keys(tmp_path) -> None:
+def test_run_setup_openai_key_rejects_invalid_keys(tmp_path, monkeypatch) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     runtime = build_runtime(tmp_path)
 
     run_setup_openai_key(
@@ -126,7 +144,7 @@ def test_run_setup_openai_key_rejects_invalid_keys(tmp_path) -> None:
         api_key="invalid-key",
         env_file_path=runtime.paths.env_file_path,
         upsert_env_value=upsert_env_value,
-        check_openai_reachable=lambda: SimpleNamespace(passed=True, message="unused"),
+        check_openai_reachable=lambda candidate: SimpleNamespace(passed=True, message="unused"),
     )
 
     state = runtime.setup_state_store.load_state()
@@ -134,6 +152,165 @@ def test_run_setup_openai_key_rejects_invalid_keys(tmp_path) -> None:
     assert state["openai"]["status"] == "fail"
     assert "starting with sk-" in state["openai"]["message"]
     assert not runtime.paths.env_file_path.exists()
+    runtime.shutdown()
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 is not installed")
+def test_failed_api_key_replacement_preserves_working_key_and_does_not_log_candidate(
+    tmp_path, monkeypatch, caplog
+) -> None:
+    previous_key = "sk-working-key-123"
+    candidate_key = "sk-candidate-key-456"
+    monkeypatch.setenv("OPENAI_API_KEY", previous_key)
+    runtime = build_runtime(tmp_path)
+    upsert_env_value(runtime.paths.env_file_path, "OPENAI_API_KEY", previous_key)
+    upsert_env_value(runtime.paths.env_file_path, "UNRELATED_SETTING", "preserve-me")
+    runtime.setup_state_store.write_state(
+        {
+            "openai": {
+                "status": "pass",
+                "key_present": True,
+                "api_key_verified": True,
+                "verification": verified_openai_metadata(runtime),
+                "message": "OpenAI API key verified.",
+            }
+        }
+    )
+    caplog.set_level(logging.DEBUG)
+
+    def network_failure(received_key: str):
+        assert received_key == candidate_key
+        assert os.environ["OPENAI_API_KEY"] == previous_key
+        assert f"OPENAI_API_KEY={previous_key}" in runtime.paths.env_file_path.read_text(encoding="utf-8")
+        assert runtime.setup_state_store.load_state()["openai"]["api_key_verified"] is False
+        return SimpleNamespace(passed=False, code="network", message="Network unavailable")
+
+    run_setup_openai_key(
+        runtime.setup_state_store,
+        api_key=candidate_key,
+        env_file_path=runtime.paths.env_file_path,
+        upsert_env_value=upsert_env_value,
+        check_openai_reachable=network_failure,
+    )
+
+    env_contents = runtime.paths.env_file_path.read_text(encoding="utf-8")
+    state_contents = runtime.paths.setup_state_path.read_text(encoding="utf-8")
+    state = runtime.setup_state_store.load_state()
+    assert f"OPENAI_API_KEY={previous_key}" in env_contents
+    assert "UNRELATED_SETTING=preserve-me" in env_contents
+    assert candidate_key not in env_contents
+    assert os.environ["OPENAI_API_KEY"] == previous_key
+    assert state["openai"]["key_present"] is True
+    assert state["openai"]["api_key_verified"] is False
+    assert state["openai"]["verification"]["verified"] is False
+    assert "Network unavailable" in state["openai"]["message"]
+    assert candidate_key not in state_contents
+    assert all(candidate_key not in record.getMessage() for record in caplog.records)
+    runtime.shutdown()
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 is not installed")
+def test_valid_api_key_replacement_commits_only_after_successful_verification(tmp_path, monkeypatch) -> None:
+    previous_key = "sk-working-key-123"
+    candidate_key = "sk-candidate-key-456"
+    monkeypatch.setenv("OPENAI_API_KEY", previous_key)
+    runtime = build_runtime(tmp_path)
+    runtime.paths.env_file_path.write_text(
+        f"# Keep this comment\nOPENAI_API_KEY={previous_key}\nGPIO_LED_PIN=27\n",
+        encoding="utf-8",
+    )
+    runtime.setup_state_store.write_state(
+        {
+            "openai": {
+                "status": "pass",
+                "key_present": True,
+                "api_key_verified": True,
+                "verification": verified_openai_metadata(runtime),
+                "message": "OpenAI API key verified.",
+            }
+        }
+    )
+
+    def verification_succeeds(received_key: str):
+        assert received_key == candidate_key
+        assert os.environ["OPENAI_API_KEY"] == previous_key
+        assert f"OPENAI_API_KEY={previous_key}" in runtime.paths.env_file_path.read_text(encoding="utf-8")
+        interim_state = runtime.setup_state_store.load_state()
+        assert interim_state["openai"]["api_key_verified"] is False
+        return SimpleNamespace(passed=True, code="verified", message="ignored")
+
+    run_setup_openai_key(
+        runtime.setup_state_store,
+        api_key=candidate_key,
+        env_file_path=runtime.paths.env_file_path,
+        upsert_env_value=upsert_env_value,
+        check_openai_reachable=verification_succeeds,
+    )
+
+    env_contents = runtime.paths.env_file_path.read_text(encoding="utf-8")
+    state_contents = runtime.paths.setup_state_path.read_text(encoding="utf-8")
+    state = runtime.setup_state_store.load_state()
+    assert f"OPENAI_API_KEY={candidate_key}" in env_contents
+    assert "# Keep this comment" in env_contents
+    assert "GPIO_LED_PIN=27" in env_contents
+    assert os.environ["OPENAI_API_KEY"] == candidate_key
+    assert state["openai"]["api_key_verified"] is True
+    assert state["openai"]["verification"]["verified"] is True
+    assert state["openai"]["verification"]["verified_at"]
+    assert candidate_key not in state_contents
+    runtime.shutdown()
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 is not installed")
+def test_openai_key_without_current_verification_metadata_requires_reverification(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-working-key-123")
+    runtime = build_runtime(tmp_path)
+    runtime.setup_state_store.write_state(
+        {
+            "openai": {
+                "status": "pass",
+                "key_present": True,
+                "api_key_verified": True,
+                "message": "Legacy verification result.",
+            }
+        }
+    )
+
+    state = runtime.setup_state_store.load_state()
+
+    assert state["openai"]["key_present"] is True
+    assert state["openai"]["api_key_verified"] is False
+    assert state["openai"]["verification"]["verified"] is False
+    assert state["openai"]["status"] == "idle"
+    assert "Verification required" in state["openai"]["message"]
+    runtime.shutdown()
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 is not installed")
+def test_stale_openai_verification_metadata_requires_reverification(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-working-key-123")
+    runtime = build_runtime(tmp_path)
+    runtime.setup_state_store.write_state(
+        {
+            "openai": {
+                "status": "pass",
+                "key_present": True,
+                "api_key_verified": True,
+                "verification": {
+                    "verified": True,
+                    "verified_at": "2000-01-01T00:00:00",
+                    "verification_schema_version": OPENAI_VERIFICATION_SCHEMA_VERSION,
+                    "provider": "openai",
+                    "model": "",
+                },
+            }
+        }
+    )
+
+    state = runtime.setup_state_store.load_state()
+
+    assert state["openai"]["api_key_verified"] is False
+    assert state["openai"]["verification"]["verified"] is False
     runtime.shutdown()
 
 
@@ -153,6 +330,7 @@ def test_finish_setup_marks_config_and_persists_authoritative_setup_state(tmp_pa
                 "status": "pass",
                 "key_present": True,
                 "api_key_verified": True,
+                "verification": verified_openai_metadata(runtime),
                 "message": "OpenAI reachable.",
             },
             "camera": {
@@ -213,18 +391,75 @@ def test_setup_controller_scan_wifi_updates_model(qapp, qtbot, tmp_path, monkeyp
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 is not installed")
 def test_setup_controller_verify_api_key_updates_state(qapp, qtbot, tmp_path, monkeypatch) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     runtime = build_runtime(tmp_path)
     controller = SetupController(runtime)
     monkeypatch.setattr(
         "qt_app.setup_controller.check_openai_reachable",
-        lambda: SimpleNamespace(passed=True, message="OpenAI is reachable."),
+        lambda candidate: SimpleNamespace(passed=True, code="verified", message="OpenAI is reachable."),
     )
 
     controller.verifyApiKey("sk-test-key-123")
 
-    qtbot.waitUntil(lambda: controller.openAiStatus == "pass", timeout=3000)
-    assert "OpenAI is reachable." in controller.openAiMessage
+    qtbot.waitUntil(
+        lambda: not controller.setupBusy
+        and controller.openAiStatus == "pass"
+        and runtime.paths.setup_state_path.is_file(),
+        timeout=3000,
+    )
+    assert controller.openAiMessage == "OpenAI API key verified."
     assert "OPENAI_API_KEY=sk-test-key-123" in runtime.paths.env_file_path.read_text(encoding="utf-8")
+    controller.close()
+    runtime.shutdown()
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 is not installed")
+def test_setup_api_key_presentation_exposes_only_safe_status(qapp, qtbot, tmp_path, monkeypatch, caplog) -> None:
+    """The setup presentation layer must not receive key-derived information."""
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    runtime = build_runtime(tmp_path)
+    controller = SetupController(runtime)
+    candidate_key = "sk-test-private-key-987654"
+    caplog.set_level(logging.DEBUG, logger="qt_app.setup_controller")
+    monkeypatch.setattr(
+        "qt_app.setup_controller.check_openai_reachable",
+        lambda candidate: SimpleNamespace(passed=True, code="verified", message="OpenAI is reachable."),
+    )
+
+    controller.verifyApiKey(candidate_key)
+
+    qtbot.waitUntil(
+        lambda: not controller.setupBusy
+        and controller.openAiStatus == "pass"
+        and runtime.paths.setup_state_path.is_file(),
+        timeout=3000,
+    )
+    property_names = {
+        str(controller.metaObject().property(index).name())
+        for index in range(controller.metaObject().propertyCount())
+    }
+    setup_qml = Path("qt_app/qml/screens/SetupScreen.qml").read_text(encoding="utf-8")
+    app_controller_source = Path("qt_app/app_controller.py").read_text(encoding="utf-8")
+    setup_preview_qml = Path("tools/ui_preview/SetupWizardPreview.qml").read_text(encoding="utf-8")
+    persisted_state = runtime.paths.setup_state_path.read_text(encoding="utf-8")
+
+    assert controller.hasApiKey is True
+    assert controller.apiKeyVerified is True
+    assert controller.apiKeyDisplayText == "API key saved"
+    assert "maskedApiKey" not in property_names
+    assert "maskedOpenAiKey" not in property_names
+    assert candidate_key not in controller.apiKeyDisplayText
+    assert "sk-" not in controller.apiKeyDisplayText
+    assert "setupMaskedApiKey" not in app_controller_source
+    assert "setupMaskedOpenAiKey" not in app_controller_source
+    assert "setupMaskedApiKey" not in setup_qml
+    assert "setupMaskedOpenAiKey" not in setup_qml
+    assert "setupMaskedApiKey" not in setup_preview_qml
+    assert "setupMaskedOpenAiKey" not in setup_preview_qml
+    assert 'root.apiKeyDraft = ""' in setup_qml
+    assert candidate_key not in persisted_state
+    assert "OPENAI_API_KEY" not in persisted_state
+    assert all(candidate_key not in record.getMessage() for record in caplog.records)
     controller.close()
     runtime.shutdown()
 
@@ -252,6 +487,7 @@ def test_setup_controller_finish_setup_emits_completion(qapp, qtbot, tmp_path, m
                 "status": "pass",
                 "key_present": True,
                 "api_key_verified": True,
+                "verification": verified_openai_metadata(runtime),
                 "message": "OpenAI is reachable.",
             },
             "camera": {
@@ -340,10 +576,11 @@ def test_stale_api_verification_cannot_overwrite_newer_wifi_scan(qapp, qtbot, tm
     api_started = threading.Event()
     release_api = threading.Event()
 
-    def verify():
+    def verify(candidate: str):
+        assert candidate == "sk-test-key-123"
         api_started.set()
         assert release_api.wait(timeout=2.0)
-        return SimpleNamespace(passed=True, message="OpenAI is reachable.")
+        return SimpleNamespace(passed=True, code="verified", message="OpenAI is reachable.")
 
     monkeypatch.setattr("qt_app.setup_controller.check_openai_reachable", verify)
     monkeypatch.setattr(

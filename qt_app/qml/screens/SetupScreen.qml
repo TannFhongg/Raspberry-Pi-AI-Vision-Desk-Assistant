@@ -540,11 +540,10 @@ Item {
                     }
 
                     StatusChip {
-                        visible: root.controller.setupMaskedApiKey.length > 0
                         theme: root.theme
                         label: "Stored"
-                        value: root.controller.setupMaskedApiKey
-                        tone: "success"
+                        value: root.controller.setupApiKeyDisplayText
+                        tone: root.controller.setupHasApiKey ? "success" : "neutral"
                     }
                 }
 

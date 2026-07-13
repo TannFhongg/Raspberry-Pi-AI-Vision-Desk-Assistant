@@ -88,6 +88,10 @@ class RuntimePaths:
     def reset_marker_path(self) -> Path:
         return self.data_dir / "factory_reset_state.json"
 
+    @property
+    def readiness_path(self) -> Path:
+        return self.data_dir / "runtime" / "readiness.json"
+
     def to_visiondesk_paths(self) -> VisionDeskPaths:
         """Convert the runtime-specific view into the shared path resolver schema."""
         current_release_link = self.app_root if self.path_mode == "production" else self.repo_root

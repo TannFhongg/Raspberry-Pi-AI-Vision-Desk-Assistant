@@ -4,9 +4,13 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import os
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
+
+from system.readiness import write_readiness_marker
 
 
 def test_install_script_includes_expected_flags_and_safety_guards() -> None:
@@ -36,6 +40,57 @@ def test_update_script_uses_manifest_checks_lockfile_and_rollback_state() -> Non
     assert "update-rollback.env" in script_text
     assert "system.migrations" in script_text
     assert "system.diagnostics" in script_text
+    assert "readiness.json" in script_text
+    assert "wait_for_application_readiness" in script_text
+    assert "wait_for_service_stability" in script_text
+    assert "NRestarts" in script_text
+    assert "MainPID" in script_text
+    assert "Rollback service did not reach verified readiness" in script_text
+    assert "switch_current_release" in script_text
+
+
+@pytest.mark.skipif(
+    os.name == "nt" or shutil.which("bash") is None or shutil.which("python3") is None,
+    reason="the sourced-shell update integration harness requires a native Linux bash environment",
+)
+def test_update_readiness_validator_runs_safely_against_marker_fixtures(tmp_path) -> None:
+    """Exercise update.sh marker validation without systemd, releases, or live symlinks."""
+    marker_path = tmp_path / "runtime" / "readiness.json"
+    write_readiness_marker(
+        marker_path,
+        version="1.0.1",
+        state="READY",
+        qml_loaded=True,
+        pid=4321,
+        now=datetime.now(timezone.utc),
+    )
+    command = (
+        'source "$UPDATE_SCRIPT"; READINESS_FILE="$READINESS_MARKER"; READINESS_MAX_AGE_SECONDS=60; '
+        'validate_readiness_marker "$EXPECTED_VERSION" "$EXPECTED_PID"'
+    )
+    environment = {
+        **os.environ,
+        "UPDATE_SCRIPT": str(Path("update.sh").resolve()),
+        "READINESS_MARKER": str(marker_path),
+        "EXPECTED_PID": "4321",
+    }
+    healthy = subprocess.run(
+        ["bash", "-c", command],
+        check=False,
+        capture_output=True,
+        text=True,
+        env={**environment, "EXPECTED_VERSION": "1.0.1"},
+    )
+    wrong_version = subprocess.run(
+        ["bash", "-c", command],
+        check=False,
+        capture_output=True,
+        text=True,
+        env={**environment, "EXPECTED_VERSION": "9.9.9"},
+    )
+
+    assert healthy.returncode == 0, healthy.stderr
+    assert wrong_version.returncode != 0
 
 
 def test_uninstall_script_supports_preserve_by_default_and_purge_confirmation() -> None:
