@@ -10,6 +10,7 @@ from typing import Any, Callable
 from hardware.status import DeviceState, coerce_device_state
 from markupsafe import Markup, escape
 
+from system.error_mapping import map_public_error
 from system.ui_catalog import (
     MODE_LABELS,
     PIPELINE_PROGRESS_DETAILS,
@@ -361,8 +362,8 @@ def build_result_detail_view(
     if technical_detail and result_state in {"ERROR", "RETRY_PENDING"}:
         detail_sections.extend(
             [
-                "### Technical Detail",
-                technical_detail,
+                "### Error",
+                map_public_error(technical_detail).message,
             ]
         )
 

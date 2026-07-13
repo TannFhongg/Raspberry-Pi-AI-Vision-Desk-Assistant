@@ -9,7 +9,7 @@ import subprocess
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from config import DeviceSettings, load_device_settings
 from system.device_setup import remove_env_value
@@ -26,6 +26,20 @@ CONFIRMATION_PHRASE = "ERASE VISIONDESK"
 
 class FactoryResetError(Exception):
     """Raised when a factory reset operation cannot complete safely."""
+
+
+class FactoryResetExecutionGuard:
+    """Permit a reset operation to run once for a single CLI invocation."""
+
+    def __init__(self) -> None:
+        self._executed = False
+
+    def execute(self, operation: Callable[[], FactoryResetSummary]) -> FactoryResetSummary:
+        """Run the destructive operation once and reject duplicate execution."""
+        if self._executed:
+            raise FactoryResetError("Factory reset execution was already requested for this invocation.")
+        self._executed = True
+        return operation()
 
 
 @dataclass(slots=True)
@@ -354,8 +368,8 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _print_summary(summary: FactoryResetSummary) -> None:
-    verb = "Would modify" if summary.dry_run else "Removed or reset"
+def _print_summary(summary: FactoryResetSummary, *, planned: bool = False) -> None:
+    verb = "Would modify" if summary.dry_run else ("Will modify" if planned else "Removed or reset")
     print(f"Factory reset mode: {summary.mode}")
     for path in summary.removed_paths:
         print(f"{verb}: {path}")
@@ -367,20 +381,29 @@ def _print_summary(summary: FactoryResetSummary) -> None:
         print("Next launch: Setup Wizard will be required.")
 
 
+def _confirm_reset() -> bool:
+    """Request explicit confirmation without allowing EOF to trigger a reset."""
+    try:
+        return input("Type YES to continue: ").strip() == "YES"
+    except EOFError:
+        print("Factory reset cancelled because confirmation input was unavailable.")
+        return False
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI entrypoint used by factory-reset.sh and manual recovery flows."""
     args = _build_parser().parse_args(argv)
 
     if args.mode == FULL_FACTORY_RESET and args.phrase != CONFIRMATION_PHRASE:
         print(f"Full factory reset requires --phrase '{CONFIRMATION_PHRASE}'.")
-        raise SystemExit(1)
+        return 1
 
-    summary = perform_factory_reset(
+    summary = plan_factory_reset(
         mode=args.mode,
         remove_wifi_profile=args.remove_wifi,
-        dry_run=args.dry_run,
     )
     if args.dry_run:
+        summary.dry_run = True
         if args.json:
             print(json.dumps(asdict(summary), ensure_ascii=True, indent=2))
         else:
@@ -388,15 +411,17 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if not args.json:
-        _print_summary(summary)
-    if not args.yes:
-        confirmation = input("Type YES to continue: ").strip()
-        if confirmation != "YES":
-            raise SystemExit(1)
+        _print_summary(summary, planned=True)
+    if not args.yes and not _confirm_reset():
+        print("Factory reset cancelled.")
+        return 1
 
-    summary = perform_factory_reset(
-        mode=args.mode,
-        remove_wifi_profile=args.remove_wifi,
+    executor = FactoryResetExecutionGuard()
+    summary = executor.execute(
+        lambda: perform_factory_reset(
+            mode=args.mode,
+            remove_wifi_profile=args.remove_wifi,
+        )
     )
     if args.json:
         print(json.dumps(asdict(summary), ensure_ascii=True, indent=2))

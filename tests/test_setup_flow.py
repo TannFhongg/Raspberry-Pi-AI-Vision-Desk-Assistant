@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -215,7 +216,7 @@ def test_setup_controller_verify_api_key_updates_state(qapp, qtbot, tmp_path, mo
     runtime = build_runtime(tmp_path)
     controller = SetupController(runtime)
     monkeypatch.setattr(
-        "hardware.device_check.check_openai_reachable",
+        "qt_app.setup_controller.check_openai_reachable",
         lambda: SimpleNamespace(passed=True, message="OpenAI is reachable."),
     )
 
@@ -274,5 +275,137 @@ def test_setup_controller_finish_setup_emits_completion(qapp, qtbot, tmp_path, m
     assert runtime.settings.setup.completed is True
     assert len(updated_configs) == 1
     assert updated_configs[0]["setup"]["completed"] is True
+    controller.close()
+    runtime.shutdown()
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 is not installed")
+def test_setup_state_store_concurrent_updates_preserve_both_fields(tmp_path) -> None:
+    runtime = build_runtime(tmp_path)
+    barrier = threading.Barrier(3)
+
+    def write_wifi() -> None:
+        barrier.wait()
+        runtime.setup_state_store.update_state({"wifi": {"ssid": "Office"}})
+
+    def write_camera() -> None:
+        barrier.wait()
+        runtime.setup_state_store.update_state({"camera": {"status": "pass"}})
+
+    wifi_thread = threading.Thread(target=write_wifi)
+    camera_thread = threading.Thread(target=write_camera)
+    wifi_thread.start()
+    camera_thread.start()
+    barrier.wait()
+    wifi_thread.join(timeout=2.0)
+    camera_thread.join(timeout=2.0)
+
+    state = runtime.setup_state_store.load_state()
+    assert state["wifi"]["ssid"] == "Office"
+    assert state["camera"]["status"] == "pass"
+    runtime.shutdown()
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 is not installed")
+def test_setup_controller_ignores_second_wifi_scan_while_active(qapp, qtbot, tmp_path, monkeypatch) -> None:
+    runtime = build_runtime(tmp_path)
+    controller = SetupController(runtime)
+    started = threading.Event()
+    release = threading.Event()
+    calls: list[str] = []
+
+    def scan() -> list[dict[str, object]]:
+        calls.append("scan")
+        started.set()
+        assert release.wait(timeout=2.0)
+        return [{"ssid": "Office", "signal": 80, "security": "WPA2"}]
+
+    monkeypatch.setattr("qt_app.setup_controller.scan_wifi_networks", scan)
+
+    controller.scanWifi()
+    qtbot.waitUntil(started.is_set, timeout=1000)
+    controller.scanWifi()
+
+    assert calls == ["scan"]
+    release.set()
+    qtbot.waitUntil(lambda: not controller.setupBusy and controller.wifiScanStatus == "pass", timeout=3000)
+    controller.close()
+    runtime.shutdown()
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 is not installed")
+def test_stale_api_verification_cannot_overwrite_newer_wifi_scan(qapp, qtbot, tmp_path, monkeypatch) -> None:
+    runtime = build_runtime(tmp_path)
+    controller = SetupController(runtime)
+    api_started = threading.Event()
+    release_api = threading.Event()
+
+    def verify():
+        api_started.set()
+        assert release_api.wait(timeout=2.0)
+        return SimpleNamespace(passed=True, message="OpenAI is reachable.")
+
+    monkeypatch.setattr("qt_app.setup_controller.check_openai_reachable", verify)
+    monkeypatch.setattr(
+        "qt_app.setup_controller.scan_wifi_networks",
+        lambda: [{"ssid": "Office", "signal": 80, "security": "WPA2"}],
+    )
+
+    controller.verifyApiKey("sk-test-key-123")
+    qtbot.waitUntil(api_started.is_set, timeout=1000)
+    controller.scanWifi()
+    qtbot.waitUntil(lambda: controller.wifiScanStatus == "pass", timeout=3000)
+    release_api.set()
+    qtbot.waitUntil(lambda: not controller.setupBusy, timeout=3000)
+
+    state = runtime.setup_state_store.load_state()
+    assert state["current_step"] == "wifi"
+    assert state["wifi"]["scan_status"] == "pass"
+    assert state["openai"]["message"] != "OpenAI is reachable."
+    controller.close()
+    runtime.shutdown()
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 is not installed")
+def test_setup_worker_exception_clears_busy_flag(qapp, qtbot, tmp_path, monkeypatch) -> None:
+    runtime = build_runtime(tmp_path)
+    controller = SetupController(runtime)
+
+    def fail_scan() -> list[dict[str, object]]:
+        raise RuntimeError("scan failed")
+
+    monkeypatch.setattr("qt_app.setup_controller.scan_wifi_networks", fail_scan)
+
+    controller.scanWifi()
+
+    qtbot.waitUntil(lambda: not controller.setupBusy, timeout=3000)
+    controller.close()
+    runtime.shutdown()
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 is not installed")
+def test_finish_setup_cannot_run_twice(qapp, qtbot, tmp_path, monkeypatch) -> None:
+    runtime = build_runtime(tmp_path)
+    controller = SetupController(runtime)
+    started = threading.Event()
+    release = threading.Event()
+    calls: list[str] = []
+
+    def finish(store, **kwargs) -> bool:
+        del store, kwargs
+        calls.append("finish")
+        started.set()
+        assert release.wait(timeout=2.0)
+        return False
+
+    monkeypatch.setattr("qt_app.setup_controller.finish_setup", finish)
+
+    controller.finishSetup()
+    qtbot.waitUntil(started.is_set, timeout=1000)
+    controller.finishSetup()
+
+    assert calls == ["finish"]
+    release.set()
+    qtbot.waitUntil(lambda: not controller.setupBusy, timeout=3000)
     controller.close()
     runtime.shutdown()

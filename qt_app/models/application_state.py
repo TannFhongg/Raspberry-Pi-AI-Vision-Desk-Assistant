@@ -17,6 +17,9 @@ class ApplicationStateModel(QObject):
     displayStatusChanged = Signal()
     errorTitleChanged = Signal()
     errorDetailChanged = Signal()
+    errorMessageChanged = Signal()
+    errorCodeChanged = Signal()
+    canRetryChanged = Signal()
     setupReadyToFinishChanged = Signal()
     updatedAtChanged = Signal()
 
@@ -29,6 +32,9 @@ class ApplicationStateModel(QObject):
         self._display_status = ""
         self._error_title = ""
         self._error_detail = ""
+        self._error_message = ""
+        self._error_code = ""
+        self._can_retry = False
         self._setup_ready_to_finish = False
         self._updated_at = ""
 
@@ -56,6 +62,15 @@ class ApplicationStateModel(QObject):
             elif key == "error_detail" and value != self._error_detail:
                 self._error_detail = str(value)
                 self.errorDetailChanged.emit()
+            elif key == "error_message" and value != self._error_message:
+                self._error_message = str(value)
+                self.errorMessageChanged.emit()
+            elif key == "error_code" and value != self._error_code:
+                self._error_code = str(value)
+                self.errorCodeChanged.emit()
+            elif key == "can_retry" and bool(value) != self._can_retry:
+                self._can_retry = bool(value)
+                self.canRetryChanged.emit()
             elif key == "setup_ready_to_finish" and bool(value) != self._setup_ready_to_finish:
                 self._setup_ready_to_finish = bool(value)
                 self.setupReadyToFinishChanged.emit()
@@ -91,6 +106,18 @@ class ApplicationStateModel(QObject):
     def errorDetail(self) -> str:
         return self._error_detail
 
+    @Property(str, notify=errorMessageChanged)
+    def errorMessage(self) -> str:
+        return self._error_message
+
+    @Property(str, notify=errorCodeChanged)
+    def errorCode(self) -> str:
+        return self._error_code
+
+    @Property(bool, notify=canRetryChanged)
+    def canRetry(self) -> bool:
+        return self._can_retry
+
     @Property(bool, notify=setupReadyToFinishChanged)
     def setupReadyToFinish(self) -> bool:
         return self._setup_ready_to_finish
@@ -98,4 +125,3 @@ class ApplicationStateModel(QObject):
     @Property(str, notify=updatedAtChanged)
     def updatedAt(self) -> str:
         return self._updated_at
-

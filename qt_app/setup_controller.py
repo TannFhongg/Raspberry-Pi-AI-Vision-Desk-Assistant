@@ -23,6 +23,7 @@ from system.device_setup import (
 )
 from system.diagnostics import run_setup_device_checks
 from system.setup_flow import (
+    SetupStateStore,
     finish_setup,
     mask_secret_value,
     run_setup_camera_test,
@@ -33,6 +34,23 @@ from system.setup_flow import (
 
 LOGGER = logging.getLogger(__name__)
 SUPPORTED_GPIO_PINS = frozenset({2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27})
+
+
+class _OperationScopedSetupStateStore:
+    """Apply setup-worker writes only while their operation is still current."""
+
+    def __init__(self, store: SetupStateStore, operation_id: int) -> None:
+        self._store = store
+        self.operation_id = operation_id
+
+    def write_state(self, updates: dict[str, Any] | None = None) -> dict[str, Any] | None:
+        return self._store.update_state(updates, operation_id=self.operation_id)
+
+    def write_device_checks(self, checks: list[dict[str, Any]]) -> dict[str, Any] | None:
+        return self._store.write_device_checks(checks, operation_id=self.operation_id)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._store, name)
 
 
 class _MockSetupVerifier:
@@ -64,7 +82,8 @@ class SetupController(QObject):
 
     stateChanged = Signal()
     setupCompleted = Signal(str)
-    workerCompleted = Signal()
+    workerCompleted = Signal(str, int)
+    setupCompletionReady = Signal(str)
 
     def __init__(self, runtime: VisionDeskRuntime, parent=None) -> None:
         super().__init__(parent)
@@ -75,10 +94,14 @@ class SetupController(QObject):
         self._gpio_requirements_model = DictListModel(["label", "pin", "pressed"], self)
         self._device_checks_model = DictListModel(["name", "status", "message", "required"], self)
         self._gpio_verifier: GPIOSetupVerifier | _MockSetupVerifier | None = None
+        self._gpio_state_store: _OperationScopedSetupStateStore | None = None
+        self._active_actions: set[str] = set()
+        self._action_lock = threading.Lock()
         self._gpio_timer = QTimer(self)
         self._gpio_timer.setInterval(350)
         self._gpio_timer.timeout.connect(self._sync_gpio_state)
-        self.workerCompleted.connect(self.refresh_state)
+        self.workerCompleted.connect(self._handle_worker_completed)
+        self.setupCompletionReady.connect(self._on_setup_completed)
         self.refresh_state()
 
     @Property(QObject, constant=True)
@@ -199,6 +222,12 @@ class SetupController(QObject):
     def readyToFinish(self) -> bool:
         return self.runtime.setup_state_store.setup_ready_to_finish(self._state)
 
+    @Property(bool, notify=stateChanged)
+    def setupBusy(self) -> bool:
+        """Return whether any setup operation is currently running."""
+        with self._action_lock:
+            return bool(self._active_actions)
+
     def refresh_state(self) -> None:
         """Reload setup state plus derived warning/model payloads."""
         self._state = self.runtime.setup_state_store.load_state()
@@ -212,10 +241,11 @@ class SetupController(QObject):
 
     @Slot()
     def runDeviceChecks(self) -> None:
-        self._run_in_thread(self._device_checks_worker, "setup-device-checks")
+        self._run_in_thread("device_checks", self._device_checks_worker, "setup-device-checks")
 
     @Slot()
     def goToNextStep(self) -> None:
+        self.runtime.setup_state_store.invalidate_pending_operations()
         step = self.currentStep
         step_order = ["welcome", "wifi", "openai", "camera", "gpio", "finish"]
         try:
@@ -227,6 +257,7 @@ class SetupController(QObject):
 
     @Slot()
     def goToPreviousStep(self) -> None:
+        self.runtime.setup_state_store.invalidate_pending_operations()
         step = self.currentStep
         step_order = ["welcome", "wifi", "openai", "camera", "gpio", "finish"]
         try:
@@ -238,35 +269,46 @@ class SetupController(QObject):
 
     @Slot(str)
     def goToStep(self, step: str) -> None:
+        self.runtime.setup_state_store.invalidate_pending_operations()
         self.runtime.setup_state_store.write_state({"current_step": step})
         self.refresh_state()
 
     @Slot()
     def scanWifi(self) -> None:
-        self._run_in_thread(self._scan_wifi_worker, "setup-scan-wifi")
+        self._run_in_thread("wifi_scan", self._scan_wifi_worker, "setup-scan-wifi")
 
     @Slot(str, str, str)
     def connectWifi(self, selected_ssid: str, manual_ssid: str, password: str) -> None:
         self._run_in_thread(
-            lambda: self._connect_wifi_worker(selected_ssid, manual_ssid, password),
+            "wifi_connect",
+            lambda store: self._connect_wifi_worker(store, selected_ssid, manual_ssid, password),
             "setup-connect-wifi",
         )
 
     @Slot(str)
     def verifyApiKey(self, api_key: str) -> None:
-        self._run_in_thread(lambda: self._verify_api_key_worker(api_key), "setup-openai-key")
+        self._run_in_thread(
+            "api_verify",
+            lambda store: self._verify_api_key_worker(store, api_key),
+            "setup-openai-key",
+        )
 
     @Slot()
     def clearApiKey(self) -> None:
-        self._run_in_thread(self._clear_api_key_worker, "setup-openai-clear")
+        self._run_in_thread("api_clear", self._clear_api_key_worker, "setup-openai-clear")
 
     @Slot()
     def runCameraTest(self) -> None:
-        self._run_in_thread(self._camera_test_worker, "setup-camera-test")
+        self._run_in_thread("camera_test", self._camera_test_worker, "setup-camera-test")
 
     @Slot()
     def startGpioTest(self) -> None:
-        self._start_gpio_test()
+        store = self._begin_action("gpio_test")
+        if store is None:
+            return
+        self._gpio_state_store = store
+        if not self._start_gpio_test(store):
+            self._complete_action("gpio_test")
 
     @Slot()
     def stopGpioTest(self) -> None:
@@ -274,45 +316,62 @@ class SetupController(QObject):
 
     @Slot()
     def finishSetup(self) -> None:
-        succeeded = finish_setup(
-            self.runtime.setup_state_store,
-            update_device_config=lambda payload: update_device_config(
-                payload,
-                config_path=self.runtime.settings.config_path,
-            ),
-            on_completed=self._on_setup_completed,
-        )
-        if not succeeded:
-            self.refresh_state()
+        self._run_in_thread("finish_setup", self._finish_setup_worker, "setup-finish")
 
     def close(self) -> None:
         """Stop any temporary GPIO setup verifier."""
-        self._stop_gpio_verifier()
+        if self._gpio_verifier is not None or self._gpio_state_store is not None:
+            self._stop_gpio_test()
+        else:
+            self._stop_gpio_verifier()
 
     def _on_setup_completed(self, completion_timestamp: str) -> None:
         self.runtime.mark_setup_complete(completion_timestamp)
         self.runtime.request_restart()
         self.setupCompleted.emit(completion_timestamp)
 
-    def _run_in_thread(self, target, name: str) -> None:
-        worker = threading.Thread(target=self._wrap_worker(target), daemon=True, name=name)
-        worker.start()
+    def _begin_action(self, action: str) -> _OperationScopedSetupStateStore | None:
+        with self._action_lock:
+            if action in self._active_actions:
+                return None
+            self._active_actions.add(action)
+        operation_id = self.runtime.setup_state_store.begin_operation()
+        self.stateChanged.emit()
+        return _OperationScopedSetupStateStore(self.runtime.setup_state_store, operation_id)
 
-    def _wrap_worker(self, target):
+    def _complete_action(self, action: str) -> None:
+        with self._action_lock:
+            self._active_actions.discard(action)
+        self.stateChanged.emit()
+
+    def _run_in_thread(self, action: str, target, name: str) -> bool:
+        store = self._begin_action(action)
+        if store is None:
+            return False
+        worker = threading.Thread(target=self._wrap_worker(action, store, target), daemon=True, name=name)
+        worker.start()
+        return True
+
+    def _wrap_worker(self, action: str, store: _OperationScopedSetupStateStore, target):
         def _worker() -> None:
             try:
-                target()
+                target(store)
             except Exception:
                 LOGGER.exception("Setup worker failed")
-            self.workerCompleted.emit()
+            self.workerCompleted.emit(action, store.operation_id)
 
         return _worker
 
-    def _device_checks_worker(self) -> None:
-        checks = run_setup_device_checks()
-        self.runtime.setup_state_store.write_device_checks([check.__dict__ for check in checks])
+    def _handle_worker_completed(self, action: str, operation_id: int) -> None:
+        del operation_id
+        self._complete_action(action)
+        self.refresh_state()
 
-    def _scan_wifi_worker(self) -> None:
+    def _device_checks_worker(self, store: _OperationScopedSetupStateStore) -> None:
+        checks = run_setup_device_checks()
+        store.write_device_checks([check.__dict__ for check in checks])
+
+    def _scan_wifi_worker(self, store: _OperationScopedSetupStateStore) -> None:
         try:
             networks = scan_wifi_networks()
             message = (
@@ -320,7 +379,7 @@ class SetupController(QObject):
                 if networks
                 else "No nearby Wi-Fi networks were found."
             )
-            self.runtime.setup_state_store.write_state(
+            store.write_state(
                 {
                     "current_step": "wifi",
                     "finish_message": "",
@@ -332,7 +391,7 @@ class SetupController(QObject):
                 }
             )
         except DeviceSetupError as exc:
-            self.runtime.setup_state_store.write_state(
+            store.write_state(
                 {
                     "current_step": "wifi",
                     "finish_message": "",
@@ -343,9 +402,15 @@ class SetupController(QObject):
                 }
             )
 
-    def _connect_wifi_worker(self, selected_ssid: str, manual_ssid: str, password: str) -> None:
+    def _connect_wifi_worker(
+        self,
+        store: _OperationScopedSetupStateStore,
+        selected_ssid: str,
+        manual_ssid: str,
+        password: str,
+    ) -> None:
         run_setup_wifi_connect(
-            self.runtime.setup_state_store,
+            store,
             selected_ssid=selected_ssid,
             manual_ssid=manual_ssid,
             password=password,
@@ -357,19 +422,19 @@ class SetupController(QObject):
             ),
         )
 
-    def _verify_api_key_worker(self, api_key: str) -> None:
+    def _verify_api_key_worker(self, store: _OperationScopedSetupStateStore, api_key: str) -> None:
         run_setup_openai_key(
-            self.runtime.setup_state_store,
+            store,
             api_key=api_key,
             env_file_path=self.runtime.paths.env_file_path,
             upsert_env_value=upsert_env_value,
             check_openai_reachable=check_openai_reachable,
         )
 
-    def _clear_api_key_worker(self) -> None:
+    def _clear_api_key_worker(self, store: _OperationScopedSetupStateStore) -> None:
         remove_env_value(self.runtime.paths.env_file_path, "OPENAI_API_KEY")
         os.environ.pop("OPENAI_API_KEY", None)
-        self.runtime.setup_state_store.write_state(
+        store.write_state(
             {
                 "current_step": "openai",
                 "openai": {
@@ -381,10 +446,20 @@ class SetupController(QObject):
             }
         )
 
-    def _camera_test_worker(self) -> None:
+    def _camera_test_worker(self, store: _OperationScopedSetupStateStore) -> None:
         run_setup_camera_test(
-            self.runtime.setup_state_store,
+            store,
             check_camera=lambda: check_camera(self.runtime.settings),
+        )
+
+    def _finish_setup_worker(self, store: _OperationScopedSetupStateStore) -> None:
+        finish_setup(
+            store,
+            update_device_config=lambda payload: update_device_config(
+                payload,
+                config_path=self.runtime.settings.config_path,
+            ),
+            on_completed=self.setupCompletionReady.emit,
         )
 
     def _validate_gpio_setup(self) -> list[str]:
@@ -408,11 +483,11 @@ class SetupController(QObject):
             issues.append(gpio_availability.message)
         return issues
 
-    def _start_gpio_test(self) -> None:
+    def _start_gpio_test(self, store: _OperationScopedSetupStateStore) -> bool:
         self._stop_gpio_verifier()
         validation_issues = self._validate_gpio_setup()
         if validation_issues:
-            self.runtime.setup_state_store.write_state(
+            store.write_state(
                 {
                     "current_step": "gpio",
                     "gpio": {
@@ -427,7 +502,7 @@ class SetupController(QObject):
                 }
             )
             self.refresh_state()
-            return
+            return False
 
         verifier_class = _MockSetupVerifier if self.runtime.mock_hardware else GPIOSetupVerifier
         try:
@@ -437,7 +512,7 @@ class SetupController(QObject):
             )
             verifier.start()
             self._gpio_verifier = verifier
-            self.runtime.setup_state_store.write_state(
+            store.write_state(
                 {
                     "current_step": "gpio",
                     "finish_message": "",
@@ -456,8 +531,9 @@ class SetupController(QObject):
                 }
             )
             self._gpio_timer.start()
+            active = True
         except GPIOSetupVerifierError as exc:
-            self.runtime.setup_state_store.write_state(
+            store.write_state(
                 {
                     "current_step": "gpio",
                     "finish_message": "",
@@ -472,14 +548,20 @@ class SetupController(QObject):
                     },
                 }
             )
+            active = False
         self.refresh_state()
+        return active
 
     def _stop_gpio_test(self) -> None:
         state = self._sync_gpio_state()
         gpio_state = state.get("gpio", {})
         self._stop_gpio_verifier()
         passed = bool(gpio_state.get("all_pressed")) and not list(gpio_state.get("validation_issues", []))
-        self.runtime.setup_state_store.write_state(
+        store = self._gpio_state_store
+        if store is None:
+            self._stop_gpio_verifier()
+            return
+        store.write_state(
             {
                 "current_step": "finish" if passed else "gpio",
                 "finish_message": "",
@@ -499,6 +581,8 @@ class SetupController(QObject):
                 },
             }
         )
+        self._gpio_state_store = None
+        self._complete_action("gpio_test")
         self.refresh_state()
 
     def _stop_gpio_verifier(self) -> None:
@@ -533,8 +617,10 @@ class SetupController(QObject):
         if self._gpio_verifier is None:
             return self.runtime.setup_state_store.load_state()
         state = sync_setup_gpio_state(
-            self.runtime.setup_state_store,
+            self._gpio_state_store or self.runtime.setup_state_store,
             self._snapshot_gpio_progress,
         )
+        if state is None:
+            state = self.runtime.setup_state_store.load_state()
         self.refresh_state()
         return state

@@ -78,6 +78,10 @@ class VisionDeskPaths:
         return self.private_data_path / "cache"
 
     @property
+    def private_debug_path(self) -> Path:
+        return self.private_data_path / "debug"
+
+    @property
     def offline_retry_queue_path(self) -> Path:
         return self.private_data_path / "retry_queue.json"
 

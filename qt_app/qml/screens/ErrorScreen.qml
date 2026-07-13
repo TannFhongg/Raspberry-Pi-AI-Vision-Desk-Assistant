@@ -28,8 +28,8 @@ Item {
 
             StatusChip {
                 theme: root.theme
-                label: "Status"
-                value: "Retry available"
+                label: "Code"
+                value: root.controller.errorCode || "UNKNOWN_ERROR"
                 tone: "error"
             }
         }
@@ -53,7 +53,7 @@ Item {
                     title: "Capture error"
                     eyebrow: "Action needed"
                     value: root.controller.errorTitle
-                    message: root.controller.errorDetail
+                    message: root.controller.errorMessage
                     tone: "error"
                     Layout.fillWidth: true
                 }
@@ -66,8 +66,10 @@ Item {
                     Layout.fillWidth: true
                     title: "What you can do"
                     eyebrow: "Recovery"
-                    value: "Try the capture again"
-                    message: "Check that the camera view is clear and the device remains connected, then retry. VisionDesk keeps technical traces out of this screen."
+                    value: root.controller.canRetry ? "Try the capture again" : "Review device setup"
+                    message: root.controller.canRetry
+                        ? "Check the camera and network connection, then retry. VisionDesk keeps technical traces out of this screen."
+                        : "Review the device setup and resolve the issue before trying again. VisionDesk keeps technical traces out of this screen."
                     tone: "warning"
                 }
 
@@ -91,6 +93,8 @@ Item {
                 theme: root.theme
                 tone: "success"
                 text: "RETRY"
+                visible: root.controller.canRetry
+                enabled: root.controller.canRetry
                 onClicked: root.controller.retry()
             }
         }

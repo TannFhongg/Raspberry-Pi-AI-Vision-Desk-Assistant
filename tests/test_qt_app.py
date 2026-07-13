@@ -6,6 +6,7 @@ import importlib.util
 import json
 import threading
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -223,6 +224,171 @@ def test_pipeline_capture_lock_blocks_parallel_requests(qapp, qtbot, tmp_path) -
     runtime.shutdown()
 
 
+def test_pipeline_waits_for_preview_release_then_restarts_preview(qapp, qtbot, tmp_path) -> None:
+    runtime = build_runtime(tmp_path, setup_completed=True)
+
+    class PreviewTracker:
+        def __init__(self) -> None:
+            self.pause_calls = 0
+            self.resume_calls = 0
+
+        def pause(self, *, timeout_seconds: float) -> bool:
+            assert timeout_seconds > 0
+            self.pause_calls += 1
+            return True
+
+        def resume(self) -> None:
+            self.resume_calls += 1
+
+    preview = PreviewTracker()
+    runtime.live_preview = preview
+    controller = PipelineController(runtime, result_image_store=CachedImageStore())
+    spy = QSignalSpy(controller.payloadReady)
+
+    assert controller.start_capture(selected_mode="read_text", selected_mode_internal="document_reader") is True
+    assert preview.pause_calls == 1
+    qtbot.waitUntil(lambda: spy.count() == 1, timeout=3000)
+
+    assert preview.resume_calls == 1
+    controller.close()
+    runtime.shutdown()
+
+
+def test_preview_release_timeout_cancels_capture_and_recovers_preview(qapp, tmp_path) -> None:
+    runtime = build_runtime(tmp_path, setup_completed=True)
+
+    class BusyPreview:
+        def __init__(self) -> None:
+            self.resume_calls = 0
+
+        def pause(self, *, timeout_seconds: float) -> bool:
+            assert timeout_seconds > 0
+            return False
+
+        def resume(self) -> None:
+            self.resume_calls += 1
+
+    preview = BusyPreview()
+    runtime.live_preview = preview
+    controller = PipelineController(runtime, result_image_store=CachedImageStore())
+
+    assert controller.start_capture(selected_mode="read_text", selected_mode_internal="document_reader") is False
+    assert controller.busy is False
+    assert controller._thread is None
+    assert "Camera is still busy" in controller.lastStartError
+    assert preview.resume_calls == 1
+    controller.close()
+    runtime.shutdown()
+
+
+def test_pipeline_failure_restarts_preview_unless_reset_is_active(qapp, tmp_path) -> None:
+    runtime = build_runtime(tmp_path, setup_completed=True)
+
+    class PreviewTracker:
+        def __init__(self) -> None:
+            self.resume_calls = 0
+
+        def pause(self, *, timeout_seconds: float = 2.0) -> bool:
+            del timeout_seconds
+            return True
+
+        def resume(self) -> None:
+            self.resume_calls += 1
+
+    preview = PreviewTracker()
+    runtime.live_preview = preview
+    controller = PipelineController(runtime, result_image_store=CachedImageStore())
+    payload = {"kind": "error", "friendly_error": "Processing failed"}
+
+    controller._on_worker_finished(payload)
+    assert preview.resume_calls == 1
+
+    controller.set_resetting(True)
+    controller._on_worker_finished(payload)
+    assert preview.resume_calls == 1
+    controller.close()
+    runtime.shutdown()
+
+
+def test_app_controller_shows_camera_busy_error_when_preview_will_not_release(qapp, qtbot, tmp_path) -> None:
+    runtime, controller = build_controller(tmp_path)
+
+    class BusyPreview:
+        def pause(self, *, timeout_seconds: float = 2.0) -> bool:
+            del timeout_seconds
+            return False
+
+        def resume(self) -> None:
+            return None
+
+    runtime.live_preview = BusyPreview()
+    controller.selectMode("read_text")
+    qtbot.waitUntil(lambda: controller.currentScreen == "camera", timeout=1000)
+
+    controller.capture()
+
+    assert controller.currentScreen == "error"
+    assert controller.errorTitle == "Camera is busy"
+    assert "camera is still in use" in controller.errorMessage.lower()
+    controller.shutdown()
+
+
+def test_pipeline_error_payload_exposes_only_mapped_public_fields(qapp, tmp_path) -> None:
+    runtime, controller = build_controller(tmp_path)
+    raw_error = (
+        "Traceback: API rejected sk-proj-private-key at "
+        "C:\\Users\\Admin\\VisionDesk\\private\\capture.jpg"
+    )
+
+    controller._handle_pipeline_payload(
+        {
+            "kind": "error",
+            "friendly_error": "Request failed",
+            "technical_error": raw_error,
+        }
+    )
+
+    public_values = " ".join(
+        [
+            controller.errorTitle,
+            controller.errorMessage,
+            controller.errorDetail,
+            controller.errorCode,
+        ]
+    )
+    assert controller.currentScreen == "error"
+    assert controller.errorCode == "INVALID_API_KEY"
+    assert controller.canRetry is False
+    assert "Traceback" not in public_values
+    assert "sk-proj-private-key" not in public_values
+    assert "C:\\Users" not in public_values
+    controller.shutdown()
+
+
+def test_pipeline_error_retry_flag_is_mapped_for_qml(qapp, tmp_path) -> None:
+    runtime, controller = build_controller(tmp_path)
+
+    controller._handle_pipeline_payload(
+        {
+            "kind": "error",
+            "technical_error": "network connection is offline",
+        }
+    )
+
+    assert controller.errorCode == "NETWORK_OFFLINE"
+    assert controller.canRetry is True
+    controller.shutdown()
+
+
+def test_error_screen_binds_only_safe_public_error_fields() -> None:
+    source = Path("qt_app/qml/screens/ErrorScreen.qml").read_text(encoding="utf-8")
+
+    assert "root.controller.errorMessage" in source
+    assert "root.controller.errorCode" in source
+    assert "root.controller.canRetry" in source
+    assert "root.controller.errorDetail" not in source
+
+
 def test_qml_main_loads_with_mock_runtime(qapp, tmp_path) -> None:
     runtime, controller = build_controller(tmp_path)
     camera_store = controller._camera_store
@@ -397,6 +563,117 @@ def test_delete_all_data_resets_runtime_artifacts_and_returns_home(qapp, qtbot, 
     assert not runtime.paths.private_current_path.exists()
     assert not runtime.paths.private_retry_path.exists()
     assert list(runtime.paths.private_quarantine_path.iterdir()) == []
+    controller.shutdown()
+
+
+def test_factory_reset_stops_retry_and_health_workers_before_deletion(qapp, qtbot, tmp_path, monkeypatch) -> None:
+    runtime, controller = build_controller(tmp_path)
+    events: list[str] = []
+
+    class RetryWorker:
+        def close(self, *, timeout: float = 5.0) -> bool:
+            del timeout
+            events.append("retry-stopped")
+            return True
+
+        def start(self, **kwargs) -> bool:
+            del kwargs
+            events.append("retry-started")
+            return True
+
+    class HealthWorker:
+        def stop(self, timeout: float = 5.0) -> bool:
+            del timeout
+            events.append("health-stopped")
+            return True
+
+    runtime.offline_retry_queue = RetryWorker()
+    runtime.health_monitor = HealthWorker()
+
+    def reset(**kwargs):
+        del kwargs
+        events.append("reset")
+        return SimpleNamespace(mode="user_data")
+
+    monkeypatch.setattr("qt_app.app_controller.perform_factory_reset", reset)
+
+    controller.deleteAllData()
+
+    qtbot.waitUntil(lambda: controller.currentScreen == "home" and not controller.deviceActionsBusy, timeout=3000)
+    assert events.index("retry-stopped") < events.index("reset")
+    assert events.index("health-stopped") < events.index("reset")
+    controller.shutdown()
+
+
+def test_factory_reset_blocks_capture_and_duplicate_requests(qapp, qtbot, tmp_path, monkeypatch) -> None:
+    runtime, controller = build_controller(tmp_path)
+    controller.selectMode("read_text")
+    qtbot.waitUntil(lambda: controller.currentScreen == "camera", timeout=1000)
+    reset_started = threading.Event()
+    allow_reset_to_finish = threading.Event()
+    reset_calls: list[str] = []
+
+    def reset(**kwargs):
+        del kwargs
+        reset_calls.append("reset")
+        reset_started.set()
+        assert allow_reset_to_finish.wait(timeout=2.0)
+        return SimpleNamespace(mode="user_data")
+
+    start_capture_calls: list[dict[str, str]] = []
+    monkeypatch.setattr("qt_app.app_controller.perform_factory_reset", reset)
+    monkeypatch.setattr(
+        controller.pipeline_controller,
+        "start_capture",
+        lambda **kwargs: start_capture_calls.append(kwargs) or True,
+    )
+
+    controller.deleteAllData()
+    qtbot.waitUntil(reset_started.is_set, timeout=1000)
+    controller.capture()
+    controller.deleteAllData()
+
+    assert start_capture_calls == []
+    assert reset_calls == ["reset"]
+    allow_reset_to_finish.set()
+    qtbot.waitUntil(lambda: not controller.deviceActionsBusy, timeout=3000)
+    controller.shutdown()
+
+
+def test_configuration_reset_returns_to_setup_wizard(qapp, qtbot, tmp_path, monkeypatch) -> None:
+    runtime, controller = build_controller(tmp_path)
+
+    def reset(**kwargs):
+        del kwargs
+        runtime.setup_state_store.write_state({"setup_complete": False, "current_step": "welcome"})
+        return SimpleNamespace(mode="configuration")
+
+    monkeypatch.setattr("qt_app.app_controller.perform_factory_reset", reset)
+
+    controller.runConfigurationReset()
+
+    qtbot.waitUntil(
+        lambda: controller.currentScreen == "setup" and controller.applicationState == "SETUP_REQUIRED",
+        timeout=3000,
+    )
+    assert runtime.settings.setup.completed is False
+    controller.shutdown()
+
+
+def test_failed_factory_reset_returns_to_a_usable_screen(qapp, qtbot, tmp_path, monkeypatch) -> None:
+    runtime, controller = build_controller(tmp_path)
+
+    def fail_reset(**kwargs):
+        del kwargs
+        raise RuntimeError("private path and API response must remain in logs")
+
+    monkeypatch.setattr("qt_app.app_controller.perform_factory_reset", fail_reset)
+
+    controller.deleteAllData()
+
+    qtbot.waitUntil(lambda: controller.currentScreen == "home" and not controller.deviceActionsBusy, timeout=3000)
+    assert "could not be completed safely" in controller.deviceActionsStatus
+    assert "private path" not in controller.deviceActionsStatus
     controller.shutdown()
 
 

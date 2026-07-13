@@ -372,6 +372,16 @@ class VisionDeskRuntime:
             failure_callback=failure_callback,
         )
 
+    def quiesce_for_factory_reset(self, *, timeout_seconds: float = 5.0) -> None:
+        """Stop background writers before a reset deletes their persisted state."""
+        failures: list[str] = []
+        if self.health_monitor is not None and not self.health_monitor.stop(timeout=timeout_seconds):
+            failures.append("health monitor")
+        if self.offline_retry_queue is not None and not self.offline_retry_queue.close(timeout=timeout_seconds):
+            failures.append("offline retry worker")
+        if failures:
+            raise RuntimeError(f"Could not stop {' and '.join(failures)} before factory reset.")
+
     def cleanup_current_private_media(self) -> None:
         """Delete current working capture files."""
         current_path = self.paths.private_current_path

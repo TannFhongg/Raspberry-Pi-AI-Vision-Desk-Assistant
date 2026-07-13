@@ -48,23 +48,27 @@ class CameraController(QObject):
     def previewError(self) -> str:
         return self._preview_error
 
-    @Slot(bool)
-    def setActive(self, active: bool) -> None:
+    @Slot(bool, result=bool)
+    def setActive(self, active: bool) -> bool:
         """Pause or resume live preview updates based on the current screen."""
         should_activate = bool(active)
         if should_activate == self._active:
-            return
+            return True
         self._active = should_activate
         if should_activate:
             self.runtime.live_preview.resume()
             self._timer.start()
             self._refresh_frame()
-            return
+            return True
         self._timer.stop()
         try:
-            self.runtime.live_preview.pause()
+            released = self.runtime.live_preview.pause()
+            if not released:
+                LOGGER.warning("Live preview did not release the camera while deactivating it")
+            return released
         except Exception:
             LOGGER.exception("Failed to pause live preview")
+            return False
 
     def runtime_status(self) -> tuple[bool, str]:
         """Return preview health information used by health presenters."""
@@ -103,4 +107,3 @@ class CameraController(QObject):
         if error != self._preview_error:
             self._preview_error = error
             self.previewErrorChanged.emit()
-

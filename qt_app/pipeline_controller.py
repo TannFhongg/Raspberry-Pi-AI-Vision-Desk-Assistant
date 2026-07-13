@@ -30,6 +30,7 @@ from system.ui_presenters import (
 )
 
 LOGGER = logging.getLogger(__name__)
+PREVIEW_RELEASE_TIMEOUT_SECONDS = 2.0
 
 
 class _PipelineWorker(QObject):
@@ -210,6 +211,8 @@ class PipelineController(QObject):
         self.result_image_store = result_image_store
         self.progress_steps_model = DictListModel(["label", "state", "state_label"], self)
         self._busy = False
+        self._resetting = False
+        self._last_start_error = ""
         self._progress_state = "IDLE"
         self._progress_message = ""
         self._progress_tone = "active"
@@ -247,11 +250,26 @@ class PipelineController(QObject):
     def progressStepsModel(self) -> DictListModel:
         return self.progress_steps_model
 
+    @Property(str, notify=progressChanged)
+    def lastStartError(self) -> str:
+        """Return the safe user-facing reason a capture could not begin."""
+        return self._last_start_error
+
     def start_capture(self, *, selected_mode: str, selected_mode_internal: str) -> bool:
         """Start one capture/analyze run unless the pipeline is already busy."""
-        if self._busy:
+        if self._busy or self._resetting:
             return False
-        self.runtime.live_preview.pause()
+        if not self.runtime.live_preview.pause(timeout_seconds=PREVIEW_RELEASE_TIMEOUT_SECONDS):
+            self._last_start_error = "Camera is still busy. Wait a moment and try capture again."
+            LOGGER.warning("Capture cancelled because live preview did not release the camera")
+            self.runtime.live_preview.resume()
+            self._set_progress(
+                progress_state="ERROR",
+                progress_message=self._last_start_error,
+                progress_error_step=0,
+            )
+            return False
+        self._last_start_error = ""
         self._set_busy(True)
         self._set_progress(
             progress_state="CAPTURING",
@@ -275,6 +293,13 @@ class PipelineController(QObject):
         self._thread = thread
         self._worker = worker
         thread.start()
+        return True
+
+    def set_resetting(self, resetting: bool) -> bool:
+        """Block new capture jobs while reset work owns shared persistence."""
+        if resetting and self._busy:
+            return False
+        self._resetting = bool(resetting)
         return True
 
     def close(self) -> None:
@@ -380,7 +405,8 @@ class PipelineController(QObject):
                 pass
         else:
             self.result_image_store.clear()
-        self.runtime.live_preview.resume()
+        if not self._resetting:
+            self.runtime.live_preview.resume()
         self._set_busy(False)
         self.payloadReady.emit(payload)
 

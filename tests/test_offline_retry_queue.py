@@ -45,6 +45,12 @@ class OfflineRetryQueueTests(unittest.TestCase):
         self.assertEqual(self.queue.pending_count(), 1)
         self.assertFalse(Path(entry.processed_filename).is_absolute())
         self.assertTrue(self.queue.resolve_processed_path(entry).is_file())
+        retained_files = [
+            path.name
+            for path in (self.temp_dir / "entries" / entry.id).iterdir()
+            if path.is_file()
+        ]
+        self.assertEqual(retained_files, ["processed.jpg"])
 
         callback_results: list[PipelineResult] = []
         _mark_entry_ready(self.queue.queue_path, entry.id)

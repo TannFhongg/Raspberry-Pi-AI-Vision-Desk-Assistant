@@ -103,11 +103,13 @@ class HealthMonitor:
         self._thread.start()
         return True
 
-    def stop(self, timeout: float = 5.0) -> None:
-        """Request a clean shutdown and wait briefly for the thread to exit."""
+    def stop(self, timeout: float = 5.0) -> bool:
+        """Request a clean shutdown and report whether the thread exited."""
         self._stop_event.set()
         if self._thread is not None:
             self._thread.join(timeout=timeout)
+            return not self._thread.is_alive()
+        return True
 
     def run_once(self) -> dict[str, Any]:
         """Collect one snapshot, persist it, and log health transitions."""

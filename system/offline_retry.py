@@ -142,13 +142,15 @@ class OfflineRetryQueue:
             self._worker.start()
         return True
 
-    def close(self) -> None:
-        """Stop the background retry worker."""
+    def close(self, *, timeout: float = 5.0) -> bool:
+        """Stop the background retry worker and report whether it exited."""
         self._stop_event.set()
         self._wake_event.set()
         worker = self._worker
         if worker is not None:
-            worker.join(timeout=1.0)
+            worker.join(timeout=max(0.0, timeout))
+            return not worker.is_alive()
+        return True
 
     def list_entries(self) -> list[OfflineRetryEntry]:
         """Return the current persisted entries in FIFO order."""

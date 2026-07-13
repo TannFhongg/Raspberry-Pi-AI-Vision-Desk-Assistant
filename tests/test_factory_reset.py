@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
@@ -13,8 +14,11 @@ from system.factory_reset import (
     CONFIGURATION_RESET,
     FULL_FACTORY_RESET,
     USER_DATA_RESET,
+    FactoryResetExecutionGuard,
     FactoryResetError,
     load_reset_marker,
+    main,
+    plan_factory_reset,
     perform_factory_reset,
     resume_pending_factory_reset,
 )
@@ -170,3 +174,67 @@ def test_failed_reset_writes_recovery_marker_and_resume_clears_it(tmp_path) -> N
     assert summary is not None
     assert summary.mode == CONFIGURATION_RESET
     assert load_reset_marker(paths.reset_marker_path) is None
+
+
+def test_cli_rejected_confirmation_performs_no_reset(monkeypatch) -> None:
+    reset = Mock()
+    monkeypatch.setattr("system.factory_reset.perform_factory_reset", reset)
+    monkeypatch.setattr("builtins.input", lambda _: "NO")
+
+    assert main(["--mode", USER_DATA_RESET]) == 1
+
+    reset.assert_not_called()
+
+
+def test_cli_accepted_confirmation_performs_reset_once(monkeypatch) -> None:
+    reset = Mock(return_value=plan_factory_reset(mode=USER_DATA_RESET))
+    monkeypatch.setattr("system.factory_reset.perform_factory_reset", reset)
+    monkeypatch.setattr("builtins.input", lambda _: "YES")
+
+    assert main(["--mode", USER_DATA_RESET]) == 0
+
+    reset.assert_called_once_with(mode=USER_DATA_RESET, remove_wifi_profile=False)
+
+
+def test_cli_yes_performs_reset_once(monkeypatch) -> None:
+    reset = Mock(return_value=plan_factory_reset(mode=USER_DATA_RESET))
+    monkeypatch.setattr("system.factory_reset.perform_factory_reset", reset)
+
+    assert main(["--mode", USER_DATA_RESET, "--yes"]) == 0
+
+    reset.assert_called_once_with(mode=USER_DATA_RESET, remove_wifi_profile=False)
+
+
+def test_cli_dry_run_performs_no_reset(monkeypatch) -> None:
+    reset = Mock()
+    monkeypatch.setattr("system.factory_reset.perform_factory_reset", reset)
+
+    assert main(["--mode", USER_DATA_RESET, "--dry-run"]) == 0
+
+    reset.assert_not_called()
+
+
+def test_cli_eof_confirmation_performs_no_reset(monkeypatch) -> None:
+    reset = Mock()
+    monkeypatch.setattr("system.factory_reset.perform_factory_reset", reset)
+
+    def raise_eof(_: str) -> str:
+        raise EOFError
+
+    monkeypatch.setattr("builtins.input", raise_eof)
+
+    assert main(["--mode", USER_DATA_RESET]) == 1
+
+    reset.assert_not_called()
+
+
+def test_factory_reset_execution_guard_rejects_duplicate_callback() -> None:
+    summary = plan_factory_reset(mode=USER_DATA_RESET)
+    callback = Mock(return_value=summary)
+    guard = FactoryResetExecutionGuard()
+
+    assert guard.execute(callback) is summary
+    with pytest.raises(FactoryResetError, match="already requested"):
+        guard.execute(callback)
+
+    callback.assert_called_once_with()

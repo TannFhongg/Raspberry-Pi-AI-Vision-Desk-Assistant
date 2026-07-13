@@ -6,6 +6,7 @@ from datetime import datetime
 import json
 import os
 from pathlib import Path
+import threading
 from typing import Any, Callable
 
 from system.storage import atomic_write_json, quarantine_file, safe_unlink
@@ -48,6 +49,18 @@ class SetupStateStore:
         self.current_wifi_managed_by = current_wifi_managed_by
         self.has_configured_openai_key = has_configured_openai_key
         self.current_openai_key = current_openai_key
+        self._state_lock = threading.RLock()
+        self._operation_generation = 0
+
+    def begin_operation(self) -> int:
+        """Reserve the next generation for a setup action."""
+        with self._state_lock:
+            self._operation_generation += 1
+            return self._operation_generation
+
+    def invalidate_pending_operations(self) -> int:
+        """Prevent already-running setup workers from applying stale results."""
+        return self.begin_operation()
 
     def coerce_step(self, value: Any) -> str:
         """Normalize a persisted wizard step value."""
@@ -443,6 +456,11 @@ class SetupStateStore:
 
     def load_state(self) -> dict[str, Any]:
         """Read the persisted setup-wizard state file."""
+        with self._state_lock:
+            return self._load_state_locked()
+
+    def _load_state_locked(self) -> dict[str, Any]:
+        """Read state while the caller holds the setup-state lock."""
         default_state = self.default_state()
         if not self.state_path.is_file():
             return default_state
@@ -457,27 +475,50 @@ class SetupStateStore:
             return default_state
         return self.coerce_state(raw_state)
 
-    def write_state(self, updates: dict[str, Any] | None = None) -> dict[str, Any]:
-        """Persist merged setup-wizard state to disk."""
-        next_state = self.load_state()
-        if updates:
-            merge_nested_state(next_state, updates)
-        next_state["updated_at"] = self.timestamp_provider()
-        next_state = self.coerce_state(next_state)
-        self.state_path.parent.mkdir(parents=True, exist_ok=True)
-        atomic_write_json(
-            self.state_path,
-            next_state,
-            ensure_ascii=False,
-            indent=2,
-        )
-        return next_state
+    def update_state(
+        self,
+        updates: dict[str, Any] | None = None,
+        *,
+        operation_id: int | None = None,
+    ) -> dict[str, Any] | None:
+        """Atomically merge updates unless a newer setup action superseded them."""
+        with self._state_lock:
+            if operation_id is not None and operation_id != self._operation_generation:
+                return None
+            next_state = self._load_state_locked()
+            if updates:
+                merge_nested_state(next_state, updates)
+            next_state["updated_at"] = self.timestamp_provider()
+            next_state = self.coerce_state(next_state)
+            self.state_path.parent.mkdir(parents=True, exist_ok=True)
+            atomic_write_json(
+                self.state_path,
+                next_state,
+                ensure_ascii=False,
+                indent=2,
+            )
+            return next_state
+
+    def write_state(
+        self,
+        updates: dict[str, Any] | None = None,
+        *,
+        operation_id: int | None = None,
+    ) -> dict[str, Any] | None:
+        """Backward-compatible alias for the atomic setup-state update helper."""
+        return self.update_state(updates, operation_id=operation_id)
 
     def clear_state(self) -> None:
         """Delete the persisted setup state file."""
-        safe_unlink(self.state_path)
+        with self._state_lock:
+            safe_unlink(self.state_path)
 
-    def write_device_checks(self, checks: list[dict[str, Any]]) -> dict[str, Any]:
+    def write_device_checks(
+        self,
+        checks: list[dict[str, Any]],
+        *,
+        operation_id: int | None = None,
+    ) -> dict[str, Any] | None:
         """Persist the welcome/device-check results."""
         normalized_checks = self._coerce_device_checks(checks)
         required_failures = [
@@ -505,7 +546,8 @@ class SetupStateStore:
                         "checks": normalized_checks,
                     }
                 },
-            }
+            },
+            operation_id=operation_id,
         )
 
     def build_warnings(self, state: dict[str, Any] | None = None) -> list[str]:

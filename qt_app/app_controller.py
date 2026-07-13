@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+import logging
 from typing import Any
 
 from PySide6.QtCore import QObject, Property, QCoreApplication, QDateTime, QTimer, Qt, Signal, Slot
@@ -24,8 +25,11 @@ from system.factory_reset import (
     USER_DATA_RESET,
     perform_factory_reset,
 )
+from system.error_mapping import PublicError, map_public_error, redact_technical_detail
 from system.ui_catalog import MODE_SELECTED_DETAIL, READY_DETAIL, UI_MODE_OPTIONS
 from system.ui_presenters import build_processing_view, build_result_detail_view, build_result_view
+
+LOGGER = logging.getLogger(__name__)
 
 
 class AppController(QObject):
@@ -42,6 +46,9 @@ class AppController(QObject):
     resultHtmlChanged = Signal()
     errorTitleChanged = Signal()
     errorDetailChanged = Signal()
+    errorMessageChanged = Signal()
+    errorCodeChanged = Signal()
+    canRetryChanged = Signal()
     setupReadyToFinishChanged = Signal()
     viewStateChanged = Signal()
     deviceActionsChanged = Signal()
@@ -182,6 +189,18 @@ class AppController(QObject):
     @Property(str, notify=errorDetailChanged)
     def errorDetail(self) -> str:
         return self._application_state_model.errorDetail
+
+    @Property(str, notify=errorMessageChanged)
+    def errorMessage(self) -> str:
+        return self._application_state_model.errorMessage
+
+    @Property(str, notify=errorCodeChanged)
+    def errorCode(self) -> str:
+        return self._application_state_model.errorCode
+
+    @Property(bool, notify=canRetryChanged)
+    def canRetry(self) -> bool:
+        return self._application_state_model.canRetry
 
     @Property(bool, notify=setupReadyToFinishChanged)
     def setupReadyToFinish(self) -> bool:
@@ -448,13 +467,16 @@ class AppController(QObject):
 
     @Slot()
     def capture(self) -> None:
-        if not self.selectedMode or self.pipeline_controller.busy:
+        if not self.selectedMode or self.pipeline_controller.busy or self._device_actions_busy:
             return
         started = self.pipeline_controller.start_capture(
             selected_mode=self.selectedMode,
             selected_mode_internal=self._selected_mode_internal,
         )
         if not started:
+            error_message = self.pipeline_controller.lastStartError
+            if error_message:
+                self._present_public_error(map_public_error(error_message, retryable=True))
             return
         self._refresh_processing_view()
         self._set_screen("processing", "CAPTURING", self.processingStatusMessage or "Capturing image...")
@@ -472,7 +494,7 @@ class AppController(QObject):
 
     @Slot()
     def retry(self) -> None:
-        if self.currentScreen == "error" and self.selectedMode:
+        if self.currentScreen == "error" and self.canRetry and self.selectedMode:
             self.capture()
 
     @Slot()
@@ -540,6 +562,18 @@ class AppController(QObject):
             status=self._factory_reset_start_message(normalized_mode, bool(removeWifiProfile)),
             tone="active",
         )
+        if not self.pipeline_controller.set_resetting(True):
+            self._set_device_actions_state(
+                busy=False,
+                status="VisionDesk is still finishing an analysis. Try the reset again shortly.",
+                tone="error",
+            )
+            return
+        self._application_state_model.update(
+            application_state="RESETTING",
+            display_status="Preparing VisionDesk for reset...",
+            updated_at=self.runtime.timestamp(),
+        )
         self.camera_controller.setActive(False)
         self.health_controller.stop()
         self.gpio_controller.stop()
@@ -605,7 +639,7 @@ class AppController(QObject):
 
     def isBackendBusy(self) -> bool:
         """Return True when capture/pipeline or preview should block intrusive checks."""
-        return self.pipeline_controller.busy or self.currentScreen in {"setup", "camera"}
+        return self._device_actions_busy or self.pipeline_controller.busy or self.currentScreen in {"setup", "camera"}
 
     def shutdown(self) -> None:
         """Stop background controllers and release runtime resources."""
@@ -650,6 +684,9 @@ class AppController(QObject):
         self._application_state_model.displayStatusChanged.connect(self.displayStatusChanged)
         self._application_state_model.errorTitleChanged.connect(self.errorTitleChanged)
         self._application_state_model.errorDetailChanged.connect(self.errorDetailChanged)
+        self._application_state_model.errorMessageChanged.connect(self.errorMessageChanged)
+        self._application_state_model.errorCodeChanged.connect(self.errorCodeChanged)
+        self._application_state_model.canRetryChanged.connect(self.canRetryChanged)
         self._application_state_model.setupReadyToFinishChanged.connect(self.setupReadyToFinishChanged)
         self._result_state_model.resultTitleChanged.connect(self.resultTitleChanged)
         self._result_state_model.resultStateChanged.connect(self.resultStateChanged)
@@ -703,21 +740,43 @@ class AppController(QObject):
             return
         if kind == "queued":
             result = payload["result"]
+            public_error = self._map_pipeline_error(payload, retryable=True)
             self._present_result(
                 status="Queued for retry",
                 answer_text=result.answer or "",
-                error_text=payload.get("technical_error", ""),
+                error_text=public_error.message,
                 history_entry=payload.get("history_entry"),
                 application_state="RETRY_QUEUED",
             )
             return
+        self._present_public_error(
+            self._map_pipeline_error(payload, retryable=bool(payload.get("retryable", False)))
+        )
+
+    def _map_pipeline_error(self, payload: dict[str, Any], *, retryable: bool) -> PublicError:
+        """Log backend detail while retaining only mapped data for the QML layer."""
+        detail = payload.get("technical_error") or payload.get("friendly_error") or ""
+        public_error = map_public_error(detail, retryable=retryable)
+        LOGGER.error(
+            "Pipeline failed code=%s retryable=%s detail=%s",
+            public_error.code,
+            public_error.can_retry,
+            redact_technical_detail(detail),
+        )
+        return public_error
+
+    def _present_public_error(self, error: PublicError) -> None:
+        """Display only mapper-owned safe error fields in QML."""
         self._application_state_model.update(
-            error_title=payload.get("friendly_error", "Analysis failed"),
-            error_detail=payload.get("technical_error", ""),
-            display_status="Try again when ready",
+            error_title=error.title,
+            error_detail=error.message,
+            error_message=error.message,
+            error_code=error.code,
+            can_retry=error.can_retry,
+            display_status=error.message,
             updated_at=self.runtime.timestamp(),
         )
-        self._set_screen("error", "ERROR", "Try again when ready")
+        self._set_screen("error", "ERROR", error.message)
         self.viewStateChanged.emit()
         self._refresh_health_summary()
 
@@ -768,15 +827,15 @@ class AppController(QObject):
         error_message = self._factory_reset_error
         self._factory_reset_result = None
         self._factory_reset_error = ""
+        self.pipeline_controller.set_resetting(False)
 
         if error_message:
             self._set_device_actions_state(
                 busy=False,
-                status=error_message,
+                status="Reset could not be completed safely. No further files were deleted.",
                 tone="error",
             )
-            self.health_controller.start()
-            self.gpio_controller.restart_if_needed()
+            self._restore_after_reset_failure()
             self._refresh_health_summary()
             return
 
@@ -786,8 +845,7 @@ class AppController(QObject):
                 status="Device action finished without a result.",
                 tone="error",
             )
-            self.health_controller.start()
-            self.gpio_controller.restart_if_needed()
+            self._restore_after_reset_failure()
             self._refresh_health_summary()
             return
 
@@ -802,19 +860,24 @@ class AppController(QObject):
                 status="All local data deleted. Device is ready for a new capture.",
                 tone="success",
             )
-            self.health_controller.start()
-            self.gpio_controller.restart_if_needed()
+            self._resume_runtime_services()
             self._handle_delete_all_data_completed(self.deviceActionsStatus)
             return
 
         self.runtime.mark_setup_incomplete()
-        self.runtime.request_restart()
+        self.setup_controller.refresh_state()
         self._set_device_actions_state(
             busy=False,
-            status="Reset complete. Restarting VisionDesk into Setup Wizard...",
+            status="Reset complete. Continue in the Setup Wizard.",
             tone="success",
         )
-        QCoreApplication.quit()
+        self._reset_result_ui(
+            reset_selected_mode=True,
+            display_status=self.deviceActionsStatus,
+            application_state="SETUP_REQUIRED",
+            target_screen="setup",
+            write_latest_result_placeholder=False,
+        )
 
     def _mark_camera_ready(self) -> None:
         if self.currentScreen == "camera":
@@ -828,6 +891,7 @@ class AppController(QObject):
 
     def _run_factory_reset_worker(self, mode: str, remove_wifi_profile: bool) -> None:
         try:
+            self.runtime.quiesce_for_factory_reset()
             self._factory_reset_result = perform_factory_reset(
                 mode=mode,
                 paths=self.runtime.paths.to_visiondesk_paths(),
@@ -835,8 +899,28 @@ class AppController(QObject):
                 remove_wifi_profile=remove_wifi_profile,
             )
         except Exception as exc:  # pragma: no cover - defensive logging path
+            LOGGER.exception("Factory reset failed")
             self._factory_reset_error = str(exc)
         self.factoryResetWorkerFinished.emit()
+
+    def _resume_runtime_services(self) -> None:
+        """Restart services only after reset work has finished with their files."""
+        self.health_controller.start()
+        self.runtime.ensure_offline_retry_started(
+            analyze_func=self.pipeline_controller.analyze_offline_retry_entry,
+            success_callback=self.pipeline_controller.record_offline_retry_success,
+            failure_callback=self.pipeline_controller.record_offline_retry_failure,
+        )
+        self.gpio_controller.restart_if_needed()
+
+    def _restore_after_reset_failure(self) -> None:
+        """Return to a usable safe screen after a reset failure."""
+        self._resume_runtime_services()
+        if self.runtime.setup_is_complete():
+            self._set_screen("home", "READY", "Reset failed. You can try again when ready.")
+            return
+        self.setup_controller.refresh_state()
+        self._set_screen("setup", "SETUP_REQUIRED", "Reset failed. Finish setup before using VisionDesk.")
 
     def _set_device_actions_state(self, *, busy: bool, status: str, tone: str) -> None:
         changed = (
@@ -910,6 +994,9 @@ class AppController(QObject):
         self._application_state_model.update(
             error_title="",
             error_detail=error_text,
+            error_message=error_text,
+            error_code="",
+            can_retry=False,
             display_status=status,
             updated_at=self.runtime.timestamp(),
         )
@@ -955,6 +1042,9 @@ class AppController(QObject):
         update_payload: dict[str, Any] = {
             "error_title": "",
             "error_detail": "",
+            "error_message": "",
+            "error_code": "",
+            "can_retry": False,
             "display_status": display_status,
             "updated_at": self.runtime.timestamp(),
         }

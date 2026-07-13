@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import json
+import logging
+import os
+import shutil
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from vision.enhance_text import enhance_text_image
 from vision.perspective import four_point_transform
@@ -16,14 +21,18 @@ from visiondesk.paths import resolve_visiondesk_paths
 _DEFAULT_PATHS = resolve_visiondesk_paths()
 DEFAULT_INPUT_PATH = str(_DEFAULT_PATHS.private_current_path / "captured.jpg")
 DEFAULT_OUTPUT_PATH = str(_DEFAULT_PATHS.private_current_path / "processed.jpg")
-DEFAULT_DEBUG_DIR = str(_DEFAULT_PATHS.debug_dir)
+DEFAULT_DEBUG_DIR = str(_DEFAULT_PATHS.private_debug_path)
 DEFAULT_MAX_DIMENSION = 1600
 PREPROCESS_METADATA_SUFFIX = ".meta.json"
+DEBUG_IMAGES_ENVIRONMENT_VARIABLE = "VISION_DEBUG_IMAGES"
+DEFAULT_DEBUG_RETENTION_HOURS = 1.0
+DEFAULT_DEBUG_MAX_JOBS = 5
 OPENCV_INSTALL_HINT = (
     "OpenCV is not available. On Raspberry Pi OS, install it with: "
     "sudo apt install -y python3-opencv and create the virtual environment with: "
     "python3 -m venv --system-site-packages .venv"
 )
+LOGGER = logging.getLogger(__name__)
 
 
 class ImagePreprocessError(Exception):
@@ -52,7 +61,8 @@ def preprocess_image(
     max_dimension: int = DEFAULT_MAX_DIMENSION,
     detect_screen: bool = False,
     enhance_text: bool = False,
-    debug_dir: str = DEFAULT_DEBUG_DIR,
+    debug_dir: str | None = None,
+    debug_images: bool | None = None,
 ) -> PreprocessResult:
     """Load an image, preprocess it safely, and save the final result."""
     if max_dimension <= 0:
@@ -79,10 +89,13 @@ def preprocess_image(
         original_height, original_width = image.shape[:2]
         processed_image = image
 
+        if debug_images_enabled() if debug_images is None else bool(debug_images):
+            debug_path = _create_debug_job_directory(Path(debug_dir or DEFAULT_DEBUG_DIR))
+            LOGGER.warning("Debug image retention is enabled; intermediate images are stored privately for diagnostics.")
+
         if detect_screen or enhance_text:
-            debug_path = Path(debug_dir)
-            _prepare_debug_directory(debug_path)
-            _save_debug_image(debug_path / "original.jpg", image, cv2)
+            if debug_path is not None:
+                _save_debug_image(debug_path / "original.jpg", image, cv2)
 
             detected_overlay = image.copy()
             corrected_image = image.copy()
@@ -99,14 +112,16 @@ def preprocess_image(
                     detected_overlay = draw_detected_region(image, detection.source_points, cv2)
                     corrected_image = four_point_transform(image, detection.source_points, cv2)
 
-            _save_debug_image(debug_path / "detected_screen.jpg", detected_overlay, cv2)
+            if debug_path is not None:
+                _save_debug_image(debug_path / "detected_screen.jpg", detected_overlay, cv2)
 
             corrected_image = resize_if_too_large(
                 corrected_image,
                 max_dimension=max_dimension,
                 cv2_module=cv2,
             )
-            _save_debug_image(debug_path / "corrected.jpg", corrected_image, cv2)
+            if debug_path is not None:
+                _save_debug_image(debug_path / "corrected.jpg", corrected_image, cv2)
 
             if enhance_text:
                 processed_image = enhance_text_image(
@@ -121,7 +136,8 @@ def preprocess_image(
                     else corrected_image
                 )
 
-            _save_debug_image(debug_path / "enhanced.jpg", processed_image, cv2)
+            if debug_path is not None:
+                _save_debug_image(debug_path / "enhanced.jpg", processed_image, cv2)
         else:
             processed_image = resize_if_too_large(
                 image,
@@ -358,6 +374,67 @@ def _prepare_debug_directory(debug_path: Path) -> None:
         raise ImagePreprocessError(
             f"Could not prepare debug directory '{debug_path}'. {exc}"
         ) from exc
+
+
+def debug_images_enabled(env: dict[str, str] | None = None) -> bool:
+    """Return True only when private debug image retention is explicitly enabled."""
+    value = (env or os.environ).get(DEBUG_IMAGES_ENVIRONMENT_VARIABLE, "false")
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def purge_debug_images(
+    debug_root: str | Path,
+    *,
+    retention_hours: float = DEFAULT_DEBUG_RETENTION_HOURS,
+    max_jobs: int = DEFAULT_DEBUG_MAX_JOBS,
+) -> int:
+    """Remove expired or excess private debug-image job directories."""
+    root = Path(debug_root)
+    if not root.is_dir():
+        return 0
+    cutoff = time.time() - max(0.0, float(retention_hours)) * 3600.0
+    jobs = sorted(root.iterdir(), key=lambda path: path.stat().st_mtime, reverse=True)
+    removed = 0
+    for index, job in enumerate(jobs):
+        try:
+            expired = job.stat().st_mtime < cutoff
+        except OSError:
+            expired = True
+        if not expired and index < max(1, int(max_jobs)):
+            continue
+        if job.is_dir():
+            shutil.rmtree(job, ignore_errors=True)
+        else:
+            job.unlink(missing_ok=True)
+        removed += 1
+    return removed
+
+
+def _create_debug_job_directory(debug_root: Path) -> Path:
+    """Create a bounded private directory for one explicitly requested debug run."""
+    _prepare_debug_directory(debug_root)
+    purge_debug_images(
+        debug_root,
+        retention_hours=_debug_retention_hours(),
+        max_jobs=_debug_max_jobs(),
+    )
+    job_path = debug_root / f"preprocess-{int(time.time())}-{uuid4().hex[:8]}"
+    _prepare_debug_directory(job_path)
+    return job_path
+
+
+def _debug_retention_hours() -> float:
+    try:
+        return max(0.0, float(os.getenv("VISION_DEBUG_IMAGE_RETENTION_HOURS", DEFAULT_DEBUG_RETENTION_HOURS)))
+    except ValueError:
+        return DEFAULT_DEBUG_RETENTION_HOURS
+
+
+def _debug_max_jobs() -> int:
+    try:
+        return max(1, int(os.getenv("VISION_DEBUG_IMAGE_MAX_JOBS", DEFAULT_DEBUG_MAX_JOBS)))
+    except ValueError:
+        return DEFAULT_DEBUG_MAX_JOBS
 
 
 def _save_debug_image(debug_path: Path, image, cv2_module) -> None:

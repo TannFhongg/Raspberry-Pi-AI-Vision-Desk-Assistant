@@ -9,7 +9,7 @@ camera:
       width: 1280
       height: 720
     target_fps: 30.0
-    force_mjpeg: true
+    force_mjpeg: false
   autofocus_mode: continuous
   exposure: auto
   brightness: 0.0
