@@ -30,7 +30,7 @@ claim text-to-speech or any other feature absent from the application.
 ## Demo order
 
 1. Show the non-touch Home screen and select a mode using GPIO Up, Down, and
-   Select. The BCM button map is in [../setup.md](../setup.md).
+   Select. The BCM button map is in [../setup-en.md](../setup-en.md).
 2. Demonstrate camera preview, Capture, the Processing screen, and Result.
 3. Demonstrate each implemented workflow with the matching prepared sample:
 
@@ -75,6 +75,6 @@ See [phone_setup.md](phone_setup.md) for the exact workflow and fallback.
 - Close any document or image containing client data.
 - Review History and use the appropriate reset action only with authorization:
   User-Data Reset, Configuration Reset, or Full Factory Reset have different
-  effects. Commands and consequences are in [../setup.md](../setup.md).
+  effects. Commands and consequences are in [../setup-en.md](../setup-en.md).
 - Do not leave a temporary phone setup AP running or a keyboard attached in an
   unattended client environment.

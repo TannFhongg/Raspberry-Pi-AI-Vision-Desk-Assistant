@@ -119,4 +119,4 @@ overrides are `VISIONDESK_PATH_MODE`, `DEVICE_CONFIG_PATH`,
   the saved Wi-Fi profile.
 
 Operational commands and a new-device installation guide are in
-[../setup.md](../setup.md).
+[../setup-en.md](../setup-en.md).

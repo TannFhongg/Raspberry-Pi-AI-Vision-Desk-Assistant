@@ -34,7 +34,7 @@ delivered feature.
 - Raspberry Pi OS Desktop 64-bit with a graphical session.
 - USB webcam and 11.6-inch HDMI display.
 - Ten momentary GPIO buttons; the exact BCM mapping is in
-  [setup.md](setup.md) and [hardware_require.txt](hardware_require.txt).
+  [setup-en.md](setup-en.md) and [hardware_require.txt](hardware_require.txt).
 - Wi-Fi managed by NetworkManager. AP/hotspot support is required only for
   phone-first setup; keyboard/mouse setup remains available as a fallback.
 
@@ -62,7 +62,7 @@ python -m pip install -r requirements.txt
 ```
 
 For the Linux Qt system packages and the complete Windows/Linux development
-instructions, see [setup.md](setup.md).
+instructions, see [setup-en.md](setup-en.md).
 
 Run the deterministic desktop flow without a camera, GPIO, Wi-Fi, or an API
 key:
@@ -115,7 +115,7 @@ supports protected AP mode. Enter the OpenAI key during setup; do not put it in
 the cloned source tree for a new device.
 
 The complete fresh-device, first-boot, GPIO, service, update, reset, and demo
-procedure is in [setup.md](setup.md).
+procedure is in [setup-en.md](setup-en.md).
 
 ## Operating an installed device
 
@@ -143,8 +143,9 @@ Persistent paths on the appliance:
 
 ## Documentation
 
-- [setup.md](setup.md) — Vietnamese end-to-end guide for development, a new Pi,
+- [setup-en.md](setup-en.md) — English end-to-end guide for development, a new Pi,
   phone setup, demo, service operations, update, reset, and uninstall.
+- [setup-vi.md](setup-vi.md) — Vietnamese version of the end-to-end setup guide.
 - [docs/architecture.md](docs/architecture.md) — runtime, storage, deployment,
   setup, and privacy design.
 - [docs/phone_setup.md](docs/phone_setup.md) — phone-first provisioning and

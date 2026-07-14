@@ -83,4 +83,4 @@ or intentionally logged. The temporary NetworkManager profile is removed when
 the portal stops. Do not expose the portal address through another network or
 replace the AP with an open network.
 
-For the full installation and reset procedure, see [../setup.md](../setup.md).
+For the full installation and reset procedure, see [../setup-en.md](../setup-en.md).

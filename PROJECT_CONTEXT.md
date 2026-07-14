@@ -1,7 +1,7 @@
 # VisionDesk project context
 
 Maintainer reference for VisionDesk **1.0.0**. This file is a code map, not an
-end-user installation guide; use [setup.md](setup.md) for deployment steps.
+end-user installation guide; use [setup-en.md](setup-en.md) for deployment steps.
 
 ## Product boundary
 
