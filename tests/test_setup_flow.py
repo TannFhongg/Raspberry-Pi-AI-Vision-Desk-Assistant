@@ -12,6 +12,7 @@ from types import SimpleNamespace
 import pytest
 
 from system.device_setup import upsert_env_value
+from system.setup_portal import SetupPortalDetails
 from system.setup_flow import (
     OPENAI_VERIFICATION_SCHEMA_VERSION,
     finish_setup,
@@ -385,6 +386,127 @@ def test_setup_controller_scan_wifi_updates_model(qapp, qtbot, tmp_path, monkeyp
         timeout=3000,
     )
     assert "Found 2 Wi-Fi networks" in controller.wifiMessage
+    controller.close()
+    runtime.shutdown()
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 is not installed")
+def test_setup_controller_exposes_and_stops_phone_portal(qapp, qtbot, tmp_path, monkeypatch) -> None:
+    """The Qt boundary receives only temporary AP pairing details, never API keys."""
+    runtime = build_runtime(tmp_path)
+    runtime.settings.setup_portal.enabled = True
+    created: list[object] = []
+
+    class FakePortal:
+        def __init__(self, **kwargs) -> None:
+            self.active = False
+            self.stopped = False
+            created.append(self)
+
+        def start(self) -> SetupPortalDetails:
+            self.active = True
+            return SetupPortalDetails(
+                ssid="VisionDesk-Setup-ABCD",
+                password="TEMPORARYPASS",
+                pairing_code="12345678",
+                address="192.168.4.1",
+                port=80,
+                url="http://192.168.4.1",
+            )
+
+        def stop(self) -> None:
+            self.active = False
+            self.stopped = True
+
+    monkeypatch.setattr("qt_app.setup_controller.SetupPortal", FakePortal)
+    controller = SetupController(runtime)
+
+    controller.startPhoneSetup()
+
+    qtbot.waitUntil(lambda: controller.phoneSetupPortalActive, timeout=3000)
+    assert controller.phoneSetupPortalSsid == "VisionDesk-Setup-ABCD"
+    assert controller.phoneSetupPortalPassword == "TEMPORARYPASS"
+    assert controller.phoneSetupPortalPairingCode == "12345678"
+    assert controller.phoneSetupPortalUrl == "http://192.168.4.1"
+
+    controller.stopPhoneSetup()
+
+    assert controller.phoneSetupPortalActive is False
+    assert controller.phoneSetupPortalStatus == "stopped"
+    assert created and created[0].stopped is True
+    controller.close()
+    runtime.shutdown()
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 is not installed")
+def test_phone_portal_submission_runs_wifi_api_camera_gpio_and_finish(
+    qapp, qtbot, tmp_path, monkeypatch, caplog
+) -> None:
+    """Phone credentials drive the normal setup gates without entering UI state."""
+    runtime = build_runtime(tmp_path)
+    runtime.settings.setup_portal.enabled = True
+    candidate_key = "sk-phone-private-key-987"
+    wifi_password = "wifi-private-password"
+    instances: list[object] = []
+
+    class FakePortal:
+        def __init__(self, **kwargs) -> None:
+            self.active = False
+            self.stopped = False
+            self.submit = kwargs["submit_provisioning"]
+            instances.append(self)
+
+        def start(self) -> SetupPortalDetails:
+            self.active = True
+            return SetupPortalDetails(
+                ssid="VisionDesk-Setup-ABCD",
+                password="TEMPORARYPASS",
+                pairing_code="12345678",
+                address="192.168.4.1",
+                port=80,
+                url="http://192.168.4.1",
+            )
+
+        def stop(self) -> None:
+            self.active = False
+            self.stopped = True
+
+    monkeypatch.setattr("qt_app.setup_controller.SetupPortal", FakePortal)
+    monkeypatch.setattr(
+        "qt_app.setup_controller.connect_wifi_network",
+        lambda **kwargs: {
+            "ssid": kwargs["ssid"],
+            "connection_name": kwargs["connection_name"],
+            "message": "Connected to Wi-Fi network 'Office'.",
+        },
+    )
+    monkeypatch.setattr(
+        "qt_app.setup_controller.check_openai_reachable",
+        lambda key: SimpleNamespace(passed=True, code="verified", message="OpenAI is reachable."),
+    )
+    monkeypatch.setattr(
+        "qt_app.setup_controller.check_camera",
+        lambda settings: SimpleNamespace(passed=True, message="Camera ready."),
+    )
+    monkeypatch.setattr(
+        "qt_app.setup_controller.check_gpio_available",
+        lambda: SimpleNamespace(failed=False, message="GPIO ready."),
+    )
+    caplog.set_level(logging.DEBUG, logger="qt_app.setup_controller")
+    controller = SetupController(runtime)
+    controller.startPhoneSetup()
+
+    qtbot.waitUntil(lambda: controller.phoneSetupPortalActive and bool(instances), timeout=3000)
+    assert instances[0].submit("Office", wifi_password, candidate_key) is True
+
+    qtbot.waitUntil(runtime.setup_is_complete, timeout=5000)
+    state_text = runtime.paths.setup_state_path.read_text(encoding="utf-8")
+    assert instances[0].stopped is True
+    assert runtime.setup_state_store.load_state()["wifi"]["ssid"] == "Office"
+    assert candidate_key not in state_text
+    assert wifi_password not in state_text
+    assert all(candidate_key not in record.getMessage() for record in caplog.records)
+    assert all(wifi_password not in record.getMessage() for record in caplog.records)
     controller.close()
     runtime.shutdown()
 

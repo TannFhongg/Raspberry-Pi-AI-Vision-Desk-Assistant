@@ -30,6 +30,7 @@ from system.setup_flow import (
     run_setup_wifi_connect,
     sync_setup_gpio_state,
 )
+from system.setup_portal import SetupPortal, SetupPortalDetails, SetupPortalError
 
 LOGGER = logging.getLogger(__name__)
 SUPPORTED_GPIO_PINS = frozenset({2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27})
@@ -86,6 +87,8 @@ class SetupController(QObject):
     setupCompleted = Signal(str)
     workerCompleted = Signal(str, int)
     setupCompletionReady = Signal(str)
+    portalLifecycleChanged = Signal(str, object)
+    portalProvisionRequested = Signal(str, str, str)
 
     def __init__(self, runtime: VisionDeskRuntime, parent=None) -> None:
         super().__init__(parent)
@@ -99,11 +102,20 @@ class SetupController(QObject):
         self._gpio_state_store: _OperationScopedSetupStateStore | None = None
         self._active_actions: set[str] = set()
         self._action_lock = threading.Lock()
+        self._portal_lock = threading.RLock()
+        self._setup_portal: SetupPortal | None = None
+        self._portal_details: SetupPortalDetails | None = None
+        self._portal_status = "disabled"
+        self._portal_message = "Phone setup is disabled in device configuration."
+        self._portal_submission_pending = False
+        self._finish_after_portal_gpio = False
         self._gpio_timer = QTimer(self)
         self._gpio_timer.setInterval(350)
         self._gpio_timer.timeout.connect(self._sync_gpio_state)
         self.workerCompleted.connect(self._handle_worker_completed)
         self.setupCompletionReady.connect(self._on_setup_completed)
+        self.portalLifecycleChanged.connect(self._handle_portal_lifecycle_changed)
+        self.portalProvisionRequested.connect(self._handle_portal_provision_request)
         self.refresh_state()
 
     @Property(QObject, constant=True)
@@ -216,6 +228,46 @@ class SetupController(QObject):
         return bool(self._state.get("gpio", {}).get("active", False))
 
     @Property(bool, notify=stateChanged)
+    def phoneSetupPortalActive(self) -> bool:
+        with self._portal_lock:
+            return self._portal_details is not None and self._portal_status == "active"
+
+    @Property(str, notify=stateChanged)
+    def phoneSetupPortalStatus(self) -> str:
+        with self._portal_lock:
+            return self._portal_status
+
+    @Property(str, notify=stateChanged)
+    def phoneSetupPortalMessage(self) -> str:
+        with self._portal_lock:
+            return self._portal_message
+
+    @Property(str, notify=stateChanged)
+    def phoneSetupPortalSsid(self) -> str:
+        with self._portal_lock:
+            return self._portal_details.ssid if self._portal_details is not None else ""
+
+    @Property(str, notify=stateChanged)
+    def phoneSetupPortalPassword(self) -> str:
+        with self._portal_lock:
+            return self._portal_details.password if self._portal_details is not None else ""
+
+    @Property(str, notify=stateChanged)
+    def phoneSetupPortalPairingCode(self) -> str:
+        with self._portal_lock:
+            return self._portal_details.pairing_code if self._portal_details is not None else ""
+
+    @Property(str, notify=stateChanged)
+    def phoneSetupPortalUrl(self) -> str:
+        with self._portal_lock:
+            return self._portal_details.url if self._portal_details is not None else ""
+
+    @Property(str, notify=stateChanged)
+    def phoneSetupPortalQrDataUrl(self) -> str:
+        with self._portal_lock:
+            return self._portal_details.qr_data_url if self._portal_details is not None else ""
+
+    @Property(bool, notify=stateChanged)
     def readyToFinish(self) -> bool:
         return self.runtime.setup_state_store.setup_ready_to_finish(self._state)
 
@@ -245,6 +297,7 @@ class SetupController(QObject):
             list(self._state.get("steps", {}).get("welcome", {}).get("checks", []))
         )
         self.stateChanged.emit()
+        self._auto_start_phone_setup()
 
     @Slot()
     def runDeviceChecks(self) -> None:
@@ -325,14 +378,46 @@ class SetupController(QObject):
     def finishSetup(self) -> None:
         self._run_in_thread("finish_setup", self._finish_setup_worker, "setup-finish")
 
+    @Slot()
+    def startPhoneSetup(self) -> None:
+        """Start the local phone portal outside the Qt UI thread."""
+        if self.runtime.setup_is_complete() or not self.runtime.settings.setup_portal.enabled:
+            return
+        with self._portal_lock:
+            if self._setup_portal is not None or self._portal_status == "starting":
+                return
+            self._portal_status = "starting"
+            self._portal_message = "Starting the temporary phone setup network..."
+            self._portal_details = None
+        self.stateChanged.emit()
+        threading.Thread(
+            target=self._start_phone_setup_worker,
+            daemon=True,
+            name="visiondesk-phone-setup",
+        ).start()
+
+    @Slot()
+    def stopPhoneSetup(self) -> None:
+        """Stop the local phone portal and remove its temporary Wi-Fi profile."""
+        self._stop_active_phone_portal()
+        self._set_portal_state(
+            "stopped",
+            "Phone setup network stopped. You can start it again from this screen.",
+            clear_details=True,
+        )
+
     def close(self) -> None:
-        """Stop any temporary GPIO setup verifier."""
+        """Stop temporary setup services before the Qt runtime shuts down."""
+        self._finish_after_portal_gpio = False
+        self._stop_active_phone_portal()
         if self._gpio_verifier is not None or self._gpio_state_store is not None:
             self._stop_gpio_test()
         else:
             self._stop_gpio_verifier()
 
     def _on_setup_completed(self, completion_timestamp: str) -> None:
+        self._finish_after_portal_gpio = False
+        self._stop_active_phone_portal()
         self.runtime.mark_setup_complete(completion_timestamp)
         self.runtime.request_restart()
         self.setupCompleted.emit(completion_timestamp)
@@ -373,6 +458,33 @@ class SetupController(QObject):
         del operation_id
         self._complete_action(action)
         self.refresh_state()
+        if action != "portal_provision":
+            return
+
+        with self._portal_lock:
+            self._portal_submission_pending = False
+        state = self.runtime.setup_state_store.load_state()
+        provisioning_passed = (
+            self.runtime.setup_state_store.setup_wifi_connected(state)
+            and self.runtime.setup_state_store.setup_openai_verified(state)
+            and str(state.get("camera", {}).get("status", "")) == "pass"
+        )
+        if provisioning_passed:
+            self._finish_after_portal_gpio = True
+            self._set_portal_state(
+                "awaiting_gpio",
+                "Wi-Fi, API key, and camera are ready. Press each physical button once on VisionDesk.",
+                clear_details=True,
+            )
+            self.startGpioTest()
+            return
+
+        self._set_portal_state(
+            "failed",
+            "Setup could not be applied. Check the selected Wi-Fi, API key, and camera, then try again.",
+            clear_details=True,
+        )
+        QTimer.singleShot(300, self.startPhoneSetup)
 
     def _device_checks_worker(self, store: _OperationScopedSetupStateStore) -> None:
         checks = run_setup_device_checks()
@@ -475,6 +587,154 @@ class SetupController(QObject):
             ),
             on_completed=self.setupCompletionReady.emit,
         )
+
+    def _auto_start_phone_setup(self) -> None:
+        """Offer phone setup only on an unfinished physical appliance."""
+        if (
+            self.runtime.mock_hardware
+            or self.runtime.setup_is_complete()
+            or not self.runtime.settings.setup_portal.enabled
+            or not self.runtime.settings.setup_portal.auto_start_when_setup_incomplete
+        ):
+            return
+        with self._portal_lock:
+            if self._setup_portal is not None or self._portal_status != "disabled":
+                return
+        self.startPhoneSetup()
+
+    def _start_phone_setup_worker(self) -> None:
+        portal = SetupPortal(
+            settings=self.runtime.settings.setup_portal,
+            scan_networks=scan_wifi_networks,
+            submit_provisioning=self._queue_portal_provision,
+            status_provider=self._portal_status_payload,
+        )
+        with self._portal_lock:
+            # `close()` can safely take ownership and stop this portal while
+            # startup is still in progress.
+            self._setup_portal = portal
+        try:
+            details = portal.start()
+        except SetupPortalError:
+            with self._portal_lock:
+                still_current = self._setup_portal is portal
+                if still_current:
+                    self._setup_portal = None
+            if not still_current:
+                return
+            self.portalLifecycleChanged.emit("failed", None)
+            return
+        with self._portal_lock:
+            still_current = self._setup_portal is portal
+        if not still_current:
+            portal.stop()
+            return
+        self.portalLifecycleChanged.emit("active", details)
+
+    @Slot(str, object)
+    def _handle_portal_lifecycle_changed(self, status: str, details: object) -> None:
+        with self._portal_lock:
+            portal_is_active = self._setup_portal is not None and self._setup_portal.active
+        if status == "active" and portal_is_active and isinstance(details, SetupPortalDetails):
+            self._set_portal_state(
+                "active",
+                "Connect a phone to the temporary network, then scan the QR code or open the local address.",
+                details=details,
+            )
+            return
+        self._set_portal_state(
+            "failed",
+            "Could not start the temporary phone setup network. Check NetworkManager access and Wi-Fi hardware.",
+            clear_details=True,
+        )
+
+    def _queue_portal_provision(self, ssid: str, password: str, api_key: str) -> bool:
+        """Accept one credential submission without persisting secrets in the portal."""
+        with self._portal_lock:
+            if self._portal_submission_pending or self._setup_portal is None:
+                return False
+            self._portal_submission_pending = True
+        self.portalProvisionRequested.emit(ssid, password, api_key)
+        return True
+
+    @Slot(str, str, str)
+    def _handle_portal_provision_request(self, ssid: str, password: str, api_key: str) -> None:
+        if self.setupBusy or not self._run_in_thread(
+            "portal_provision",
+            lambda store: self._portal_provision_worker(store, ssid, password, api_key),
+            "visiondesk-phone-provision",
+        ):
+            with self._portal_lock:
+                self._portal_submission_pending = False
+            self._set_portal_state(
+                "active",
+                "VisionDesk is busy. Wait for the current setup action to finish, then submit again.",
+            )
+            return
+        self._set_portal_state(
+            "applying",
+            "Applying Wi-Fi and API configuration. The phone will disconnect shortly.",
+        )
+
+    def _portal_provision_worker(
+        self,
+        store: _OperationScopedSetupStateStore,
+        ssid: str,
+        password: str,
+        api_key: str,
+    ) -> None:
+        # Responding to the HTTP request happens before this worker can stop
+        # the AP. Afterwards, remove the temporary network before reconnecting
+        # wlan0 to the customer's Wi-Fi.
+        self._stop_active_phone_portal()
+        self._connect_wifi_worker(store, ssid, "", password)
+        state = store.load_state()
+        if not self.runtime.setup_state_store.setup_wifi_connected(state):
+            return
+        self._verify_api_key_worker(store, api_key)
+        state = store.load_state()
+        if not self.runtime.setup_state_store.setup_openai_verified(state):
+            return
+        self._camera_test_worker(store)
+
+    def _stop_active_phone_portal(self) -> None:
+        with self._portal_lock:
+            portal = self._setup_portal
+            self._setup_portal = None
+        if portal is not None:
+            portal.stop()
+
+    def _set_portal_state(
+        self,
+        status: str,
+        message: str,
+        *,
+        details: SetupPortalDetails | None = None,
+        clear_details: bool = False,
+    ) -> None:
+        with self._portal_lock:
+            self._portal_status = status
+            self._portal_message = message
+            if clear_details:
+                self._portal_details = None
+            elif details is not None:
+                self._portal_details = details
+        self.stateChanged.emit()
+
+    def _portal_status_payload(self) -> dict[str, Any]:
+        """Expose only non-secret provisioning progress to the phone portal."""
+        state = self.runtime.setup_state_store.load_state()
+        with self._portal_lock:
+            status = self._portal_status
+            message = self._portal_message
+        return {
+            "stage": status,
+            "message": message,
+            "wifi_status": str(state.get("wifi", {}).get("connect_status", "idle")),
+            "openai_status": str(state.get("openai", {}).get("status", "idle")),
+            "camera_status": str(state.get("camera", {}).get("status", "idle")),
+            "gpio_status": str(state.get("gpio", {}).get("status", "idle")),
+        }
 
     def _validate_gpio_setup(self) -> list[str]:
         issues: list[str] = []
@@ -637,4 +897,20 @@ class SetupController(QObject):
         if state is None:
             state = self.runtime.setup_state_store.load_state()
         self.refresh_state()
+        if (
+            self._finish_after_portal_gpio
+            and self.runtime.setup_state_store.setup_ready_to_finish(state)
+        ):
+            # Clear the flag before stopping the verifier, whose final sync may
+            # call this method again.
+            self._finish_after_portal_gpio = False
+            QTimer.singleShot(0, self._complete_phone_setup_after_gpio)
         return state
+
+    def _complete_phone_setup_after_gpio(self) -> None:
+        """Finish unattended phone provisioning once physical controls pass."""
+        state = self.runtime.setup_state_store.load_state()
+        if not self.runtime.setup_state_store.setup_ready_to_finish(state):
+            return
+        self._stop_gpio_test()
+        self.finishSetup()

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import subprocess
 import os
+import re
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
@@ -12,6 +14,17 @@ from system.storage import atomic_write_text
 OPENAI_KEY_PLACEHOLDER = "your_openai_api_key_here"
 DEFAULT_NMCLI_TIMEOUT_SECONDS = 20.0
 CommandRunner = Callable[..., subprocess.CompletedProcess[str]]
+_SENSITIVE_COMMAND_OPTIONS = frozenset({"password", "psk", "802-11-wireless-security.psk"})
+_SAFE_CONNECTION_NAME = re.compile(r"visiondesk-setup-[a-z0-9-]{4,32}$")
+
+
+@dataclass(frozen=True, slots=True)
+class ProvisioningAccessPoint:
+    """Non-secret metadata for the temporary NetworkManager access point."""
+
+    ssid: str
+    address: str
+    connection_name: str
 
 
 class DeviceSetupError(Exception):
@@ -178,6 +191,118 @@ def connect_wifi_network(
     }
 
 
+def create_provisioning_access_point(
+    *,
+    ssid: str,
+    password: str,
+    interface: str,
+    address: str,
+    connection_name: str,
+    runner: CommandRunner | None = None,
+    timeout_seconds: float = DEFAULT_NMCLI_TIMEOUT_SECONDS,
+) -> ProvisioningAccessPoint:
+    """Create and activate the short-lived WPA2 setup access point via NetworkManager."""
+    normalized_ssid = ssid.strip()
+    normalized_password = password.strip()
+    normalized_interface = interface.strip()
+    normalized_address = address.strip()
+    normalized_connection_name = connection_name.strip().lower()
+    if not normalized_ssid or len(normalized_ssid) > 32:
+        raise DeviceSetupError("Temporary setup network name is invalid.")
+    if len(normalized_password) < 12:
+        raise DeviceSetupError("Temporary setup network password is invalid.")
+    if not re.fullmatch(r"[A-Za-z0-9_.-]{1,32}", normalized_interface):
+        raise DeviceSetupError("Temporary setup network interface is invalid.")
+    if _SAFE_CONNECTION_NAME.fullmatch(normalized_connection_name) is None:
+        raise DeviceSetupError("Temporary setup connection name is invalid.")
+
+    try:
+        _run_command(
+            [
+                "nmcli",
+                "connection",
+                "add",
+                "type",
+                "wifi",
+                "ifname",
+                normalized_interface,
+                "con-name",
+                normalized_connection_name,
+                "autoconnect",
+                "no",
+                "ssid",
+                normalized_ssid,
+            ],
+            runner=runner,
+            timeout_seconds=timeout_seconds,
+        )
+        _run_command(
+            [
+                "nmcli",
+                "connection",
+                "modify",
+                normalized_connection_name,
+                "802-11-wireless.mode",
+                "ap",
+                "802-11-wireless.band",
+                "bg",
+                "ipv4.method",
+                "shared",
+                "ipv4.addresses",
+                f"{normalized_address}/24",
+                "ipv6.method",
+                "disabled",
+                "802-11-wireless-security.key-mgmt",
+                "wpa-psk",
+                "802-11-wireless-security.psk",
+                normalized_password,
+            ],
+            runner=runner,
+            timeout_seconds=timeout_seconds,
+        )
+        _run_command(
+            ["nmcli", "connection", "up", "id", normalized_connection_name],
+            runner=runner,
+            timeout_seconds=timeout_seconds,
+        )
+    except DeviceSetupError:
+        remove_provisioning_access_point(
+            connection_name=normalized_connection_name,
+            runner=runner,
+            timeout_seconds=timeout_seconds,
+            suppress_errors=True,
+        )
+        raise
+
+    return ProvisioningAccessPoint(
+        ssid=normalized_ssid,
+        address=normalized_address,
+        connection_name=normalized_connection_name,
+    )
+
+
+def remove_provisioning_access_point(
+    *,
+    connection_name: str,
+    runner: CommandRunner | None = None,
+    timeout_seconds: float = DEFAULT_NMCLI_TIMEOUT_SECONDS,
+    suppress_errors: bool = False,
+) -> None:
+    """Remove only a VisionDesk-owned temporary access-point profile."""
+    normalized_connection_name = connection_name.strip().lower()
+    if _SAFE_CONNECTION_NAME.fullmatch(normalized_connection_name) is None:
+        raise DeviceSetupError("Refusing to remove an unrecognized setup network profile.")
+    try:
+        _run_command(
+            ["nmcli", "connection", "delete", "id", normalized_connection_name],
+            runner=runner,
+            timeout_seconds=timeout_seconds,
+        )
+    except DeviceSetupError:
+        if not suppress_errors:
+            raise
+
+
 def _run_command(
     command: list[str],
     *,
@@ -197,11 +322,37 @@ def _run_command(
     except FileNotFoundError as exc:
         raise DeviceSetupError(f"Required setup command is unavailable: {command[0]}.") from exc
     except subprocess.TimeoutExpired as exc:
-        raise DeviceSetupError(f"Setup command timed out: {' '.join(command)}") from exc
+        raise DeviceSetupError(
+            f"Setup command timed out: {_format_command_for_error(command)}"
+        ) from exc
     except OSError as exc:
         raise DeviceSetupError(f"Could not run setup command '{command[0]}'. {exc}") from exc
 
     if completed.returncode != 0:
         error_text = completed.stderr.strip() or completed.stdout.strip() or "Unknown command failure."
-        raise DeviceSetupError(error_text)
+        raise DeviceSetupError(_redact_sensitive_text(error_text))
     return completed
+
+
+def _format_command_for_error(command: list[str]) -> str:
+    """Return a diagnostic command rendering with Wi-Fi secrets redacted."""
+    formatted: list[str] = []
+    redact_next = False
+    for part in command:
+        if redact_next:
+            formatted.append("[REDACTED]")
+            redact_next = False
+            continue
+        formatted.append(part)
+        if part.lower() in _SENSITIVE_COMMAND_OPTIONS:
+            redact_next = True
+    return " ".join(formatted)
+
+
+def _redact_sensitive_text(value: str) -> str:
+    """Strip obvious password fragments from an external command error."""
+    return re.sub(
+        r"(?i)(password|psk)([=: ]+)([^\s,;]+)",
+        r"\1\2[REDACTED]",
+        value,
+    )

@@ -59,6 +59,15 @@ setup:
   completed_at: "2026-07-11T00:00:00"
   version: 1
 
+setup_portal:
+  enabled: true
+  auto_start_when_setup_incomplete: true
+  session_timeout_minutes: 15
+  interface: wlan0
+  address: 192.168.4.1
+  port: 80
+  ssid_prefix: VisionDesk-Setup
+
 network:
   wifi:
     ssid: ""

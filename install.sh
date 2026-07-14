@@ -16,7 +16,9 @@ LOG_DIR="/var/log/visiondesk"
 INSTALL_LOG="${LOG_DIR}/install.log"
 SERVICE_TEMPLATE="${SCRIPT_DIR}/deployment/visiondesk.service"
 LAUNCHER_TEMPLATE="${SCRIPT_DIR}/deployment/visiondesk-launch.sh"
+POLKIT_RULE_TEMPLATE="${SCRIPT_DIR}/deployment/49-visiondesk-networkmanager.rules"
 SYSTEMD_UNIT="/etc/systemd/system/visiondesk.service"
+POLKIT_RULE="/etc/polkit-1/rules.d/49-visiondesk-networkmanager.rules"
 LIGHTDM_CONF_DIR="/etc/lightdm/lightdm.conf.d"
 LIGHTDM_CONF="${LIGHTDM_CONF_DIR}/99-visiondesk.conf"
 MIN_FREE_MB=1024
@@ -52,6 +54,7 @@ FORCE_INSTALL=0
 
 PREVIOUS_CURRENT_TARGET=""
 PREVIOUS_SERVICE_BACKUP=""
+PREVIOUS_POLKIT_RULE_BACKUP=""
 PREVIOUS_FINAL_RELEASE_BACKUP=""
 ENV_BACKUP=""
 CONFIG_BACKUP=""
@@ -59,6 +62,7 @@ STAGING_RELEASE_DIR=""
 FINAL_RELEASE_DIR=""
 INSTALL_CHANGED_CURRENT=0
 INSTALL_CHANGED_SERVICE=0
+INSTALL_CHANGED_POLKIT_RULE=0
 
 usage() {
   cat <<'EOF'
@@ -162,6 +166,7 @@ validate_project_shape() {
     "${SCRIPT_DIR}/requirements.txt"
     "${SERVICE_TEMPLATE}"
     "${LAUNCHER_TEMPLATE}"
+    "${POLKIT_RULE_TEMPLATE}"
   )
   local path
   for path in "${required_paths[@]}"; do
@@ -384,6 +389,15 @@ render_service() {
   systemctl enable visiondesk.service
 }
 
+install_networkmanager_policy() {
+  if [[ -f "${POLKIT_RULE}" ]]; then
+    PREVIOUS_POLKIT_RULE_BACKUP="${POLKIT_RULE}.backup.$$"
+    cp -p "${POLKIT_RULE}" "${PREVIOUS_POLKIT_RULE_BACKUP}"
+  fi
+  install -D -o root -g root -m 644 "${POLKIT_RULE_TEMPLATE}" "${POLKIT_RULE}"
+  INSTALL_CHANGED_POLKIT_RULE=1
+}
+
 disable_legacy_unit() {
   local unit_name="$1"
   local unit_path="/etc/systemd/system/${unit_name}"
@@ -417,6 +431,9 @@ cleanup_install_backups() {
   if [[ -n "${PREVIOUS_SERVICE_BACKUP}" && -f "${PREVIOUS_SERVICE_BACKUP}" ]]; then
     rm -f "${PREVIOUS_SERVICE_BACKUP}"
   fi
+  if [[ -n "${PREVIOUS_POLKIT_RULE_BACKUP}" && -f "${PREVIOUS_POLKIT_RULE_BACKUP}" ]]; then
+    rm -f "${PREVIOUS_POLKIT_RULE_BACKUP}"
+  fi
   if [[ -n "${PREVIOUS_FINAL_RELEASE_BACKUP}" && -d "${PREVIOUS_FINAL_RELEASE_BACKUP}" ]]; then
     safe_remove_tree "${PREVIOUS_FINAL_RELEASE_BACKUP}" "${RELEASES_DIR}"
   fi
@@ -442,6 +459,13 @@ rollback_on_failure() {
       rm -f "${SYSTEMD_UNIT}"
     fi
     systemctl daemon-reload || true
+  fi
+  if (( INSTALL_CHANGED_POLKIT_RULE == 1 )); then
+    if [[ -n "${PREVIOUS_POLKIT_RULE_BACKUP}" && -f "${PREVIOUS_POLKIT_RULE_BACKUP}" ]]; then
+      install -o root -g root -m 644 "${PREVIOUS_POLKIT_RULE_BACKUP}" "${POLKIT_RULE}"
+    else
+      rm -f "${POLKIT_RULE}"
+    fi
   fi
   if (( INSTALL_CHANGED_CURRENT == 1 )); then
     if [[ -n "${PREVIOUS_CURRENT_TARGET}" ]]; then
@@ -488,6 +512,7 @@ main() {
   confirm_continue
   install_system_packages
   ensure_user
+  install_networkmanager_policy
   prepare_directories
   configure_autologin
 

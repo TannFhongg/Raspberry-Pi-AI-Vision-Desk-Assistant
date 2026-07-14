@@ -81,6 +81,25 @@ The production hardware profile uses an 11.6-inch non-touch HDMI display in land
 
 `display.size` in `config/device.yaml` and `UI_SCREEN_WIDTH` / `UI_SCREEN_HEIGHT` in `.env` control the initial size only when the app is run with `--windowed`. Keep them at `1200x800` for the design reference. The display has no touch input: GPIO 23/24/25 provide Up, Down, and Select for normal navigation. Retain a USB keyboard and mouse for setup and administrative text entry.
 
+## Phone-first setup on a non-touch panel
+
+On an unfinished physical appliance, VisionDesk can create a short-lived WPA2 setup network so that Wi-Fi credentials and the OpenAI key can be entered from a phone. It is enabled by the `setup_portal` section in `config/device.yaml` (or the matching `SETUP_PORTAL_*` variables), starts automatically only while setup is incomplete, and is never started in `--mock-hardware` development mode.
+
+1. On the VisionDesk Welcome screen, join the displayed `VisionDesk-Setup-XXXX` network with its one-time password.
+2. Scan the displayed QR code or open the displayed local address. The QR code contains the address only, never a password or API key.
+3. Enter the eight-digit pairing code shown on the panel, choose the nearby Wi-Fi, and enter its password plus the OpenAI key.
+4. VisionDesk acknowledges the request, stops and deletes the temporary AP, connects to the chosen Wi-Fi, verifies the key, runs the camera check, and then asks the operator to press each physical button once.
+
+The portal is bound only to its AP address, has a 15-minute default lifetime, requires the pairing code before its JSON APIs are available, and uses a short-lived `HttpOnly; SameSite=Strict` cookie. Wi-Fi and OpenAI credentials are not returned to QML, included in the QR code, or intentionally logged. The temporary portal is HTTP rather than TLS because it is reachable only after joining the random WPA2-protected AP; do not expose its address through another network or replace it with an open AP.
+
+The installer installs a narrowly enumerated NetworkManager PolicyKit rule for the dedicated `visiondesk` group, covering Wi-Fi scan, protected AP creation, connection control, and system-profile modification. On the Pi, confirm the actual distribution policy with:
+
+```bash
+nmcli general permissions
+```
+
+If the Wi-Fi adapter does not support AP mode or NetworkManager is unavailable, the panel reports the failure and the existing keyboard/mouse setup path remains available. Detailed operating and recovery instructions are in [docs/phone_setup.md](docs/phone_setup.md).
+
 Run tests:
 
 ```bash

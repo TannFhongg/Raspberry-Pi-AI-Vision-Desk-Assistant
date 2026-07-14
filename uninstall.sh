@@ -10,6 +10,7 @@ LOG_DIR="/var/log/visiondesk"
 SYSTEMD_DIR="/etc/systemd/system"
 SERVICE_NAME="visiondesk.service"
 SYSTEMD_UNIT="${SYSTEMD_DIR}/${SERVICE_NAME}"
+POLKIT_RULE="/etc/polkit-1/rules.d/49-visiondesk-networkmanager.rules"
 LIGHTDM_CONF="/etc/lightdm/lightdm.conf.d/99-visiondesk.conf"
 LEGACY_UNITS=(
   "${SYSTEMD_DIR}/visiondesk-qt.service"
@@ -143,6 +144,7 @@ print_plan() {
   log "[INFO] Remove app/service:"
   log "  ${APP_ROOT}"
   log "  ${SYSTEMD_UNIT}"
+  log "  ${POLKIT_RULE}"
   log "  ${LIGHTDM_CONF}"
   if (( PURGE == 1 )); then
     log "[INFO] Purge persistent data:"
@@ -173,6 +175,7 @@ stop_and_disable_service() {
 
 remove_service_and_app() {
   safe_remove_file "${SYSTEMD_UNIT}" "${SYSTEMD_DIR}"
+  safe_remove_file "${POLKIT_RULE}" "/etc/polkit-1/rules.d"
   local legacy_unit
   for legacy_unit in "${LEGACY_UNITS[@]}"; do
     safe_remove_file "${legacy_unit}" "${SYSTEMD_DIR}"

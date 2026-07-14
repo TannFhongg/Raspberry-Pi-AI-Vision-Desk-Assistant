@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import ipaddress
 import os
+import re
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -56,6 +58,13 @@ DEFAULT_SETUP_VERSION = 1
 DEFAULT_WIFI_AUTO_CONNECT = True
 DEFAULT_WIFI_MANAGER = "nmcli"
 DEFAULT_LOCALE = "en"
+DEFAULT_SETUP_PORTAL_ENABLED = False
+DEFAULT_SETUP_PORTAL_AUTO_START = True
+DEFAULT_SETUP_PORTAL_SESSION_TIMEOUT_MINUTES = 15
+DEFAULT_SETUP_PORTAL_INTERFACE = "wlan0"
+DEFAULT_SETUP_PORTAL_ADDRESS = "192.168.4.1"
+DEFAULT_SETUP_PORTAL_PORT = 80
+DEFAULT_SETUP_PORTAL_SSID_PREFIX = "VisionDesk-Setup"
 OPENAI_KEY_PLACEHOLDER = "your_openai_api_key_here"
 
 
@@ -168,6 +177,19 @@ class SetupSettings:
 
 
 @dataclass(slots=True)
+class SetupPortalSettings:
+    """Temporary phone-provisioning portal configuration."""
+
+    enabled: bool = DEFAULT_SETUP_PORTAL_ENABLED
+    auto_start_when_setup_incomplete: bool = DEFAULT_SETUP_PORTAL_AUTO_START
+    session_timeout_minutes: int = DEFAULT_SETUP_PORTAL_SESSION_TIMEOUT_MINUTES
+    interface: str = DEFAULT_SETUP_PORTAL_INTERFACE
+    address: str = DEFAULT_SETUP_PORTAL_ADDRESS
+    port: int = DEFAULT_SETUP_PORTAL_PORT
+    ssid_prefix: str = DEFAULT_SETUP_PORTAL_SSID_PREFIX
+
+
+@dataclass(slots=True)
 class WifiSettings:
     """Persisted non-secret Wi-Fi metadata managed by the setup wizard."""
 
@@ -247,6 +269,7 @@ class DeviceSettings:
     offline_retry: OfflineRetrySettings
     config_path: Path
     setup: SetupSettings = field(default_factory=SetupSettings)
+    setup_portal: SetupPortalSettings = field(default_factory=SetupPortalSettings)
     network: NetworkSettings = field(default_factory=NetworkSettings)
     localization: LocalizationSettings = field(default_factory=LocalizationSettings)
 
@@ -274,6 +297,7 @@ def load_device_settings(
     vision = merged.get("vision", {})
     startup = merged.get("startup", {})
     setup = merged.get("setup", {})
+    setup_portal = merged.get("setup_portal", {})
     network = merged.get("network", {})
     localization = merged.get("localization", {})
     reliability = merged.get("reliability", {})
@@ -471,6 +495,47 @@ def load_device_settings(
                 ),
                 "setup.version",
                 minimum=0,
+            ),
+        ),
+        setup_portal=SetupPortalSettings(
+            enabled=_parse_bool(
+                setup_portal.get("enabled", DEFAULT_SETUP_PORTAL_ENABLED),
+                "setup_portal.enabled",
+            ),
+            auto_start_when_setup_incomplete=_parse_bool(
+                setup_portal.get(
+                    "auto_start_when_setup_incomplete",
+                    DEFAULT_SETUP_PORTAL_AUTO_START,
+                ),
+                "setup_portal.auto_start_when_setup_incomplete",
+            ),
+            session_timeout_minutes=_parse_int(
+                setup_portal.get(
+                    "session_timeout_minutes",
+                    DEFAULT_SETUP_PORTAL_SESSION_TIMEOUT_MINUTES,
+                ),
+                "setup_portal.session_timeout_minutes",
+                minimum=1,
+                maximum=60,
+            ),
+            interface=_parse_safe_interface_name(
+                setup_portal.get("interface", DEFAULT_SETUP_PORTAL_INTERFACE),
+                "setup_portal.interface",
+            ),
+            address=_parse_ipv4_address(
+                setup_portal.get("address", DEFAULT_SETUP_PORTAL_ADDRESS),
+                "setup_portal.address",
+            ),
+            port=_parse_int(
+                setup_portal.get("port", DEFAULT_SETUP_PORTAL_PORT),
+                "setup_portal.port",
+                minimum=1,
+                maximum=65535,
+            ),
+            ssid_prefix=_parse_nonempty_text(
+                setup_portal.get("ssid_prefix", DEFAULT_SETUP_PORTAL_SSID_PREFIX),
+                "setup_portal.ssid_prefix",
+                maximum_length=24,
             ),
         ),
         network=NetworkSettings(
@@ -712,6 +777,7 @@ def _apply_environment_overrides(
     merged["vision"] = dict(raw_data.get("vision", {}))
     merged["startup"] = dict(raw_data.get("startup", {}))
     merged["setup"] = dict(raw_data.get("setup", {}))
+    merged["setup_portal"] = dict(raw_data.get("setup_portal", {}))
     merged["network"] = dict(raw_data.get("network", {}))
     merged["localization"] = dict(raw_data.get("localization", {}))
     merged["reliability"] = dict(raw_data.get("reliability", {}))
@@ -731,6 +797,7 @@ def _apply_environment_overrides(
     network = merged["network"]
     network_wifi = dict(network.get("wifi", {}))
     network["wifi"] = network_wifi
+    setup_portal = merged["setup_portal"]
 
     _set_if_present(camera, "backend", env, "VISION_CAMERA_BACKEND")
     _set_if_present(camera, "index", env, "VISION_CAMERA_INDEX")
@@ -768,6 +835,24 @@ def _apply_environment_overrides(
     _set_if_present(display_size, "width", env, "UI_SCREEN_WIDTH")
     _set_if_present(display_size, "height", env, "UI_SCREEN_HEIGHT")
     _set_if_present(display, "orientation", env, "UI_DISPLAY_ORIENTATION")
+
+    _set_if_present(setup_portal, "enabled", env, "SETUP_PORTAL_ENABLED")
+    _set_if_present(
+        setup_portal,
+        "auto_start_when_setup_incomplete",
+        env,
+        "SETUP_PORTAL_AUTO_START",
+    )
+    _set_if_present(
+        setup_portal,
+        "session_timeout_minutes",
+        env,
+        "SETUP_PORTAL_SESSION_TIMEOUT_MINUTES",
+    )
+    _set_if_present(setup_portal, "interface", env, "SETUP_PORTAL_INTERFACE")
+    _set_if_present(setup_portal, "address", env, "SETUP_PORTAL_ADDRESS")
+    _set_if_present(setup_portal, "port", env, "SETUP_PORTAL_PORT")
+    _set_if_present(setup_portal, "ssid_prefix", env, "SETUP_PORTAL_SSID_PREFIX")
 
     _set_if_present(merged["button"], "enabled", env, "ENABLE_GPIO_BUTTON")
     _set_if_present(merged["button"], "pin", env, "CAPTURE_BUTTON_PIN", "GPIO_BUTTON_PIN")
@@ -971,6 +1056,7 @@ def _parse_int(
     value: Any,
     field_name: str,
     minimum: int | None = None,
+    maximum: int | None = None,
 ) -> int:
     """Parse an integer with optional lower bound."""
     try:
@@ -981,6 +1067,10 @@ def _parse_int(
     if minimum is not None and parsed < minimum:
         raise SettingsError(
             f"Value for '{field_name}' must be at least {minimum}, got {parsed}."
+        )
+    if maximum is not None and parsed > maximum:
+        raise SettingsError(
+            f"Value for '{field_name}' must be at most {maximum}, got {parsed}."
         )
     return parsed
 
@@ -1044,6 +1134,36 @@ def _parse_text(value: Any, field_name: str) -> str:
     if not text:
         raise SettingsError(f"Value for '{field_name}' cannot be empty.")
     return text
+
+
+def _parse_nonempty_text(value: Any, field_name: str, *, maximum_length: int) -> str:
+    """Parse bounded printable text used in local device-facing configuration."""
+    text = _parse_text(value, field_name)
+    if len(text) > maximum_length or any(ord(character) < 32 for character in text):
+        raise SettingsError(
+            f"Invalid text for '{field_name}'. Use at most {maximum_length} printable characters."
+        )
+    return text
+
+
+def _parse_safe_interface_name(value: Any, field_name: str) -> str:
+    """Parse a conservative Linux network-interface identifier."""
+    text = _parse_nonempty_text(value, field_name, maximum_length=32)
+    if re.fullmatch(r"[A-Za-z0-9_.-]+", text) is None:
+        raise SettingsError(f"Invalid network interface for '{field_name}'.")
+    return text
+
+
+def _parse_ipv4_address(value: Any, field_name: str) -> str:
+    """Parse a concrete IPv4 bind address for the local provisioning portal."""
+    text = _parse_text(value, field_name)
+    try:
+        address = ipaddress.IPv4Address(text)
+    except ipaddress.AddressValueError as exc:
+        raise SettingsError(f"Invalid IPv4 address for '{field_name}': {value!r}.") from exc
+    if address.is_unspecified or address.is_multicast:
+        raise SettingsError(f"Invalid provisioning bind address for '{field_name}'.")
+    return str(address)
 
 
 def _parse_optional_text(value: Any, field_name: str) -> str:

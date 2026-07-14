@@ -22,6 +22,8 @@ def test_install_script_includes_expected_flags_and_safety_guards() -> None:
     assert "--force" in script_text
     assert "visiondesk.service" in script_text
     assert "NetworkManager" in script_text
+    assert "49-visiondesk-networkmanager.rules" in script_text
+    assert "install_networkmanager_policy" in script_text
     assert "ensure_path_within" in script_text
     assert "rollback_on_failure" in script_text
 
@@ -104,6 +106,17 @@ def test_uninstall_script_supports_preserve_by_default_and_purge_confirmation() 
     assert "Preserve persistent data" in script_text
     assert "safe_remove_tree" in script_text
     assert "systemctl daemon-reload" in script_text
+    assert "49-visiondesk-networkmanager.rules" in script_text
+
+
+def test_networkmanager_policy_is_limited_to_setup_actions_for_visiondesk_group() -> None:
+    policy_text = Path("deployment/49-visiondesk-networkmanager.rules").read_text(encoding="utf-8")
+
+    assert 'subject.isInGroup("visiondesk")' in policy_text
+    assert "org.freedesktop.NetworkManager.network-control" in policy_text
+    assert "org.freedesktop.NetworkManager.settings.modify.system" in policy_text
+    assert "org.freedesktop.NetworkManager.wifi.scan" in policy_text
+    assert "org.freedesktop.NetworkManager.wifi.share.protected" in policy_text
 
 
 def test_factory_reset_script_wraps_shared_python_backend_and_restart() -> None:

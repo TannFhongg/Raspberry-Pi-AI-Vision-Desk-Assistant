@@ -363,6 +363,38 @@ class AppController(QObject):
     def setupGpioActive(self) -> bool:
         return self.setup_controller.gpioActive
 
+    @Property(bool, notify=viewStateChanged)
+    def setupPhonePortalActive(self) -> bool:
+        return self.setup_controller.phoneSetupPortalActive
+
+    @Property(str, notify=viewStateChanged)
+    def setupPhonePortalStatus(self) -> str:
+        return self.setup_controller.phoneSetupPortalStatus
+
+    @Property(str, notify=viewStateChanged)
+    def setupPhonePortalMessage(self) -> str:
+        return self.setup_controller.phoneSetupPortalMessage
+
+    @Property(str, notify=viewStateChanged)
+    def setupPhonePortalSsid(self) -> str:
+        return self.setup_controller.phoneSetupPortalSsid
+
+    @Property(str, notify=viewStateChanged)
+    def setupPhonePortalPassword(self) -> str:
+        return self.setup_controller.phoneSetupPortalPassword
+
+    @Property(str, notify=viewStateChanged)
+    def setupPhonePortalPairingCode(self) -> str:
+        return self.setup_controller.phoneSetupPortalPairingCode
+
+    @Property(str, notify=viewStateChanged)
+    def setupPhonePortalUrl(self) -> str:
+        return self.setup_controller.phoneSetupPortalUrl
+
+    @Property(str, notify=viewStateChanged)
+    def setupPhonePortalQrDataUrl(self) -> str:
+        return self.setup_controller.phoneSetupPortalQrDataUrl
+
     @Property(bool, notify=deviceActionsChanged)
     def deviceActionsBusy(self) -> bool:
         return self._device_actions_busy
@@ -657,6 +689,14 @@ class AppController(QObject):
     @Slot()
     def finishSetup(self) -> None:
         self.setup_controller.finishSetup()
+
+    @Slot()
+    def startPhoneSetup(self) -> None:
+        self.setup_controller.startPhoneSetup()
+
+    @Slot()
+    def stopPhoneSetup(self) -> None:
+        self.setup_controller.stopPhoneSetup()
 
     def currentDeviceState(self) -> str:
         """Return the hardware-facing busy state for GPIO integration."""

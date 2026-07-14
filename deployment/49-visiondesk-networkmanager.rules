@@ -1,0 +1,21 @@
+// Permit the dedicated VisionDesk appliance account to perform only the
+// NetworkManager operations used by first-boot Wi-Fi and temporary AP setup.
+// This rule is installed system-wide by install.sh as root.
+polkit.addRule(function(action, subject) {
+    if (!subject.isInGroup("visiondesk")) {
+        return polkit.Result.NOT_HANDLED;
+    }
+
+    var allowedActions = [
+        "org.freedesktop.NetworkManager.network-control",
+        "org.freedesktop.NetworkManager.settings.modify.system",
+        "org.freedesktop.NetworkManager.wifi.scan",
+        "org.freedesktop.NetworkManager.wifi.share.protected"
+    ];
+
+    if (allowedActions.indexOf(action.id) >= 0) {
+        return polkit.Result.YES;
+    }
+
+    return polkit.Result.NOT_HANDLED;
+});

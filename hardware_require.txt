@@ -10,10 +10,14 @@ Required:
 - 11.6-inch HDMI display, non-touch, used in landscape orientation
 - HDMI cable or micro-HDMI-to-HDMI cable appropriate for Raspberry Pi 5
 - Internet connection (Wi-Fi or Ethernet)
+- Wi-Fi adapter managed by NetworkManager and supporting protected AP/hotspot mode
+  (required only for phone-first provisioning; Ethernet can be used after setup)
 - Cooling solution such as a heatsink, fan, or active cooling case
 
 Recommended for setup and testing:
 - USB keyboard and mouse for first setup and any non-GPIO UI navigation
+- The phone-first setup portal can enter Wi-Fi and OpenAI credentials without a keyboard;
+  retain the keyboard/mouse for recovery, diagnostics, and administrator-only tasks.
 - Raspberry Pi case with heatsink or cooling fan
 
 Required for non-touch GPIO operation:

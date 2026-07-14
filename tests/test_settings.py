@@ -101,6 +101,13 @@ class LoadDeviceSettingsTests(unittest.TestCase):
         self.assertAlmostEqual(settings.reliability.openai_timeout_seconds, 30.0)
         self.assertEqual(settings.reliability.openai_retry_attempts, 3)
         self.assertAlmostEqual(settings.reliability.openai_retry_backoff_seconds, 2.0)
+        self.assertFalse(settings.setup_portal.enabled)
+        self.assertTrue(settings.setup_portal.auto_start_when_setup_incomplete)
+        self.assertEqual(settings.setup_portal.session_timeout_minutes, 15)
+        self.assertEqual(settings.setup_portal.interface, "wlan0")
+        self.assertEqual(settings.setup_portal.address, "192.168.4.1")
+        self.assertEqual(settings.setup_portal.port, 80)
+        self.assertEqual(settings.setup_portal.ssid_prefix, "VisionDesk-Setup")
 
     def test_environment_overrides_take_precedence(self) -> None:
         config_path = _write_temp_config(
@@ -186,6 +193,13 @@ class LoadDeviceSettingsTests(unittest.TestCase):
                 "AI_DEFAULT_MODE": "solve_problem",
                 "SCREEN_OPTIMIZATION": "on",
                 "STARTUP_BEHAVIOR": "manual",
+                "SETUP_PORTAL_ENABLED": "1",
+                "SETUP_PORTAL_AUTO_START": "0",
+                "SETUP_PORTAL_SESSION_TIMEOUT_MINUTES": "20",
+                "SETUP_PORTAL_INTERFACE": "wlan1",
+                "SETUP_PORTAL_ADDRESS": "192.168.50.1",
+                "SETUP_PORTAL_PORT": "8080",
+                "SETUP_PORTAL_SSID_PREFIX": "DeskSetup",
                 "RELIABILITY_LOG_LEVEL": "DEBUG",
                 "RELIABILITY_LOG_MAX_BYTES": "4096",
                 "RELIABILITY_LOG_BACKUP_COUNT": "2",
@@ -228,6 +242,13 @@ class LoadDeviceSettingsTests(unittest.TestCase):
         self.assertEqual(settings.ai.default_mode, "solve_problem")
         self.assertEqual(settings.vision.screen_optimization, "on")
         self.assertEqual(settings.startup.behavior, "manual")
+        self.assertTrue(settings.setup_portal.enabled)
+        self.assertFalse(settings.setup_portal.auto_start_when_setup_incomplete)
+        self.assertEqual(settings.setup_portal.session_timeout_minutes, 20)
+        self.assertEqual(settings.setup_portal.interface, "wlan1")
+        self.assertEqual(settings.setup_portal.address, "192.168.50.1")
+        self.assertEqual(settings.setup_portal.port, 8080)
+        self.assertEqual(settings.setup_portal.ssid_prefix, "DeskSetup")
         self.assertEqual(settings.reliability.log_level, "DEBUG")
         self.assertEqual(settings.reliability.log_max_bytes, 4096)
         self.assertEqual(settings.reliability.log_backup_count, 2)

@@ -136,7 +136,8 @@ Item {
         }
         if (root.controller.wifiNetworksModel.count === 0
                 && root.controller.setupWifiStatus === "idle"
-                && root.controller.setupWifiMessage.length === 0) {
+                && root.controller.setupWifiMessage.length === 0
+                && ["starting", "active", "applying"].indexOf(root.controller.setupPhonePortalStatus) < 0) {
             root.controller.scanWifi()
         }
     }
@@ -300,6 +301,119 @@ Item {
                                 enabled: !root.controller.setupDeviceChecksBusy
                                 Layout.fillWidth: true
                                 onClicked: root.controller.runSetupDeviceChecks()
+                            }
+                        }
+                    }
+                }
+
+                InfoCard {
+                    theme: root.theme
+                    padding: 14
+                    fillColor: root.controller.setupPhonePortalActive
+                               ? "#F4F8FF"
+                               : "#FBFCFE"
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 142
+                    Layout.minimumHeight: 142
+                    Layout.maximumHeight: 142
+
+                    RowLayout {
+                        anchors.fill: parent
+                        spacing: 14
+
+                        Rectangle {
+                            visible: root.controller.setupPhonePortalQrDataUrl.length === 0
+                            Layout.preferredWidth: 92
+                            Layout.preferredHeight: 92
+                            radius: 16
+                            color: root.theme.primarySoft
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: "PHONE\nSETUP"
+                                horizontalAlignment: Text.AlignHCenter
+                                color: root.theme.primaryStrong
+                                font.family: root.theme.displayFont
+                                font.pixelSize: 13
+                                font.weight: root.theme.weightStrong
+                            }
+                        }
+
+                        Image {
+                            visible: root.controller.setupPhonePortalQrDataUrl.length > 0
+                            source: root.controller.setupPhonePortalQrDataUrl
+                            cache: false
+                            fillMode: Image.PreserveAspectFit
+                            smooth: false
+                            Layout.preferredWidth: 92
+                            Layout.preferredHeight: 92
+                        }
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            spacing: 5
+
+                            RowLayout {
+                                Layout.fillWidth: true
+
+                                StatusChip {
+                                    theme: root.theme
+                                    label: "Phone setup"
+                                    value: root.statusText(root.controller.setupPhonePortalStatus)
+                                    tone: root.statusTone(root.controller.setupPhonePortalStatus)
+                                }
+
+                                Item { Layout.fillWidth: true }
+
+                                SecondaryButton {
+                                    theme: root.theme
+                                    text: root.controller.setupPhonePortalActive ? "STOP" : "START"
+                                    enabled: root.controller.setupPhonePortalStatus !== "starting"
+                                             && root.controller.setupPhonePortalStatus !== "applying"
+                                    implicitWidth: 104
+                                    onClicked: {
+                                        if (root.controller.setupPhonePortalActive) {
+                                            root.controller.stopPhoneSetup()
+                                        } else {
+                                            root.controller.startPhoneSetup()
+                                        }
+                                    }
+                                }
+                            }
+
+                            Text {
+                                text: root.controller.setupPhonePortalMessage
+                                color: root.statusColor(root.controller.setupPhonePortalStatus)
+                                font.family: root.theme.bodyFont
+                                font.pixelSize: 13
+                                wrapMode: Text.WordWrap
+                                maximumLineCount: 2
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
+                            }
+
+                            Text {
+                                visible: root.controller.setupPhonePortalActive
+                                text: "Wi-Fi: " + root.controller.setupPhonePortalSsid
+                                      + "    Password: " + root.controller.setupPhonePortalPassword
+                                      + "    Code: " + root.controller.setupPhonePortalPairingCode
+                                color: root.theme.text
+                                font.family: root.theme.bodyFont
+                                font.pixelSize: 13
+                                font.weight: root.theme.weightStrong
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
+                            }
+
+                            Text {
+                                visible: root.controller.setupPhonePortalActive
+                                text: "Open " + root.controller.setupPhonePortalUrl + " or scan the QR code."
+                                color: root.theme.textMuted
+                                font.family: root.theme.bodyFont
+                                font.pixelSize: 12
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
                             }
                         }
                     }
