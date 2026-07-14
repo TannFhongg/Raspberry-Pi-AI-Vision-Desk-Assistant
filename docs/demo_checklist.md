@@ -1,42 +1,80 @@
-# Demo Checklist
+# VisionDesk demo checklist
+
+This checklist covers the features present in VisionDesk 1.0.0. It does not
+claim text-to-speech or any other feature absent from the application.
 
 ## Before the demo
 
-- create and activate `.venv`, then install dependencies with `python -m pip install -r requirements.txt`
-- set `OPENAI_API_KEY` in the ignored `.env` only when demonstrating live analysis; `OPENAI_MODEL` and `DEVICE_CONFIG_PATH` are optional in development
-- start the native app with `python -m qt_app.main --windowed --mock-hardware` for desktop demoing or use `visiondesk.service` on an installed device
-- confirm `data/latest_result.txt`, `data/result_history.json`, and `data/private/retry_queue.json` are writable in development
-- if demoing an installed appliance, confirm `/var/lib/visiondesk/latest_result.txt`, `/var/lib/visiondesk/result_history.json`, and `/var/lib/visiondesk/private/retry_queue.json` are writable
-- confirm the 1200x800 design canvas scales correctly in fullscreen on the 11.6-inch HDMI display
-- keep a USB keyboard and mouse connected: the production display has no touch input
+- Use a Raspberry Pi 5 with the 11.6-inch non-touch HDMI display, USB webcam,
+  Internet access, and the ten configured GPIO buttons. Keep a USB keyboard and
+  mouse connected for recovery.
+- Confirm the appliance is healthy:
 
-## Core flow to show
+  ```bash
+  sudo systemctl status visiondesk.service
+  nmcli device status
+  ```
 
-- open `Home`
-- select a mode
-- show the camera preview
-- trigger a capture
-- wait through `Processing`
-- show the final `Result`
-- open `Recent Results`
-- open one `History Detail` item
+- For a live AI demonstration, verify Internet access and use an OpenAI API key
+  with available quota. Enter the key through Setup on an appliance; do not show
+  or paste it into a terminal, slide, screenshot, or log.
+- Prepare a printed-text sample, a document with clear headings/actions, a
+  photo or object scene, work material such as a table/whiteboard, and a short
+  math or logic problem. These correspond to the five implemented modes.
+- For a development-only UI demo, start the deterministic mock flow instead:
 
-## Setup flow to show
+  ```bash
+  python -m qt_app.main --windowed --mock-hardware
+  ```
 
-- show the welcome/device-check step
-- scan nearby Wi-Fi networks
-- connect to Wi-Fi
-- verify an OpenAI key
-- run the camera test
-- run the GPIO test
-- finish setup and explain that the app restarts directly into the native kiosk flow
-- explain that a candidate OpenAI key is verified before it is saved and no raw or masked key is exposed to QML
+## Demo order
 
-## Privacy and reliability talking points
+1. Show the non-touch Home screen and select a mode using GPIO Up, Down, and
+   Select. The BCM button map is in [../setup.md](../setup.md).
+2. Demonstrate camera preview, Capture, the Processing screen, and Result.
+3. Demonstrate each implemented workflow with the matching prepared sample:
 
-- history is text-only by default
-- retry media stays private under the shared private storage tree
-- `Clear History`, `User-Data Reset`, `Configuration Reset`, and `Full Factory Reset` are separate actions
-- corrupt persisted setup or history state is quarantined and recovered safely
-- production secrets live in `/etc/visiondesk/visiondesk.env`; user data lives under `/var/lib/visiondesk/`
-- an appliance update succeeds only after a fresh readiness marker matches the release and its service stays stable; otherwise it rolls back
+   - Read Text
+   - Summarize Document
+   - Analyze Image
+   - Professional Assistant
+   - Solve Problem
+
+4. Open History and History Detail to show that saved history is text-only.
+5. Explain that live results depend on the image, network, and OpenAI service;
+   do not promise fixed content or response time.
+
+## Optional first-boot demonstration
+
+Use a factory-new device or one deliberately reset to incomplete setup. Do not
+reset the only prepared demo device immediately before a client meeting.
+
+1. On Welcome, show the temporary SSID, QR code, local URL, and pairing code.
+2. Join the displayed WPA2-protected AP from a phone and complete the pairing
+   flow.
+3. Submit target Wi-Fi and the OpenAI key, then show the camera and GPIO steps.
+4. Explain that the temporary AP is removed after submission and that the portal
+   is not a persistent LAN management page.
+
+See [phone_setup.md](phone_setup.md) for the exact workflow and fallback.
+
+## Boundaries to state accurately
+
+- The 11.6-inch display is not touch-enabled; GPIO is the normal input method.
+- “Hear printed text” / TTS is not implemented in version 1.0.0.
+- History defaults to text and safe metadata. Private captured/retry media is
+  kept under `/var/lib/visiondesk/private/` and is subject to retention limits.
+- A candidate OpenAI key is verified before persistence and is not exposed to
+  QML as raw or masked text.
+- The product runs as `visiondesk.service`; phone provisioning is a short-lived
+  local HTTP service on the temporary AP, not a browser kiosk or permanent web
+  dashboard.
+
+## After the demo
+
+- Close any document or image containing client data.
+- Review History and use the appropriate reset action only with authorization:
+  User-Data Reset, Configuration Reset, or Full Factory Reset have different
+  effects. Commands and consequences are in [../setup.md](../setup.md).
+- Do not leave a temporary phone setup AP running or a keyboard attached in an
+  unattended client environment.

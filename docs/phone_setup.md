@@ -1,56 +1,86 @@
-# Phone-first Provisioning
+# Phone-first provisioning
 
-This procedure is for the 11.6-inch non-touch VisionDesk appliance. It lets an
-installer enter Wi-Fi and the OpenAI API key from a phone, while the panel is
-used only to display the temporary network, pairing code, QR code, and progress.
+This procedure applies to a new VisionDesk 1.0.0 appliance with the 11.6-inch
+non-touch display. The device panel shows the temporary network and progress;
+a phone supplies Wi-Fi credentials and the OpenAI API key.
 
 ## Preconditions
 
-- `setup.completed` is `false` in the active device configuration, or a
-  Configuration/Factory Reset has returned the device to setup.
-- `setup_portal.enabled` and `setup_portal.auto_start_when_setup_incomplete`
-  are enabled. The shipped profile uses `wlan0`, `192.168.4.1`, port `80`, and
-  a 15-minute session.
-- The Wi-Fi adapter supports protected AP mode and is managed by NetworkManager.
-- The appliance was installed with `install.sh`; it installs the VisionDesk
-  NetworkManager PolicyKit rule. Confirm permissions with `nmcli general permissions`.
+- VisionDesk was installed with `install.sh` and `visiondesk.service` is
+  running.
+- Setup is incomplete. A factory installation has `setup.completed: false`; an
+  existing device can return to this state with Configuration Reset or Factory
+  Reset.
+- In `/etc/visiondesk/device.yaml`, `setup_portal.enabled` and
+  `setup_portal.auto_start_when_setup_incomplete` are enabled. The shipped
+  configuration uses `wlan0`, `192.168.4.1`, port `80`, the
+  `VisionDesk-Setup` SSID prefix, and a 15-minute session lifetime.
+- The Wi-Fi adapter is managed by NetworkManager and can create a protected AP.
+  If it cannot, use the keyboard/mouse fallback below.
 
-## Installer flow
+`install.sh` installs the PolicyKit rule required for the dedicated
+`visiondesk` user to scan Wi-Fi, create the protected AP, control connections,
+and modify system Wi-Fi profiles. Check the effective policy on the Pi with:
 
-1. Power on VisionDesk and wait for the Welcome screen.
-2. On the phone, join the panel's `VisionDesk-Setup-XXXX` SSID using the
-   displayed temporary password.
-3. Scan the QR code or browse to the panel's local address.
-4. Enter the panel's eight-digit pairing code.
-5. Select the target Wi-Fi, enter its password, and enter the OpenAI API key.
-6. Submit once. The phone is disconnected when the temporary AP is removed.
-7. Watch the VisionDesk panel while it joins Wi-Fi, verifies the API key, and
-   checks the camera. Finally, press each of the ten physical buttons once.
-8. VisionDesk completes setup and restarts into Home.
+```bash
+nmcli general permissions
+```
 
-The QR payload is only the local URL. The temporary Wi-Fi password and pairing
-code are generated per portal launch. The API key stays in memory until its
-verification passes, then is saved into the protected environment file; it is
-never displayed by the QML UI or returned by the phone portal.
+## Provision a new device
 
-## Recovery
+1. Power on the device and wait for the Welcome screen.
+2. Read the **Phone setup** card on the panel. It shows a temporary
+   `VisionDesk-Setup-XXXX` SSID, a generated Wi-Fi password, a QR code/local
+   URL, and an eight-digit pairing code.
+3. Connect the phone to that temporary SSID, then scan the QR code or open the
+   displayed local URL.
+4. Enter the pairing code, select the target Wi-Fi network, and enter the
+   target Wi-Fi password and OpenAI API key.
+5. Submit once. VisionDesk stops and removes the temporary AP, then connects to
+   the chosen Wi-Fi, verifies the OpenAI key, and runs the camera check.
+6. Press each of the ten physical buttons during the GPIO step. The application
+   completes setup and restarts into Home.
 
-If the portal reports it cannot start:
+The QR payload contains only the local URL. It never contains the temporary
+Wi-Fi password, the pairing code, Wi-Fi credentials, or the API key.
 
-1. Attach the recovery keyboard/mouse and use the on-panel Wi-Fi/OpenAI wizard.
-2. Check `systemctl status NetworkManager` and `nmcli general permissions`.
-3. Confirm the configured interface exists with `nmcli device status` and that
-   the adapter advertises AP mode.
-4. Check `journalctl -u visiondesk.service -b` for a non-secret failure summary.
+## If phone setup cannot start
 
-Do not copy credentials into a shell command or a service log while diagnosing.
-If the wireless adapter does not support AP mode, keep `setup_portal.enabled:
-false`; standard keyboard/mouse provisioning continues to work.
+1. Attach the recovery keyboard and mouse, then use the on-panel Setup wizard
+   to enter Wi-Fi and the OpenAI key directly.
+2. Inspect NetworkManager and the Wi-Fi interface:
+
+   ```bash
+   sudo systemctl status NetworkManager
+   nmcli device status
+   nmcli general permissions
+   ```
+
+3. Inspect the non-secret application failure summary:
+
+   ```bash
+   journalctl -u visiondesk.service -b
+   ```
+
+4. If the adapter cannot create a protected AP, set
+   `setup_portal.enabled: false` in `/etc/visiondesk/device.yaml` and restart
+   the service. Keyboard/mouse provisioning remains the supported fallback.
+
+Do not paste Wi-Fi passwords or OpenAI keys into shell commands or logs while
+diagnosing.
 
 ## Security boundary
 
-The setup server listens only on the configured AP IPv4 address. Its JSON
-endpoints require a pairing code and an expiring `HttpOnly; SameSite=Strict`
-session cookie. It has no general LAN bind, no persistent session, and deletes
-its own `visiondesk-setup-*` NetworkManager profile when stopped. This is a
-local WPA2-protected setup channel, not an internet-facing management service.
+The portal is a short-lived HTTP server bound only to its configured AP IPv4
+address. It is reachable after joining the generated WPA2-protected AP, not as
+a normal LAN management site. Pairing must complete before its JSON APIs are
+available; failed pairing attempts are bounded, and the session expires. The
+session cookie is `HttpOnly; SameSite=Strict`; it cannot authorize anything
+once the portal session stops.
+
+Wi-Fi and OpenAI credentials are not returned to QML, included in the QR code,
+or intentionally logged. The temporary NetworkManager profile is removed when
+the portal stops. Do not expose the portal address through another network or
+replace the AP with an open network.
+
+For the full installation and reset procedure, see [../setup.md](../setup.md).

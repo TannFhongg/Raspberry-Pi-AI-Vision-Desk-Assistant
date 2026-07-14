@@ -1,27 +1,47 @@
 # VisionDesk
 
-VisionDesk is a Raspberry Pi appliance built around a native `PySide6 + Qt Quick/QML` interface. It captures an image from a USB camera, preprocesses it, sends it to OpenAI, and presents the result in the Qt UI. Setup, GPIO, health checks, history, offline retry, storage retention, and recovery use shared backend services.
+**Version 1.0.0** — Raspberry Pi AI Vision Desk Assistant.
 
-The shipped product is one native Qt application managed by `systemd`; production does not use a Flask, browser, or Chromium kiosk stack.
+VisionDesk is a native `PySide6 + Qt Quick/QML` appliance for a Raspberry Pi 5.
+It captures a USB-camera image, prepares it locally, sends the image to OpenAI,
+and presents the result in a fullscreen desktop interface. The production UI is
+one `systemd` service, `visiondesk.service`; there is no Chromium kiosk, Flask
+application, or persistent browser-based management UI.
 
-## Highlights
+## What is in this repository
 
-- native Qt/QML screens for setup, home, camera, processing, results, history, and errors
-- authoritative six-step setup wizard for device checks, Wi-Fi, OpenAI, camera, GPIO, and completion
-- candidate OpenAI keys are verified before they are persisted
-- text-only history by default, with bounded private media storage for retries
-- atomic persistence, corrupt-state quarantine, and reset recovery
-- versioned releases with readiness-verified update and automatic rollback
+- Eight QML screens: Setup, Home, Camera, Processing, Result, History, History
+  Detail, and Error.
+- Five distinct AI workflows: Read Text, Summarize Document, Analyze Image,
+  Professional Assistant, and Solve Problem.
+- A six-step setup flow for Wi-Fi, OpenAI key verification, camera, GPIO, and
+  completion.
+- A short-lived, WPA2-protected phone setup network for a new physical device.
+  It displays a QR URL and an eight-digit pairing code on the VisionDesk panel.
+- GPIO control for a non-touch display, text-only result history, bounded
+  private retry media, reset actions, and versioned on-device releases.
+
+The current product profile is an 11.6-inch landscape HDMI display without
+touch input. Normal operation uses ten GPIO buttons. Keep a USB keyboard and
+mouse available for recovery and administrative text entry.
+
+Not implemented: text-to-speech / “Hear printed text”. Do not present it as a
+delivered feature.
+
+## Hardware target
+
+- Raspberry Pi 5 (8 GB), USB-C 5 V/5 A power supply, cooling, and microSD card.
+- Raspberry Pi OS Desktop 64-bit with a graphical session.
+- USB webcam and 11.6-inch HDMI display.
+- Ten momentary GPIO buttons; the exact BCM mapping is in
+  [setup.md](setup.md) and [hardware_require.txt](hardware_require.txt).
+- Wi-Fi managed by NetworkManager. AP/hotspot support is required only for
+  phone-first setup; keyboard/mouse setup remains available as a fallback.
 
 ## Development quick start
 
-Requirements:
-
-- Python `3.10+`
-- a desktop session for Qt Quick/QML
-- a valid OpenAI API key only when testing real analysis
-
-From the repository root, create and use the project virtual environment.
+Python 3.10 or newer is required. Create a virtual environment from the
+repository root.
 
 Windows PowerShell:
 
@@ -32,7 +52,7 @@ python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
-Linux/macOS:
+Linux / Raspberry Pi OS Desktop:
 
 ```bash
 python3 -m venv .venv
@@ -41,171 +61,98 @@ python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
-Create `.env` from the example when you want the documented defaults:
+For the Linux Qt system packages and the complete Windows/Linux development
+instructions, see [setup.md](setup.md).
 
-```powershell
-Copy-Item .env.example .env
-```
-
-For development, the strict minimum for real OpenAI analysis is:
-
-```dotenv
-OPENAI_API_KEY=sk-your-real-key
-```
-
-`OPENAI_MODEL` is optional and defaults to `gpt-5.4-mini`. `DEVICE_CONFIG_PATH` is optional when running from this repository because it already defaults to `config/device.yaml`. Keep the following explicit values if preferred:
-
-```dotenv
-OPENAI_API_KEY=sk-your-real-key
-OPENAI_MODEL=gpt-5.4-mini
-DEVICE_CONFIG_PATH=config/device.yaml
-```
-
-Copy the full `.env.example` only when overriding camera, GPIO, display, reliability, retention, or offline-retry defaults. Do not commit `.env` or share an API key. The mock desktop flow can start without a key; completing live OpenAI setup and analysis requires a verified key.
-
-Run the desktop app with deterministic mock services:
+Run the deterministic desktop flow without a camera, GPIO, Wi-Fi, or an API
+key:
 
 ```bash
 python -m qt_app.main --windowed --mock-hardware
 ```
 
-Run against connected local hardware:
+Run the test suite:
 
 ```bash
-python -m qt_app.main
+python -m pytest -q
 ```
 
-## Display configuration
-
-The production hardware profile uses an 11.6-inch non-touch HDMI display in landscape orientation. The Qt/QML layout has a 1200x800 design canvas. In normal kiosk operation the app runs fullscreen at the HDMI panel's native resolution; it does not force the panel to 1200x800.
-
-`display.size` in `config/device.yaml` and `UI_SCREEN_WIDTH` / `UI_SCREEN_HEIGHT` in `.env` control the initial size only when the app is run with `--windowed`. Keep them at `1200x800` for the design reference. The display has no touch input: GPIO 23/24/25 provide Up, Down, and Select for normal navigation. Retain a USB keyboard and mouse for setup and administrative text entry.
-
-## Phone-first setup on a non-touch panel
-
-On an unfinished physical appliance, VisionDesk can create a short-lived WPA2 setup network so that Wi-Fi credentials and the OpenAI key can be entered from a phone. It is enabled by the `setup_portal` section in `config/device.yaml` (or the matching `SETUP_PORTAL_*` variables), starts automatically only while setup is incomplete, and is never started in `--mock-hardware` development mode.
-
-1. On the VisionDesk Welcome screen, join the displayed `VisionDesk-Setup-XXXX` network with its one-time password.
-2. Scan the displayed QR code or open the displayed local address. The QR code contains the address only, never a password or API key.
-3. Enter the eight-digit pairing code shown on the panel, choose the nearby Wi-Fi, and enter its password plus the OpenAI key.
-4. VisionDesk acknowledges the request, stops and deletes the temporary AP, connects to the chosen Wi-Fi, verifies the key, runs the camera check, and then asks the operator to press each physical button once.
-
-The portal is bound only to its AP address, has a 15-minute default lifetime, requires the pairing code before its JSON APIs are available, and uses a short-lived `HttpOnly; SameSite=Strict` cookie. Wi-Fi and OpenAI credentials are not returned to QML, included in the QR code, or intentionally logged. The temporary portal is HTTP rather than TLS because it is reachable only after joining the random WPA2-protected AP; do not expose its address through another network or replace it with an open AP.
-
-The installer installs a narrowly enumerated NetworkManager PolicyKit rule for the dedicated `visiondesk` group, covering Wi-Fi scan, protected AP creation, connection control, and system-profile modification. On the Pi, confirm the actual distribution policy with:
+For a headless Linux/SSH test run:
 
 ```bash
-nmcli general permissions
+QT_QPA_PLATFORM=offscreen python -m pytest -q
 ```
 
-If the Wi-Fi adapter does not support AP mode or NetworkManager is unavailable, the panel reports the failure and the existing keyboard/mouse setup path remains available. Detailed operating and recovery instructions are in [docs/phone_setup.md](docs/phone_setup.md).
+To use real OpenAI analysis during development, copy `.env.example` to `.env`
+and set `OPENAI_API_KEY`. Never commit `.env` or place credentials in a command,
+screenshot, or log.
 
-Run tests:
+## Install a new Raspberry Pi appliance
+
+`install.sh` packages the source directory from which it runs into a release at
+`/opt/visiondesk/releases/<version>` and starts
+`/opt/visiondesk/current` through `visiondesk.service`. Therefore a new Pi must
+first receive this repository or an equivalent checked source tree.
 
 ```bash
-pytest -q
+sudo apt update
+sudo apt install -y git
+git clone --depth 1 --branch master \
+  https://github.com/TannFhongg/Raspberry-Pi-AI-Vision-Desk-Assistant.git \
+  ~/visiondesk
+cd ~/visiondesk
+git rev-parse --short HEAD
+sudo ./install.sh
 ```
 
-## Raspberry Pi appliance
+The repository currently has no release tag. Record the printed commit ID with
+each deployed device. **TODO:** create an audited, versioned release/tag process
+before commercial handoff so installations are not taken from a moving branch.
 
-Supported production target:
+The factory configuration has `setup.completed: false`. After the first boot,
+the device enters Welcome and attempts phone-first setup when the Wi-Fi adapter
+supports protected AP mode. Enter the OpenAI key during setup; do not put it in
+the cloned source tree for a new device.
 
-- Raspberry Pi OS Desktop with LightDM-managed autologin
-- ARM Raspberry Pi device
-- dedicated `visiondesk` user
-- one supported UI service: `visiondesk.service`
-- versioned releases under `/opt/visiondesk/releases/<version>`
+The complete fresh-device, first-boot, GPIO, service, update, reset, and demo
+procedure is in [setup.md](setup.md).
 
-Install from the repository on the Pi:
-
-```bash
-sudo ./install.sh [--non-interactive] [--skip-hardware-check] [--reset-config] [--force]
-```
-
-The installer creates the release virtual environment itself, seeds `/etc/visiondesk/visiondesk.env`, and configures `/etc/visiondesk/device.yaml`. On an installed appliance, use `/etc/visiondesk/device.yaml` rather than the repository-relative development path.
-
-Use the on-device setup wizard to enter and verify the OpenAI key. A submitted candidate key stays in memory until verification succeeds; QML receives only a generic configured/not-configured status, never the key or a masked derivative.
-
-Useful service commands:
+## Operating an installed device
 
 ```bash
 sudo systemctl status visiondesk.service
 sudo systemctl restart visiondesk.service
 journalctl -u visiondesk.service -f
-```
-
-## Updates and recovery
-
-Check the installed appliance:
-
-```bash
 sudo ./update.sh --check
 ```
 
-Stage and apply a technician-supplied local archive:
+`update.sh --local /path/to/archive.tar.gz` accepts only a technician-supplied
+archive that contains `manifest.json` and its checksum file. The updater verifies
+the archive, creates an isolated environment, runs migrations and diagnostics,
+and rolls back if the new service does not produce a matching readiness marker
+and remain stable. **TODO:** this repository does not yet provide a release
+archive creation command.
 
-```bash
-sudo ./update.sh --local /path/to/visiondesk-release.tar.gz [--version 1.2.3] [--dry-run]
-```
+Persistent paths on the appliance:
 
-Rollback to the previous release recorded by the last successful update:
+| Path | Purpose |
+| --- | --- |
+| `/opt/visiondesk/current` | Active release symlink |
+| `/opt/visiondesk/releases/<version>` | Versioned application releases |
+| `/etc/visiondesk/device.yaml` | Device configuration |
+| `/etc/visiondesk/visiondesk.env` | Secrets and path overrides; mode `0600` |
+| `/var/lib/visiondesk/` | Setup state, history, private retry data, readiness markers |
+| `/var/log/visiondesk/` | Install, update, and service logs |
 
-```bash
-sudo ./update.sh --rollback
-```
+## Documentation
 
-Before switching releases, the updater validates the archive manifest and checksums, builds an isolated environment, runs migrations and diagnostics, and restarts the Qt service. Success requires a fresh non-secret readiness marker for the expected release and service PID, then a stable running period. Merely reporting `active` is not sufficient. Failed startup automatically switches back and verifies the prior release is ready.
-
-The default startup timeout is 60 seconds and stability window is 20 seconds. A technician may tune `UPDATE_STARTUP_TIMEOUT_SECONDS`, `UPDATE_STABILITY_SECONDS`, and `READINESS_MAX_AGE_SECONDS` for a slow device.
-
-## Reset and uninstall
-
-Remove the app and service while preserving configuration, data, and logs by default:
-
-```bash
-sudo ./uninstall.sh [--purge] [--keep-logs] [--yes] [--dry-run]
-```
-
-Run a reset without uninstalling the application:
-
-```bash
-sudo ./factory-reset.sh --mode {configuration|user_data|factory_reset} [--remove-wifi] [--yes] [--phrase "ERASE VISIONDESK"] [--dry-run]
-```
-
-- `User-Data Reset` clears history, retry queue, cached previews, and private media.
-- `Configuration Reset` clears setup completion, configuration overrides, and the OpenAI key, then returns to Setup Wizard.
-- `Full Factory Reset` performs both operations and can remove the saved Wi-Fi profile.
-
-## Filesystem layout
-
-Production layout:
-
-- `/opt/visiondesk/releases/<version>`: immutable staged releases
-- `/opt/visiondesk/current`: active release symlink
-- `/etc/visiondesk/device.yaml`: durable device configuration
-- `/etc/visiondesk/visiondesk.env`: private secrets and path overrides, mode `0600`
-- `/var/lib/visiondesk/setup_state.json`: authoritative setup state
-- `/var/lib/visiondesk/result_history.json`: text-only history
-- `/var/lib/visiondesk/latest_result.txt`: latest non-sensitive result summary
-- `/var/lib/visiondesk/private/`: current media, retry media, cache, queue data, and quarantine files
-- `/var/lib/visiondesk/runtime/readiness.json`: ephemeral, non-secret update readiness marker
-- `/var/lib/visiondesk/factory_reset_state.json`: reset recovery marker
-- `/var/log/visiondesk/`: service and lifecycle logs
-
-Development defaults:
-
-- `config/device.yaml`
-- `.env`
-- `data/`
-- `logs/`
-
-Both environments use `visiondesk/paths.py`. The supported overrides are `VISIONDESK_PATH_MODE`, `DEVICE_CONFIG_PATH`, `VISIONDESK_ENV_FILE`, `VISIONDESK_DATA_DIR`, and `VISIONDESK_LOG_DIR`.
-
-## Project layout
-
-- `visiondesk/`: version and filesystem path resolution
-- `qt_app/`: native runtime, controllers, image provider, models, and QML
-- `system/`: setup, diagnostics, readiness, history, health, logging, retry, migrations, and reset logic
-- `camera/`, `vision/`, `pipeline/`, `ai/`, `hardware/`: reusable backend modules
-- `deployment/`: systemd and launcher assets
-- `tests/`: backend, Qt, and deployment coverage
+- [setup.md](setup.md) — Vietnamese end-to-end guide for development, a new Pi,
+  phone setup, demo, service operations, update, reset, and uninstall.
+- [docs/architecture.md](docs/architecture.md) — runtime, storage, deployment,
+  setup, and privacy design.
+- [docs/phone_setup.md](docs/phone_setup.md) — phone-first provisioning and
+  recovery boundary.
+- [docs/demo_checklist.md](docs/demo_checklist.md) — factual product-demo
+  checklist.
+- [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) — concise code map and operational
+  invariants for contributors.

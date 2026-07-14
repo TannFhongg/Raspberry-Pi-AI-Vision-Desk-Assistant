@@ -1,92 +1,121 @@
-# Architecture
+# VisionDesk architecture
 
-## High-level flow
+Applies to VisionDesk **1.0.0**. VisionDesk is a native Raspberry Pi desktop
+appliance, not a browser kiosk. `visiondesk.service` starts the only production
+UI: the `PySide6 + Qt Quick/QML` application in `qt_app/`.
+
+## Runtime flow
 
 ```text
-Qt/QML UI
-  -> qt_app.app_controller
-  -> setup / history / health / camera / pipeline controllers
-  -> shared runtime services
-  -> camera / vision / ai / pipeline / hardware / system modules
-  -> private local storage + OpenAI
+Qt/QML screens
+        │
+qt_app.app_controller and feature controllers
+        │
+qt_app.runtime
+        ├── setup state and diagnostics
+        ├── camera, vision, pipeline, and AI modules
+        ├── history, retry queue, health, reset, and readiness services
+        └── GPIO integration
+        │
+private local storage  ←→  OpenAI API
 ```
 
-## Native UI stack
+`qt_app/main.py` creates the Qt application, image provider, runtime, and
+QML-facing controller. The main screen set is Setup, Home, Camera, Processing,
+Result, History, History Detail, and Error. `system/ui_catalog.py` supplies the
+six setup steps and the five UI modes.
 
-- `qt_app/main.py` creates the Qt application, image provider, and root controller.
-- `qt_app/app_controller.py` is the single facade exposed to QML.
-- `qt_app/qml/` contains the kiosk screens and shared components.
-- `qt_app/setup_controller.py` owns the 6-step setup wizard.
-- `qt_app/history_controller.py` owns saved-result list/detail state and clear-history behavior.
-- `qt_app/runtime.py` owns shared settings, path-aware startup, restart signaling, and reset recovery.
+The five canonical AI modes are Read Text, Summarize Document, Analyze Image,
+Professional Assistant, and Solve Problem. Their system prompts and output
+contracts live in `ai/modes.py`; legacy names are aliases for compatibility,
+not additional modes.
 
-## Shared backend stack
+## First boot and phone provisioning
 
-- `visiondesk/version.py` is the only application version source.
-- `visiondesk/paths.py` resolves development and production layout from one shared override layer.
-- `system/setup_flow.py` provides authoritative setup persistence, state normalization, and completion logic.
-- `system/diagnostics.py` provides install/setup smoke checks and friendly device diagnostics.
-- `system/result_history.py` provides text-only history persistence, corruption recovery, single-item delete, and clear-history support.
-- `system/offline_retry.py` provides durable retry queue behavior with private storage bounds.
-- `system/readiness.py` atomically publishes and validates a minimal, non-secret startup marker for updates.
-- `system/factory_reset.py` provides configuration reset, user-data reset, full factory reset, and reset recovery markers.
-- `system/migrations.py` is the release migration entrypoint used by install/update flows.
-- `system/ui_presenters.py` provides answer sanitization, result/detail shaping, progress copy, and health/header shaping.
+`system/setup_flow.py` owns the authoritative setup state. On a newly installed
+device, the factory config sets `setup.completed: false`, so the application
+routes to Setup. Completion updates both persistent setup state and the device
+configuration.
 
-## Deployment stack
+`qt_app/setup_controller.py` auto-starts `system/setup_portal.py` only when all
+of these are true:
 
-- `install.sh` validates the Raspberry Pi target, installs system packages, stages a versioned release under `/opt/visiondesk/releases/<version>`, seeds config on first install, renders `visiondesk.service`, runs smoke checks, and rolls back on failure.
-- `deployment/visiondesk.service` starts the Qt app only.
-- `deployment/visiondesk-launch.sh` waits for a usable X11/Wayland session and then executes `python -m qt_app.main`.
-- `update.sh` validates local archives using `manifest.json` plus checksums, builds an isolated venv, runs migrations and diagnostics, atomically flips `/opt/visiondesk/current`, then requires a fresh matching readiness marker and stable service before recording success. Failed updates roll back and verify the previous release.
-- `uninstall.sh` removes the app and service while preserving config/data/logs by default.
-- `factory-reset.sh` is a thin CLI wrapper over the shared Python reset backend.
+- the app is running on physical hardware, not `--mock-hardware`;
+- setup is incomplete;
+- `setup_portal.enabled` and its auto-start setting are enabled.
 
-## Storage model
+The portal asks NetworkManager to create a temporary protected AP, binds its
+small HTTP server only to the configured AP address, and shows its URL, QR code,
+SSID/password, and eight-digit pairing code on the QML Setup screen. It is not
+a permanent web UI and is not intended to bind to a normal LAN. The portal
+submits Wi-Fi credentials and an OpenAI key to the setup controller, then stops
+and removes the temporary AP before Wi-Fi/key validation continues.
 
-Production layout:
+For the operator workflow and recovery steps, see
+[phone_setup.md](phone_setup.md).
 
-- `/opt/visiondesk/current`: active release symlink
-- `/opt/visiondesk/releases/<version>`: immutable staged releases
-- `/etc/visiondesk/device.yaml`: durable device config
-- `/etc/visiondesk/visiondesk.env`: durable secrets and overrides
-- `/var/lib/visiondesk/setup_state.json`: authoritative setup progress and completion
-- `/var/lib/visiondesk/result_history.json`: saved text-only result history
-- `/var/lib/visiondesk/latest_result.txt`: latest non-sensitive result summary
-- `/var/lib/visiondesk/private/current/`: current capture working files
-- `/var/lib/visiondesk/private/retry/`: queued retry media
-- `/var/lib/visiondesk/private/cache/`: cached preview artifacts
-- `/var/lib/visiondesk/private/retry_queue.json`: queued retry metadata
-- `/var/lib/visiondesk/private/quarantine/`: corrupt persisted files and leftovers
-- `/var/lib/visiondesk/runtime/readiness.json`: ephemeral non-secret marker used by the updater
-- `/var/lib/visiondesk/factory_reset_state.json`: reset recovery marker
-- `/var/log/visiondesk/`: install, update, and runtime logs
+## Deployment model
 
-Development defaults:
+`install.sh`, run from a checked source tree, does the following:
 
-- `config/device.yaml`
-- `.env`
-- `data/result_history.json`
-- `data/latest_result.txt`
-- `data/setup_state.json`
-- `data/private/`
-- `logs/`
+1. Validates prerequisites, installs system packages, creates the dedicated
+   `visiondesk` user/group, and installs the narrow NetworkManager PolicyKit
+   rule in `deployment/49-visiondesk-networkmanager.rules`.
+2. Seeds `/etc/visiondesk/device.yaml` and `/etc/visiondesk/visiondesk.env` on
+   first install.
+3. Copies the source into `/opt/visiondesk/releases/<version>`, builds its
+   virtual environment, and points `/opt/visiondesk/current` to that release.
+4. Installs `deployment/visiondesk.service`; its launcher waits for X11 or
+   Wayland and executes `python -m qt_app.main` as user `visiondesk`.
+5. Runs migrations and diagnostics, then starts the service. The install script
+   restores its prior state when installation fails.
 
-Both layouts are resolved through `visiondesk/paths.py`. Production/dev overrides are controlled by `VISIONDESK_PATH_MODE`, `DEVICE_CONFIG_PATH`, `VISIONDESK_ENV_FILE`, `VISIONDESK_DATA_DIR`, and `VISIONDESK_LOG_DIR`.
+The service has no general web-server dependency. Its systemd sandbox permits
+write access only to `/etc/visiondesk`, `/var/lib/visiondesk`, and
+`/var/log/visiondesk`.
 
-## Setup and reset model
+`update.sh --local` accepts a local archive only when it contains
+`manifest.json` and the declared checksum file. It builds an isolated
+environment, runs migrations and diagnostics, switches the `current` symlink,
+then requires a fresh readiness marker from the expected service process and a
+stable running period. Otherwise it restores the prior release.
 
-- setup routing is driven by the authoritative setup-state file, not by repo-local temporary state and not by config flags alone
-- setup completion is mirrored into `device.yaml` for compatibility, but the setup-state file is the source of truth for UI routing
-- OpenAI candidate keys are validated before persistence in `visiondesk.env`; QML gets only generic configured/not-configured state, never raw or masked key material
-- reset operations write a recovery marker before modifying persistent state so startup can resume interrupted cleanup safely
-- the startup marker is written only after QML has loaded and the app window is shown; it is cleared during shutdown
+**TODO:** The repository contains the updater but not a command that builds the
+required release archive and manifest.
 
-## Privacy model
+## Storage and configuration
 
-- result history stores text and safe metadata only
-- private media stays under the shared private storage tree
-- startup purge trims transient data
-- `User-Data Reset` clears user content without deleting device config or secrets
-- `Configuration Reset` and `Full Factory Reset` relaunch the app into Setup Wizard without uninstalling the service
-- persisted writes use atomic file replacement helpers
+| Location | Responsibility |
+| --- | --- |
+| `/opt/visiondesk/current` | Active release symlink |
+| `/opt/visiondesk/releases/<version>` | Installed release directories |
+| `/etc/visiondesk/device.yaml` | Durable device configuration |
+| `/etc/visiondesk/visiondesk.env` | OpenAI key and path overrides; installed with mode `0600` |
+| `/var/lib/visiondesk/setup_state.json` | Authoritative setup progress and completion |
+| `/var/lib/visiondesk/result_history.json` | Text-only result history |
+| `/var/lib/visiondesk/latest_result.txt` | Latest non-sensitive result summary |
+| `/var/lib/visiondesk/private/` | Current media, retry media, cache, queue metadata, and quarantine files |
+| `/var/lib/visiondesk/runtime/readiness.json` | Non-secret startup marker for install/update validation |
+| `/var/lib/visiondesk/factory_reset_state.json` | Reset recovery marker |
+| `/var/log/visiondesk/` | Application and lifecycle logs |
+
+In development, `visiondesk/paths.py` resolves the same concerns under the
+repository: `config/device.yaml`, `.env`, `data/`, and `logs/`. Supported path
+overrides are `VISIONDESK_PATH_MODE`, `DEVICE_CONFIG_PATH`,
+`VISIONDESK_ENV_FILE`, `VISIONDESK_DATA_DIR`, and `VISIONDESK_LOG_DIR`.
+
+## Data and safety boundaries
+
+- Result history stores text and safe metadata by default; retry media remains
+  under the private data tree and is bounded by retention settings.
+- Candidate OpenAI keys are verified before persistence. QML receives only
+  configured/not-configured state, never a raw or masked key.
+- Setup, history, and reset writes use atomic replacement; corrupt persisted
+  data is quarantined rather than silently reused.
+- User-Data Reset clears user content while preserving configuration and
+  secrets. Configuration Reset clears setup/configuration credentials and
+  returns the app to Setup. Factory Reset combines those actions and can remove
+  the saved Wi-Fi profile.
+
+Operational commands and a new-device installation guide are in
+[../setup.md](../setup.md).

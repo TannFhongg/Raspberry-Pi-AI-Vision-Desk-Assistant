@@ -1,89 +1,95 @@
-# Project Context
+# VisionDesk project context
 
-## Current product shape
+Maintainer reference for VisionDesk **1.0.0**. This file is a code map, not an
+end-user installation guide; use [setup.md](setup.md) for deployment steps.
 
-VisionDesk is a native `PySide6 + Qt Quick/QML` kiosk application. The Qt app is the only production UI and is expected to run under `visiondesk.service`. It handles:
+## Product boundary
 
-- 6-step first-boot setup for device checks, Wi-Fi, OpenAI key, camera, and GPIO
-- mode selection
-- live camera preview
-- capture and processing
-- result display
-- saved history and history detail
-- offline retry visibility through shared backend state
-- GPIO button integration
-- device actions for user-data reset, configuration reset, and full factory reset
+VisionDesk is one native `PySide6 + Qt Quick/QML` appliance application. In
+production, `visiondesk.service` launches `qt_app.main`. There is no Flask,
+Chromium, or permanent LAN web UI.
+
+The only HTTP component is `system/setup_portal.py`: a short-lived phone
+provisioning server bound to the temporary protected AP while setup is
+incomplete. It is part of the native application lifecycle, not a second UI
+runtime.
+
+The product currently provides:
+
+- Setup, Home, Camera, Processing, Result, History, History Detail, and Error
+  screens.
+- Five modes: `read_text`, `summarize_document`, `analyze_image`,
+  `professional_assistant`, and `solve_problem`.
+- A six-step setup state machine: welcome, Wi-Fi, OpenAI, camera, GPIO, finish.
+- Non-touch GPIO navigation and capture controls.
+- Text-only history, bounded private retry media, reset flows, and
+  readiness-verified updates.
 
 ## Entrypoints
 
-- `python -m qt_app.main --windowed --mock-hardware`
-- `python -m qt_app.main`
-- `sudo ./install.sh`
-- `sudo ./update.sh --check`
-- `sudo ./update.sh --local /path/to/archive.tar.gz`
-- `sudo ./uninstall.sh`
-- `sudo ./factory-reset.sh --mode user_data`
+```bash
+python -m qt_app.main --windowed --mock-hardware
+python -m qt_app.main
+python -m pytest -q
+python tools/capture_ui_screenshots.py
+sudo ./install.sh
+sudo ./update.sh --check
+sudo ./update.sh --local /path/to/release.tar.gz
+sudo ./update.sh --rollback
+sudo ./factory-reset.sh --mode user_data
+sudo ./uninstall.sh
+```
 
-## Important modules
+`update.sh --local` requires an archive with `manifest.json` and checksums.
+**TODO:** no archive-building command is present in this repository.
 
-- `visiondesk/version.py`: single application version source
-- `visiondesk/paths.py`: production/dev path resolver and override layer
+## Main modules
 
-- `qt_app/main.py`: Qt bootstrap and fullscreen/windowed startup
-- `qt_app/app_controller.py`: QML-facing facade plus device-action reset flow
-- `qt_app/setup_controller.py`: setup workflow controller
-- `qt_app/history_controller.py`: history and clear-history behavior
-- `qt_app/pipeline_controller.py`: capture/analyze worker orchestration
-- `qt_app/health_controller.py`: header metrics and health refresh
-- `qt_app/gpio_controller.py`: hardware button integration
-- `qt_app/runtime.py`: shared runtime wiring, path-aware startup, restart handling, and reset recovery
+- `visiondesk/version.py` — canonical application version.
+- `visiondesk/paths.py` — development/production path resolver.
+- `qt_app/main.py` — Qt bootstrap and QML loading.
+- `qt_app/app_controller.py` — single QML-facing façade.
+- `qt_app/runtime.py` — shared settings, paths, lifecycle, reset recovery, and
+  service readiness wiring.
+- `qt_app/setup_controller.py` — setup wizard and phone-portal lifecycle.
+- `qt_app/pipeline_controller.py` — camera capture and analysis orchestration.
+- `qt_app/history_controller.py`, `health_controller.py`, and
+  `gpio_controller.py` — QML-facing feature controllers.
+- `system/setup_flow.py` — authoritative persisted setup state and completion.
+- `system/setup_portal.py` and `system/device_setup.py` — temporary AP, local
+  portal, Wi-Fi scan/connection, and credential handoff.
+- `system/result_history.py`, `offline_retry.py`, `factory_reset.py`,
+  `migrations.py`, `diagnostics.py`, and `readiness.py` — persistence and
+  lifecycle services.
+- `ai/modes.py` — canonical mode prompts and compatibility aliases.
+- `deployment/` — systemd launcher/service and NetworkManager PolicyKit rule.
 
-- `system/setup_flow.py`: authoritative setup state persistence and validation helpers
-- `system/diagnostics.py`: install/setup smoke checks and friendly device checks
-- `system/result_history.py`: text-only history persistence, recovery, delete-one, and clear
-- `system/factory_reset.py`: shared configuration reset, user-data reset, and full factory reset logic
-- `system/migrations.py`: update/install migration entrypoint
-- `system/ui_presenters.py`: sanitized answer formatting, detail rendering, progress, and health shaping
-- `system/offline_retry.py`: deferred retry queue and private media retention
-- `system/readiness.py`: non-secret startup marker used to verify an updated release
+## Persistent state
 
-## Persisted data
+| Development | Production | Purpose |
+| --- | --- | --- |
+| `config/device.yaml` | `/etc/visiondesk/device.yaml` | Device configuration |
+| `.env` | `/etc/visiondesk/visiondesk.env` | Secrets and environment overrides |
+| `data/setup_state.json` | `/var/lib/visiondesk/setup_state.json` | Authoritative setup state |
+| `data/result_history.json` | `/var/lib/visiondesk/result_history.json` | Text-only history |
+| `data/private/` | `/var/lib/visiondesk/private/` | Private media, retry state, cache, quarantine |
+| `logs/` | `/var/log/visiondesk/` | Runtime and lifecycle logs |
 
-Production locations:
+`setup_state.json` is the source of truth for setup routing. Completion also
+updates `device.yaml` for compatibility. The factory configuration begins with
+`setup.completed: false` so a new appliance enters Setup.
 
-- `/etc/visiondesk/device.yaml`: durable device config and compatibility setup fields
-- `/etc/visiondesk/visiondesk.env`: private secrets such as `OPENAI_API_KEY`
-- `/var/lib/visiondesk/setup_state.json`: authoritative setup progress and completion
-- `/var/lib/visiondesk/result_history.json`: saved text-only result history
-- `/var/lib/visiondesk/latest_result.txt`: latest non-sensitive result summary
-- `/var/lib/visiondesk/private/`: private current media, retry media, cache, queue metadata, and quarantine files
-- `/var/lib/visiondesk/runtime/readiness.json`: ephemeral non-secret application readiness marker
-- `/var/lib/visiondesk/factory_reset_state.json`: reset recovery marker
-- `/var/log/visiondesk/`: lifecycle and service logs
+## Invariants
 
-Development defaults:
+- Do not expose an OpenAI key to QML, history, or logs. A candidate key must
+  verify before persistence.
+- Keep result history text-only by default; use the private storage tree for
+  transient/retry media.
+- Preserve `/etc/visiondesk`, `/var/lib/visiondesk`, and `/var/log/visiondesk`
+  on normal uninstall. `--purge` is the explicit destructive path.
+- Keep production writes within the paths allowed by `visiondesk.service`.
+- Do not replace the temporary WPA2 phone setup channel with an open AP or a
+  general LAN bind.
 
-- `config/device.yaml`
-- `.env`
-- `data/`
-- `logs/`
-
-## Guardrails
-
-- no public image-serving path
-- text-only history by default
-- OpenAI candidate keys are verified before persistence; Qt/QML receives no raw or masked key value
-- bounded retry retention
-- atomic JSON/text writes
-- quarantine on corrupt persisted files
-- updates require a fresh matching readiness marker and a stable service, otherwise the prior release is restored
-- `User-Data Reset` does not remove device config or secrets
-- uninstall preserves `/etc/visiondesk`, `/var/lib/visiondesk`, and `/var/log/visiondesk` unless `--purge` is explicitly requested
-
-## Recent migration result
-
-- all legacy web UI code has been removed
-- there is no secondary UI runtime
-- there is no local HTTP UI port
-- `visiondesk.service` is the only supported production UI service
-- setup routing now uses the shared authoritative setup-state file instead of repo-local temporary state
+See [docs/architecture.md](docs/architecture.md) for the full runtime and
+deployment design.

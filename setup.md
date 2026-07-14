@@ -1,5 +1,7 @@
 # Hướng dẫn cài đặt và demo VisionDesk
 
+Áp dụng cho VisionDesk **1.0.0**.
+
 Tài liệu này phản ánh trạng thái hiện tại của dự án: một appliance Raspberry Pi
 chạy ứng dụng native `PySide6 + Qt Quick/QML`, màn HDMI 11.6 inch không cảm ứng,
 10 nút GPIO và thiết lập lần đầu bằng điện thoại qua Wi-Fi AP tạm thời.
@@ -206,7 +208,8 @@ git rev-parse --short HEAD
 ```
 
 Ghi lại commit ID cuối cùng để biết chính xác thiết bị đang được cài từ phiên
-bản nào. Khi có tag/release thương mại, thay `master` bằng tag đã kiểm thử.
+bản nào. Hiện repository chưa có Git tag/release; **TODO:** tạo tag và archive
+đã kiểm thử trước khi bàn giao thương mại, sau đó thay `master` bằng tag đó.
 Nếu Pi không có Internet, chép một thư mục source/release đã kiểm tra bằng USB
 hoặc `scp`, rồi `cd` vào thư mục đó trước khi cài.
 
@@ -297,9 +300,14 @@ Update và rollback:
 
 ```bash
 sudo ./update.sh --check
-sudo ./update.sh --local /path/to/visiondesk-release.tar.gz
+sudo ./update.sh --local /path/to/visiondesk-release.tar.gz --version 1.0.0
 sudo ./update.sh --rollback
 ```
+
+`update.sh --local` chỉ nhận archive có `manifest.json` và checksum hợp lệ;
+updater sẽ chạy migration/diagnostics, restart service và tự rollback nếu
+readiness marker hoặc thời gian ổn định không đạt. **TODO:** repository chưa có
+lệnh tạo release archive đạt định dạng này.
 
 Reset dữ liệu hoặc quay lại Setup Wizard:
 
@@ -326,5 +334,5 @@ sudo ./uninstall.sh --dry-run
 sudo ./uninstall.sh --purge
 ```
 
-Xem thêm vận hành và security boundary của portal tại
-[docs/phone_setup.md](docs/phone_setup.md).
+Xem thêm kiến trúc tại [docs/architecture.md](docs/architecture.md) và security
+boundary của portal tại [docs/phone_setup.md](docs/phone_setup.md).
