@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_NAME="visiondesk"
 APP_USER="visiondesk"
 APP_GROUP="visiondesk"
+PYTHON_BIN="${PYTHON_BIN:-python3}"
 APP_ROOT="/opt/visiondesk"
 RELEASES_DIR="${APP_ROOT}/releases"
 CURRENT_LINK="${APP_ROOT}/current"
@@ -43,6 +44,22 @@ Usage:
   sudo ./update.sh --local /path/to/archive.tar.gz [--version <version>] [--dry-run]
   sudo ./update.sh --rollback
 EOF
+}
+
+python_compatible_path() {
+  # The appliance runs Linux paths directly. During package verification from
+  # Git Bash/Cygwin, however, python3 can be a native Windows interpreter and
+  # cannot open a /tmp or /cygdrive path embedded by the shell.
+  local path="$1"
+  case "$(uname -s 2>/dev/null || true)" in
+    MINGW*|MSYS*|CYGWIN*)
+      if command -v cygpath >/dev/null 2>&1; then
+        cygpath -w "${path}"
+        return
+      fi
+      ;;
+  esac
+  printf '%s\n' "${path}"
 }
 
 log() {
@@ -187,9 +204,11 @@ select_requirements_file() {
 
 read_release_version() {
   local release_dir="$1"
-  python3 - <<PY
+  local python_release_dir
+  python_release_dir="$(python_compatible_path "${release_dir}")"
+  "${PYTHON_BIN}" - "${python_release_dir}" <<'PY'
 import sys
-sys.path.insert(0, ${release_dir@Q})
+sys.path.insert(0, sys.argv[1])
 from visiondesk.version import __version__
 print(__version__)
 PY
@@ -238,14 +257,16 @@ extract_archive() {
 }
 
 validate_manifest_and_checksums() {
-  local manifest_path manifest_version checksums_rel checksums_path release_version
+  local manifest_path python_manifest_path manifest_version checksums_rel checksums_path release_version
   manifest_path="${STAGING_RELEASE_DIR}/manifest.json"
   [[ -f "${manifest_path}" ]] || fail "Archive is missing manifest.json."
+  python_manifest_path="$(python_compatible_path "${manifest_path}")"
 
-  manifest_version="$(python3 - <<PY
+  manifest_version="$("${PYTHON_BIN}" - "${python_manifest_path}" <<'PY'
 import json
+import sys
 from pathlib import Path
-manifest = json.loads(Path(${manifest_path@Q}).read_text(encoding="utf-8"))
+manifest = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
 version = str(manifest.get("version", "")).strip()
 checksums_file = str(manifest.get("checksums_file", "checksums.sha256")).strip() or "checksums.sha256"
 if not version:

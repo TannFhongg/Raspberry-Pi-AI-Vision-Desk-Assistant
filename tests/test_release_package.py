@@ -110,6 +110,16 @@ def test_release_builder_forces_portable_text_checksum_entries() -> None:
     assert 'sha256sum --text -- "${path}"' in source
 
 
+def test_update_validation_uses_python_compatible_paths() -> None:
+    """Git Bash/Cygwin must not pass Unix staging paths to native Windows Python."""
+    source = Path("update.sh").read_text(encoding="utf-8")
+
+    assert "python_compatible_path()" in source
+    assert 'python_manifest_path="$(python_compatible_path "${manifest_path}")"' in source
+    assert '"${PYTHON_BIN}" - "${python_manifest_path}"' in source
+    assert 'sys.argv[1]' in source
+
+
 def test_checksum_mismatch_is_rejected(tmp_path: Path) -> None:
     release_root = _create_release_tree(tmp_path)
     (release_root / "requirements.txt").write_text("tampered\n", encoding="utf-8")
