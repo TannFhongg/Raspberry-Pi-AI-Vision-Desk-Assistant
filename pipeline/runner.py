@@ -415,6 +415,53 @@ def run_analyze(
     )
 
 
+def run_analyze_confirmed(
+    mode: str,
+    confirmed_path: str | Path,
+    *,
+    status_callback: StatusCallback | None = None,
+) -> PipelineResult:
+    """Send one already-reviewed image without applying another transform.
+
+    The review controller has rendered `confirmed_path` from the user's crop,
+    rotation, perspective and enhancement choices.  Reprocessing here would
+    make the submitted image differ from the reviewed image, so this path is
+    intentionally direct.
+    """
+    canonical_mode = normalize_mode(mode)
+    confirmed_file = Path(confirmed_path)
+    if not confirmed_file.is_file() or confirmed_file.stat().st_size <= 0:
+        raise PipelineError("No confirmed image is available. Return to review and capture again.")
+    try:
+        from ai.openai_client import OpenAIVisionClient, VisionClientError
+    except ImportError as exc:
+        raise PipelineError("OpenAI Vision is unavailable on this device.") from exc
+    try:
+        client = OpenAIVisionClient()
+        _emit_status(status_callback, "Sending confirmed image to OpenAI Vision...")
+        request_started = time.monotonic()
+        answer = client.analyze_image(image_path=str(confirmed_file), mode=canonical_mode)
+        request_duration_seconds = time.monotonic() - request_started
+    except VisionClientError as exc:
+        raise PipelineError(
+            str(exc),
+            retryable=bool(getattr(exc, "retryable", False)),
+            processed_path=confirmed_file,
+            mode=canonical_mode,
+        ) from exc
+    return PipelineResult(
+        captured_path=None,
+        processed_path=confirmed_file,
+        answer=answer,
+        mode=canonical_mode,
+        camera_backend_used=None,
+        camera_resolution=None,
+        status="success",
+        model_used=getattr(client, "last_model_used", None),
+        duration_seconds=round(request_duration_seconds, 3),
+    )
+
+
 def run_capture_analyze(
     mode: str,
     backend: str | None = None,

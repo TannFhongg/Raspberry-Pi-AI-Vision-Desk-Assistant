@@ -10,6 +10,7 @@ from PySide6.QtCore import QObject, Property, QCoreApplication, QDateTime, QTime
 
 from hardware import DeviceState, clear_latest_result_file
 from qt_app.camera_controller import CameraController
+from qt_app.capture_review_controller import CaptureReviewController
 from qt_app.gpio_controller import GPIOController
 from qt_app.health_controller import HealthController
 from qt_app.history_controller import HistoryController
@@ -61,6 +62,8 @@ class AppController(QObject):
         *,
         camera_store: CachedImageStore,
         result_store: CachedImageStore,
+        review_source_store: CachedImageStore | None = None,
+        review_preview_store: CachedImageStore | None = None,
         parent=None,
     ) -> None:
         super().__init__(parent)
@@ -79,6 +82,8 @@ class AppController(QObject):
         self._mode_cards_model.set_items(list(UI_MODE_OPTIONS))
         self._camera_store = camera_store
         self._result_store = result_store
+        self._review_source_store = review_source_store or CachedImageStore()
+        self._review_preview_store = review_preview_store or CachedImageStore()
         self._device_actions_busy = False
         self._device_actions_status = ""
         self._device_actions_tone = "neutral"
@@ -87,6 +92,12 @@ class AppController(QObject):
         self.factoryResetWorkerFinished.connect(self._handle_factory_reset_worker_finished)
 
         self.camera_controller = CameraController(runtime, image_store=camera_store, parent=self)
+        self.capture_review_controller = CaptureReviewController(
+            runtime,
+            source_store=self._review_source_store,
+            preview_store=self._review_preview_store,
+            parent=self,
+        )
         self.pipeline_controller = PipelineController(runtime, result_image_store=result_store, parent=self)
         self.setup_controller = SetupController(runtime, parent=self)
         self.history_controller = HistoryController(runtime, parent=self)
@@ -95,6 +106,7 @@ class AppController(QObject):
             camera_controller=self.camera_controller,
             ui_state_provider=self._ui_state_snapshot,
             busy_provider=self.isBackendBusy,
+            camera_capabilities_provider=lambda: self.capture_review_controller.cameraCapabilitiesModel.items(),
             parent=self,
         )
         self.gpio_controller = GPIOController(runtime, get_device_state=self.currentDeviceState, parent=self)
@@ -116,8 +128,24 @@ class AppController(QObject):
         return self.health_controller.metricsModel
 
     @Property(QObject, constant=True)
+    def deviceHealthModel(self) -> DictListModel:
+        return self.health_controller.deviceHealthModel
+
+    @Property(QObject, constant=True)
     def cameraAnalysisModel(self) -> DictListModel:
         return self.health_controller.cameraAnalysisModel
+
+    @Property(QObject, constant=True)
+    def captureReview(self) -> CaptureReviewController:
+        return self.capture_review_controller
+
+    @Property(str, notify=viewStateChanged)
+    def globalStatusText(self) -> str:
+        return str(self.health_controller.summary().get("global_status", {}).get("text", "Starting"))
+
+    @Property(str, notify=viewStateChanged)
+    def globalStatusTone(self) -> str:
+        return str(self.health_controller.summary().get("global_status", {}).get("tone", "info"))
 
     @Property(QObject, constant=True)
     def wifiNetworksModel(self) -> DictListModel:
@@ -506,17 +534,70 @@ class AppController(QObject):
     def capture(self) -> None:
         if not self.selectedMode or self.pipeline_controller.busy or self._device_actions_busy:
             return
-        started = self.pipeline_controller.start_capture(
-            selected_mode=self.selectedMode,
-            selected_mode_internal=self._selected_mode_internal,
-        )
+        self.capture_review_controller.begin_capturing()
+        started = self.pipeline_controller.start_capture_for_review()
         if not started:
+            self.capture_review_controller.discard()
             error_message = self.pipeline_controller.lastStartError
             if error_message:
                 self._present_public_error(map_public_error(error_message, retryable=True))
             return
+        self._application_state_model.update(
+            application_state="CAPTURING",
+            display_status="Capturing image for review...",
+            updated_at=self.runtime.timestamp(),
+        )
+        self.viewStateChanged.emit()
+
+    @Slot()
+    def confirmReviewedImage(self) -> None:
+        if self.pipeline_controller.busy or self._device_actions_busy:
+            return
+        if not self.capture_review_controller.mark_validating():
+            return
+        confirmed_path = self.capture_review_controller.mark_submitting()
+        if confirmed_path is None:
+            self._present_public_error(map_public_error("No confirmed image is available.", retryable=True))
+            return
+        started = self.pipeline_controller.start_submit_confirmed(
+            selected_mode=self.selectedMode,
+            selected_mode_internal=self._selected_mode_internal,
+            confirmed_path=confirmed_path,
+        )
+        if not started:
+            self._present_public_error(
+                map_public_error(self.pipeline_controller.lastStartError or "VisionDesk could not start analysis.", retryable=True)
+            )
+            return
         self._refresh_processing_view()
-        self._set_screen("processing", "CAPTURING", self.processingStatusMessage or "Capturing image...")
+        self._set_screen("processing", "ANALYZING", self.processingStatusMessage or "Preparing analysis...")
+
+    @Slot()
+    def retakeCapture(self) -> None:
+        if self.pipeline_controller.busy:
+            return
+        self.capture_review_controller.discard()
+        self.openCamera()
+
+    @Slot()
+    def openSettings(self) -> None:
+        if self.pipeline_controller.busy:
+            return
+        self._set_screen("settings", "SETTINGS", "Settings")
+        self.viewStateChanged.emit()
+
+    @Slot()
+    def openDeviceHealth(self) -> None:
+        if self.pipeline_controller.busy:
+            return
+        self.health_controller.refresh()
+        self._set_screen("device_health", "DEVICE_HEALTH", "Device Health")
+        self.viewStateChanged.emit()
+
+    @Slot()
+    def refreshDeviceHealth(self) -> None:
+        self.health_controller.refresh()
+        self.viewStateChanged.emit()
 
     @Slot()
     def goBack(self) -> None:
@@ -526,6 +607,16 @@ class AppController(QObject):
             return
         if self.currentScreen in {"history", "history_detail"}:
             self.history_controller.goBack()
+            return
+        if self.currentScreen == "review":
+            self.retakeCapture()
+            return
+        if self.currentScreen == "device_health":
+            self.openSettings()
+            return
+        if self.currentScreen == "settings":
+            self._set_screen("home", "READY", READY_DETAIL)
+            self.viewStateChanged.emit()
             return
         self.clearResult()
 
@@ -552,7 +643,7 @@ class AppController(QObject):
     @Slot()
     def retry(self) -> None:
         if self.currentScreen == "error" and self.canRetry and self.selectedMode:
-            self.capture()
+            self.retakeCapture()
 
     @Slot()
     def clearResult(self) -> None:
@@ -711,6 +802,7 @@ class AppController(QObject):
         self.gpio_controller.stop()
         self.setup_controller.close()
         self.camera_controller.close()
+        self.capture_review_controller.discard()
         self.pipeline_controller.close()
         self.health_controller.stop()
         self.runtime.shutdown()
@@ -761,10 +853,12 @@ class AppController(QObject):
     def _wire_controller_notifications(self) -> None:
         self.pipeline_controller.progressChanged.connect(self._handle_pipeline_progress_changed)
         self.pipeline_controller.payloadReady.connect(self._handle_pipeline_payload)
+        self.pipeline_controller.reviewCaptureReady.connect(self._handle_review_capture_payload)
         self.camera_controller.previewRevisionChanged.connect(self.viewStateChanged)
         self.camera_controller.previewAvailableChanged.connect(self._refresh_health_summary)
         self.camera_controller.previewErrorChanged.connect(self._refresh_health_summary)
         self.health_controller.summaryChanged.connect(self.viewStateChanged)
+        self.capture_review_controller.stateChanged.connect(self.viewStateChanged)
         self.history_controller.stateChanged.connect(self.viewStateChanged)
         self.history_controller.screenRequested.connect(self._handle_history_screen_requested)
         self.history_controller.deleteAllDataCompleted.connect(self._handle_delete_all_data_completed)
@@ -806,6 +900,7 @@ class AppController(QObject):
         kind = payload.get("kind")
         if kind == "success":
             result = payload["result"]
+            self.capture_review_controller.discard()
             self._present_result(
                 status="Answer Ready",
                 answer_text=result.answer or "",
@@ -816,6 +911,7 @@ class AppController(QObject):
             return
         if kind == "queued":
             result = payload["result"]
+            self.capture_review_controller.discard()
             public_error = self._map_pipeline_error(payload, retryable=True)
             self._present_result(
                 status="Queued for retry",
@@ -828,6 +924,22 @@ class AppController(QObject):
         self._present_public_error(
             self._map_pipeline_error(payload, retryable=bool(payload.get("retryable", False)))
         )
+        self.capture_review_controller.discard()
+
+    def _handle_review_capture_payload(self, payload: dict[str, Any]) -> None:
+        """Open review only after a real frame has been captured and saved privately."""
+        if payload.get("kind") != "captured":
+            self.capture_review_controller.discard()
+            self._present_public_error(
+                self._map_pipeline_error(payload, retryable=bool(payload.get("retryable", True)))
+            )
+            return
+        if not self.capture_review_controller.load_captured_image(payload.get("captured_path")):
+            self._present_public_error(map_public_error("VisionDesk could not prepare the captured image for review.", retryable=True))
+            return
+        self._set_screen("review", "REVIEWING", "Review image before analysis")
+        self.viewStateChanged.emit()
+        self._refresh_health_summary()
 
     def _map_pipeline_error(self, payload: dict[str, Any], *, retryable: bool) -> PublicError:
         """Log backend detail while retaining only mapped data for the QML layer."""
@@ -1158,6 +1270,9 @@ class AppController(QObject):
             "RETRY_QUEUED": DeviceState.DONE.value,
             "DONE": DeviceState.DONE.value,
             "ERROR": DeviceState.ERROR.value,
+            "REVIEWING": DeviceState.MODE_SELECTED.value,
+            "SETTINGS": DeviceState.READY.value,
+            "DEVICE_HEALTH": DeviceState.READY.value,
         }
         return {
             "screen": current_screen,
@@ -1166,4 +1281,6 @@ class AppController(QObject):
             "selected_mode_internal": self._selected_mode_internal,
             "updated_at": self._application_state_model.updatedAt
             or QDateTime.currentDateTime().toString(Qt.ISODate),
+            "application_state": self._application_state_model.applicationState,
+            "error_code": self._application_state_model.errorCode,
         }

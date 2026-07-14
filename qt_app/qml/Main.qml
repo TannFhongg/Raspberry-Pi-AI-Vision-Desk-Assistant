@@ -77,6 +77,21 @@ ApplicationWindow {
     }
 
     Component {
+        id: reviewScreenComponent
+        ReviewScreen { theme: appTheme; controller: appController }
+    }
+
+    Component {
+        id: settingsScreenComponent
+        SettingsScreen { theme: appTheme; controller: appController }
+    }
+
+    Component {
+        id: deviceHealthScreenComponent
+        DeviceHealthScreen { theme: appTheme; controller: appController }
+    }
+
+    Component {
         id: processingScreenComponent
         ProcessingScreen { theme: appTheme; controller: appController }
     }
@@ -151,6 +166,12 @@ ApplicationWindow {
                             return setupScreenComponent
                         case "camera":
                             return cameraScreenComponent
+                        case "review":
+                            return reviewScreenComponent
+                        case "settings":
+                            return settingsScreenComponent
+                        case "device_health":
+                            return deviceHealthScreenComponent
                         case "processing":
                             return processingScreenComponent
                         case "result":

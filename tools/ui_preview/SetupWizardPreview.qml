@@ -59,6 +59,8 @@ Rectangle {
         property string setupCurrentStep: window.normalizeStep(String(window.requestedStep || "").toLowerCase())
         property string setupFinishMessage: "Setup complete. VisionDesk will relaunch into Home after the wizard finishes."
         property string setupWarningsText: ""
+        property string globalStatusText: "Setup required"
+        property string globalStatusTone: "warning"
         property bool setupHasApiKey: true
         property bool setupApiKeyVerified: true
         property bool setupApiKeyBusy: false

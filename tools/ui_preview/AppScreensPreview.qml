@@ -36,6 +36,8 @@ Rectangle {
         property string selectedMode: "read_text"
         property string selectedModeLabel: "Read Text"
         property string applicationState: "ANALYZING"
+        property string globalStatusText: "Ready"
+        property string globalStatusTone: "success"
         property bool deviceActionsBusy: false
         property string deviceActionsStatus: ""
         property string deviceActionsTone: "active"
@@ -74,6 +76,58 @@ Rectangle {
         property string selectedHistoryDetailHtml: "<p>Source: local capture.</p><p>Saved for later review.</p>"
         property string selectedHistoryId: "preview-result"
 
+        property var deviceHealthModel: ListModel {
+            ListElement { key: "overall"; section: "Overview"; title: "Overall device status"; value: "Ready"; message: "All shared checks are currently healthy."; tone: "success" }
+            ListElement { key: "cpu"; section: "Performance"; title: "CPU temperature"; value: "49 °C"; message: "Within the configured range."; tone: "success" }
+            ListElement { key: "memory"; section: "Performance"; title: "Memory usage"; value: "38% used"; message: "Memory is available."; tone: "success" }
+            ListElement { key: "storage"; section: "Performance"; title: "Storage usage"; value: "31% used"; message: "Enough private storage is available."; tone: "success" }
+            ListElement { key: "wifi"; section: "Connection"; title: "Wi-Fi connection"; value: "Connected"; message: "NetworkManager reports a connection."; tone: "success" }
+            ListElement { key: "camera"; section: "Camera"; title: "Camera availability"; value: "Connected"; message: "Mock camera preview is active."; tone: "success" }
+            ListElement { key: "focus"; section: "Camera controls"; title: "Autofocus"; value: "Available"; message: "Available for this camera."; tone: "success" }
+            ListElement { key: "version"; section: "Service"; title: "Application version"; value: "1.0.0"; message: "The native VisionDesk service is running."; tone: "success" }
+        }
+
+        property var captureReview: QtObject {
+            id: previewReview
+            property string state: "reviewing"
+            property string captureProfile: "document"
+            property string captureProfileLabel: "Document"
+            property int sourceRevision: 1
+            property bool hasCapturedImage: true
+            property real cropX: 0.12
+            property real cropY: 0.10
+            property real cropWidth: 0.76
+            property real cropHeight: 0.80
+            property bool perspectiveAvailable: true
+            property bool perspectiveActive: false
+            property var perspectivePoints: [{"x": 0.18, "y": 0.16}, {"x": 0.83, "y": 0.13}, {"x": 0.86, "y": 0.84}, {"x": 0.15, "y": 0.87}]
+            property bool autofocusSupported: false
+            property bool exposureSupported: false
+            property string autofocusSupportMessage: "Not supported by this camera"
+            property string exposureSupportMessage: "Not supported by this camera"
+            property real previewZoomX: 0.12
+            property real previewZoomY: 0.12
+            property real previewZoomWidth: 0.76
+            property real previewZoomHeight: 0.76
+            property bool previewZoomActive: true
+            property bool canSubmit: true
+            property var captureProfilesModel: ListModel {
+                ListElement { id: "document"; label: "Document"; description: "Page alignment" }
+                ListElement { id: "computer_screen"; label: "Computer Screen"; description: "Screen safe area" }
+                ListElement { id: "diagram"; label: "Diagram"; description: "Diagram guide" }
+            }
+            property var cameraCapabilitiesModel: ListModel {}
+            function setCaptureProfile(profile) { captureProfile = profile }
+            function zoomPreviewIn() { previewZoomActive = true }
+            function zoomPreviewOut() { previewZoomActive = true }
+            function resetPreviewZoom() { previewZoomActive = false }
+            function setPreviewZoomRegion(x, y, width, height) { previewZoomX = x; previewZoomY = y; previewZoomWidth = width; previewZoomHeight = height }
+            function setCropNormalized(x, y, width, height) { cropX = x; cropY = y; cropWidth = width; cropHeight = height }
+            function resetCrop() { cropX = 0; cropY = 0; cropWidth = 1; cropHeight = 1 }
+            function acceptPerspective() { perspectiveActive = true }
+            function rejectPerspective() { perspectiveActive = false }
+        }
+
         property var healthMetricsModel: ListModel {
             ListElement { label: "SYS"; value: "Ready"; state: "healthy"; message: "System services available." }
             ListElement { label: "CPU"; value: "49 C"; state: "healthy"; message: "Thermals are within range." }
@@ -110,6 +164,11 @@ Rectangle {
         function deleteAllData() { }
         function goBack() { }
         function capture() { }
+        function confirmReviewedImage() { }
+        function retakeCapture() { }
+        function openSettings() { }
+        function openDeviceHealth() { }
+        function refreshDeviceHealth() { }
         function clearResult() { }
         function retry() { }
         function openHistoryItem(entryId) { }
@@ -151,6 +210,9 @@ Rectangle {
             sourceComponent: {
                 switch (window.requestedScreen) {
                 case "camera": return cameraComponent
+                case "review": return reviewComponent
+                case "settings": return settingsComponent
+                case "device_health": return deviceHealthComponent
                 case "processing": return processingComponent
                 case "result": return resultComponent
                 case "error": return errorComponent
@@ -178,6 +240,9 @@ Rectangle {
         }
     }
     Component { id: cameraComponent; CameraScreen { theme: appTheme; controller: mockController } }
+    Component { id: reviewComponent; ReviewScreen { theme: appTheme; controller: mockController } }
+    Component { id: settingsComponent; SettingsScreen { theme: appTheme; controller: mockController } }
+    Component { id: deviceHealthComponent; DeviceHealthScreen { theme: appTheme; controller: mockController } }
     Component { id: processingComponent; ProcessingScreen { theme: appTheme; controller: mockController } }
     Component { id: resultComponent; ResultScreen { theme: appTheme; controller: mockController } }
     Component { id: errorComponent; ErrorScreen { theme: appTheme; controller: mockController } }

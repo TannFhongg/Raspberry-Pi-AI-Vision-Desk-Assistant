@@ -22,8 +22,10 @@ if PY_SIDE6_AVAILABLE:
 
     from pipeline.runner import PipelineError, PipelineResult
     from qt_app.app_controller import AppController
+    from qt_app.capture_review_controller import CaptureReviewController
     from qt_app.gpio_controller import GPIOController
     from qt_app.image_provider import CachedImageStore, VisionDeskImageProvider
+    from qt_app.mock_backend import build_mock_preview_bytes
     from qt_app.pipeline_controller import PipelineController, _PipelineWorker
     from qt_app.runtime import RuntimePaths, VisionDeskRuntime
     from system.offline_retry import OfflineRetryQueue, OfflineRetryQueueFullError
@@ -213,6 +215,61 @@ def test_app_controller_reports_backend_busy_while_camera_screen_is_open(qapp, t
     assert controller.currentScreen == "camera"
     assert controller.isBackendBusy() is True
     controller.shutdown()
+
+
+def test_setup_scroll_source_reserves_footer_space_and_tracks_focus() -> None:
+    """Keep the fixed setup footer from covering logical-focus targets."""
+    source = Path("qt_app/qml/screens/SetupScreen.qml").read_text(encoding="utf-8")
+
+    assert "Flickable {" in source
+    assert "contentHeight: Math.max(height, setupBodyLoader.height + 84)" in source
+    assert "FocusScrollHelper.ensureVisible" in source
+
+
+def test_setup_welcome_renders_only_real_device_check_results() -> None:
+    """Prevent empty diagnostic cards from returning to the Welcome screen."""
+    source = Path("qt_app/qml/screens/SetupScreen.qml").read_text(encoding="utf-8")
+
+    for placeholder in (
+        "Pending check",
+        "Run diagnostics to populate this check.",
+        'eyebrow: hasData ? "Device check" : "Pending"',
+        'value: hasData ? root.statusText(itemData.status || "") : "Waiting"',
+    ):
+        assert placeholder not in source
+    assert "Math.max(root.controller.deviceChecksModel.count, 6)" not in source
+    assert "visible: root.hasDeviceCheckResults && !root.controller.setupDeviceChecksBusy" in source
+    assert "Layout.preferredHeight: visible ? resultsHeight : 0" in source
+    assert 'text: "Running device checks…"' in source
+    assert "function navigationTargets()" in source
+    assert "root.runChecksNavigationIndex" in source
+    assert "root.phoneSetupNavigationIndex" in source
+
+
+def test_review_screen_uses_one_compact_non_scrolling_adjustments_panel() -> None:
+    """Prevent regressions to the clipped, duplicate-heavy review panel."""
+    source = Path("qt_app/qml/screens/ReviewScreen.qml").read_text(encoding="utf-8")
+    canvas_source = Path("qt_app/qml/components/ReviewImageCanvas.qml").read_text(encoding="utf-8")
+
+    assert "ScrollView" not in source
+    assert "Flickable" not in source
+    assert "Layout.minimumWidth: 320" in source
+    assert "Layout.maximumWidth: 344" in source
+    assert source.count('text: "RETAKE"') == 1
+    assert '"CONFIRM AND ANALYZE"' in source
+    for removed_text in (
+        "ROTATE",
+        "RESET ALL",
+        "Image quality",
+        "Final image preview",
+        "RESET PERSPECTIVE",
+    ):
+        assert removed_text not in source
+    assert "function focusOrder()" in source
+    assert "perspectiveAvailable" in source
+    assert "function zoomCanvas(delta)" in source
+    assert "imageEdgeInset" in canvas_source
+    assert "imageTopInset" in canvas_source
 
 
 def test_pipeline_capture_lock_blocks_parallel_requests(qapp, qtbot, tmp_path) -> None:
@@ -664,6 +721,7 @@ def test_history_navigation_detail_and_newest_first(qapp, qtbot, tmp_path) -> No
         model_used="gpt-5.4-nano",
         duration_seconds=2.5,
     )
+    assert newer_entry["id"] != older_entry["id"]
 
     controller.openHistory()
 
@@ -965,6 +1023,11 @@ def test_capture_pipeline_appends_history_and_history_screen_reads_it(qapp, qtbo
     controller.selectMode("read_text")
     qtbot.waitUntil(lambda: controller.currentScreen == "camera", timeout=1000)
     controller.capture()
+    qtbot.waitUntil(lambda: controller.currentScreen == "review", timeout=4000)
+    assert runtime.result_history_store.load_entries() == []
+    assert controller.captureReview.canSubmit is True
+    controller.confirmReviewedImage()
+    controller.confirmReviewedImage()  # A second press while busy must be ignored.
     qtbot.waitUntil(lambda: controller.currentScreen == "result", timeout=4000)
 
     stored_entries = runtime.result_history_store.load_entries()
@@ -978,3 +1041,25 @@ def test_capture_pipeline_appends_history_and_history_screen_reads_it(qapp, qtbo
         timeout=3000,
     )
     controller.shutdown()
+
+
+def test_capture_review_discard_cleans_private_source_and_confirmed_images(qapp, tmp_path) -> None:
+    runtime = build_runtime(tmp_path, setup_completed=True)
+    source = runtime.paths.private_current_path / "captured-for-review.jpg"
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_bytes(build_mock_preview_bytes(title="Captured", subtitle="Private test frame", size=(640, 480)))
+    review = CaptureReviewController(
+        runtime,
+        source_store=CachedImageStore(),
+        preview_store=CachedImageStore(),
+    )
+
+    assert review.load_captured_image(source) is True
+    confirmed = source.with_name(f"review-{source.stem}.jpg")
+    assert confirmed.is_file()
+
+    review.discard()
+
+    assert not source.exists()
+    assert not confirmed.exists()
+    runtime.shutdown()

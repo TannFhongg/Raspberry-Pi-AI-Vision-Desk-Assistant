@@ -360,7 +360,7 @@ class SetupStateStore:
             return "fail", required_failures[0]["message"]
         if all(item.get("status") == "pass" for item in checks):
             return "pass", f"{len(checks)} device checks passed."
-        return "running", "Device checks completed with warnings."
+        return "warning", "Device checks completed with warnings."
 
     def _sync_derived_fields(self, state: dict[str, Any]) -> dict[str, Any]:
         gpio = state.setdefault("gpio", {})
@@ -384,6 +384,13 @@ class SetupStateStore:
         steps = state.setdefault("steps", {})
         welcome_step = steps.setdefault("welcome", {})
         welcome_step["checks"] = self._coerce_device_checks(welcome_step.get("checks", []))
+        requested_welcome_status = str(welcome_step.get("status", "")).strip().lower()
+        # A failed or actively running check set has no completed row by
+        # design. Preserve that aggregate state without fabricating a result
+        # object solely to make the status visible.
+        if not welcome_step["checks"] and requested_welcome_status in {"running", "fail"}:
+            welcome_status = requested_welcome_status
+            welcome_message = str(welcome_step.get("message", "")).strip()
         welcome_step["status"] = welcome_status
         welcome_step["message"] = str(welcome_step.get("message", "")).strip() or welcome_message
 
@@ -607,7 +614,7 @@ class SetupStateStore:
             status = "pass"
             message = f"{len(normalized_checks)} device checks passed."
         elif normalized_checks:
-            status = "running"
+            status = "warning"
             message = "Device checks completed with warnings."
         else:
             status = "idle"

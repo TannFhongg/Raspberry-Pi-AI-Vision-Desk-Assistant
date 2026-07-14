@@ -94,16 +94,25 @@ def main(argv: list[str] | None = None) -> int:
     runtime = VisionDeskRuntime(mock_hardware=args.mock_hardware)
     camera_store = CachedImageStore()
     result_store = CachedImageStore()
+    review_source_store = CachedImageStore()
+    review_preview_store = CachedImageStore()
     controller = AppController(
         runtime,
         camera_store=camera_store,
         result_store=result_store,
+        review_source_store=review_source_store,
+        review_preview_store=review_preview_store,
     )
 
     engine = QQmlApplicationEngine()
     engine.addImageProvider(
         "visiondesk",
-        VisionDeskImageProvider(camera_store=camera_store, result_store=result_store),
+        VisionDeskImageProvider(
+            camera_store=camera_store,
+            result_store=result_store,
+            review_source_store=review_source_store,
+            review_preview_store=review_preview_store,
+        ),
     )
     engine.rootContext().setContextProperty("appController", controller)
     main_qml_path = QUrl.fromLocalFile(str((Path(__file__).resolve().parent / "qml" / "Main.qml")))

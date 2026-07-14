@@ -21,14 +21,50 @@ private local storage  ←→  OpenAI API
 ```
 
 `qt_app/main.py` creates the Qt application, image provider, runtime, and
-QML-facing controller. The main screen set is Setup, Home, Camera, Processing,
-Result, History, History Detail, and Error. `system/ui_catalog.py` supplies the
-six setup steps and the five UI modes.
+QML-facing controller. The main screen set is Setup, Home, Settings, Device
+Health, Camera, Review, Processing, Result, History, History Detail, and Error.
+`system/ui_catalog.py` supplies the six setup steps and the five UI modes.
 
 The five canonical AI modes are Read Text, Summarize Document, Analyze Image,
 Professional Assistant, and Solve Problem. Their system prompts and output
 contracts live in `ai/modes.py`; legacy names are aliases for compatibility,
 not additional modes.
+
+## Status, health, and capture review
+
+The normal application header intentionally shows only the VisionDesk brand and
+one safe, user-facing state (for example, `Ready` or `Wi-Fi unavailable`).
+`system/ui_presenters.resolve_global_status` applies the priority order and
+does not expose CPU/RAM values, temperatures, raw monitor text, exception
+details, paths, or credentials. Technical information is available on
+**Settings -> Device Health**, which reads the existing health monitor snapshot
+on its configured interval and offers a manual refresh. It never displays
+network passwords or OpenAI credentials.
+
+Camera capture is a confirmation workflow rather than a direct upload:
+
+```text
+Live preview -> capture private frame -> review and adjust -> confirm -> AI request
+```
+
+`CaptureReviewController` owns the session state and passes only its rendered
+confirmed image to `pipeline.run_analyze_confirmed`. The review renderer applies
+the same visible order used for submission: optional rotation, crop, optional
+accepted perspective correction, optional enhancement, then non-destructive
+quality checks. Review media is kept below the existing private-data directory
+and is discarded on retake, abandonment, reset, or terminal completion unless
+the established retry/retention policy needs the confirmed asset.
+
+There are three independent capture profiles: Document, Computer Screen, and
+Diagram. They do not replace the five AI modes. Camera controls are exposed
+only after capability detection; unavailable autofocus/exposure controls state
+`Not supported by this camera` rather than appearing actionable. The V4L2
+probe is best-effort and mock mode supplies explicit simulated capabilities.
+
+Touch, keyboard, and GPIO all route through existing logical navigation
+actions. Setup's scrollable body uses focus-aware scrolling so a selected item
+is kept clear of its fixed footer; Review preserves Back as Retake and guards
+against duplicate confirmation while capture or submission is busy.
 
 ## First boot and phone provisioning
 

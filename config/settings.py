@@ -111,6 +111,29 @@ class CameraSettings:
 
 
 @dataclass(slots=True)
+class CaptureReviewSettings:
+    """User-review defaults and image-quality thresholds kept in device config."""
+
+    default_profile: str = "document"
+    quality_thresholds: dict[str, float] = field(
+        default_factory=lambda: {
+            "sharpness_warning_variance": 80.0,
+            "brightness_dark_mean": 55.0,
+            "brightness_bright_mean": 220.0,
+            "glare_bright_ratio": 0.12,
+            "minimum_crop_area_ratio": 0.035,
+        }
+    )
+    profiles: dict[str, dict[str, Any]] = field(
+        default_factory=lambda: {
+            "document": {"perspective_default": True, "auto_enhance_default": True},
+            "computer_screen": {"perspective_default": False, "auto_enhance_default": False},
+            "diagram": {"perspective_default": False, "auto_enhance_default": False},
+        }
+    )
+
+
+@dataclass(slots=True)
 class DisplaySettings:
     """Attached display defaults."""
 
@@ -272,6 +295,7 @@ class DeviceSettings:
     setup_portal: SetupPortalSettings = field(default_factory=SetupPortalSettings)
     network: NetworkSettings = field(default_factory=NetworkSettings)
     localization: LocalizationSettings = field(default_factory=LocalizationSettings)
+    capture_review: CaptureReviewSettings = field(default_factory=CaptureReviewSettings)
 
 
 def load_device_settings(
@@ -303,6 +327,7 @@ def load_device_settings(
     reliability = merged.get("reliability", {})
     retention = merged.get("retention", {})
     offline_retry = merged.get("offline_retry", {})
+    capture_review = merged.get("capture_review", {})
     preview = camera.get("preview", {})
     wifi = network.get("wifi", {})
     inferred_legacy_setup_complete = (
@@ -710,6 +735,7 @@ def load_device_settings(
                 minimum=1,
             ),
         ),
+        capture_review=_parse_capture_review_settings(capture_review),
         config_path=resolved_path,
     )
     _validate_pin_assignments(settings)
@@ -783,6 +809,7 @@ def _apply_environment_overrides(
     merged["reliability"] = dict(raw_data.get("reliability", {}))
     merged["retention"] = dict(raw_data.get("retention", {}))
     merged["offline_retry"] = dict(raw_data.get("offline_retry", {}))
+    merged["capture_review"] = dict(raw_data.get("capture_review", {}))
 
     camera = merged["camera"]
     camera_resolution = dict(camera.get("resolution", {}))
@@ -1035,6 +1062,57 @@ def _nested_get(source: Mapping[str, Any], *keys: str) -> Any:
             return None
         current = current[key]
     return current
+
+
+def _parse_capture_review_settings(value: Any) -> CaptureReviewSettings:
+    """Parse bounded review settings while preserving safe defaults for old configs."""
+    source = value if isinstance(value, Mapping) else {}
+    default_profile = str(source.get("default_profile", "document")).strip().lower()
+    if default_profile not in {"document", "computer_screen", "diagram"}:
+        raise SettingsError("capture_review.default_profile must be document, computer_screen, or diagram.")
+    defaults = CaptureReviewSettings()
+    raw_thresholds = source.get("quality", source.get("quality_thresholds", {}))
+    if raw_thresholds is None:
+        raw_thresholds = {}
+    if not isinstance(raw_thresholds, Mapping):
+        raise SettingsError("capture_review.quality must be a mapping.")
+    thresholds = dict(defaults.quality_thresholds)
+    limits = {
+        "sharpness_warning_variance": (1.0, None),
+        "brightness_dark_mean": (0.0, 255.0),
+        "brightness_bright_mean": (0.0, 255.0),
+        "glare_bright_ratio": (0.0, 1.0),
+        "minimum_crop_area_ratio": (0.001, 1.0),
+    }
+    for key, (minimum, maximum) in limits.items():
+        if key not in raw_thresholds:
+            continue
+        parsed = _parse_float(raw_thresholds[key], f"capture_review.quality.{key}", minimum=minimum)
+        if maximum is not None and parsed > maximum:
+            raise SettingsError(f"capture_review.quality.{key} must not exceed {maximum}.")
+        thresholds[key] = parsed
+    if thresholds["brightness_dark_mean"] >= thresholds["brightness_bright_mean"]:
+        raise SettingsError("capture_review brightness thresholds must be ordered from dark to bright.")
+    raw_profiles = source.get("profiles", {})
+    if raw_profiles is None:
+        raw_profiles = {}
+    if not isinstance(raw_profiles, Mapping):
+        raise SettingsError("capture_review.profiles must be a mapping.")
+    profiles = {name: dict(profile) for name, profile in defaults.profiles.items()}
+    for name in profiles:
+        supplied = raw_profiles.get(name, {})
+        if supplied is None:
+            supplied = {}
+        if not isinstance(supplied, Mapping):
+            raise SettingsError(f"capture_review.profiles.{name} must be a mapping.")
+        for key in ("perspective_default", "auto_enhance_default"):
+            if key in supplied:
+                profiles[name][key] = _parse_bool(supplied[key], f"capture_review.profiles.{name}.{key}")
+    return CaptureReviewSettings(
+        default_profile=default_profile,
+        quality_thresholds=thresholds,
+        profiles=profiles,
+    )
 
 
 def _parse_bool(value: Any, field_name: str) -> bool:

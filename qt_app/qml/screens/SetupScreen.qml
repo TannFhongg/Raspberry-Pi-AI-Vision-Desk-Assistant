@@ -1,6 +1,9 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Window
+
+import "../components/FocusScrollHelper.js" as FocusScrollHelper
 
 import "../components"
 
@@ -14,12 +17,23 @@ Item {
     property string wifiPasswordText: ""
     property string apiKeyDraft: ""
     property bool showApiKey: false
+    // Welcome keeps only actionable controls in GPIO/keyboard navigation.
+    // Read-only diagnostic cards deliberately never become focus stops.
+    property int navigationIndex: 0
 
     readonly property int cardPadding: 16
     readonly property int cardGap: 10
     readonly property int sidebarWidthWide: 286
     readonly property int sidebarWidthNarrow: 252
     readonly property int finishLeadWidth: 280
+    readonly property int runChecksNavigationIndex: 0
+    readonly property int phoneSetupNavigationIndex: 1
+    readonly property int backNavigationIndex: 2
+    readonly property int nextNavigationIndex: 3
+    readonly property bool hasDeviceCheckResults: root.controller.deviceChecksModel.count > 0
+    readonly property bool canControlPhoneSetup: root.controller.setupPhonePortalStatus !== "disabled"
+                                                && root.controller.setupPhonePortalStatus !== "starting"
+                                                && root.controller.setupPhonePortalStatus !== "applying"
     readonly property var stepOrder: ["welcome", "wifi", "openai", "camera", "gpio", "finish"]
     readonly property var stepTitles: ({
         "welcome": "Welcome + Device Check",
@@ -102,6 +116,80 @@ Item {
         }
     }
 
+    function navigationTargets() {
+        var targets = []
+        if (root.controller.setupCurrentStep === "welcome") {
+            if (!root.controller.setupDeviceChecksBusy)
+                targets.push(root.runChecksNavigationIndex)
+            if (root.canControlPhoneSetup)
+                targets.push(root.phoneSetupNavigationIndex)
+        }
+        if (root.stepIndex(root.controller.setupCurrentStep) > 0)
+            targets.push(root.backNavigationIndex)
+        if (root.controller.setupCurrentStep === "finish") {
+            if (root.controller.setupReadyToFinish)
+                targets.push(root.nextNavigationIndex)
+        } else if (root.canAdvance()) {
+            targets.push(root.nextNavigationIndex)
+        }
+        return targets
+    }
+
+    function moveNavigation(direction) {
+        var targets = root.navigationTargets()
+        if (targets.length === 0)
+            return
+        var current = targets.indexOf(root.navigationIndex)
+        if (current < 0)
+            current = 0
+        root.navigationIndex = targets[(current + direction + targets.length) % targets.length]
+    }
+
+    function synchronizeNavigationFocus() {
+        var targets = root.navigationTargets()
+        if (targets.length > 0 && targets.indexOf(root.navigationIndex) < 0)
+            root.navigationIndex = targets[0]
+    }
+
+    function handleNavigation(action) {
+        if (action === "up" || action === "down") {
+            root.moveNavigation(action === "up" ? -1 : 1)
+            return true
+        }
+        if (action === "select") {
+            if (root.navigationIndex === root.runChecksNavigationIndex
+                    && root.controller.setupCurrentStep === "welcome"
+                    && !root.controller.setupDeviceChecksBusy) {
+                root.controller.runSetupDeviceChecks()
+            } else if (root.navigationIndex === root.phoneSetupNavigationIndex
+                       && root.controller.setupCurrentStep === "welcome"
+                       && root.canControlPhoneSetup) {
+                if (root.controller.setupPhonePortalActive)
+                    root.controller.stopPhoneSetup()
+                else
+                    root.controller.startPhoneSetup()
+            } else if (root.navigationIndex === root.backNavigationIndex
+                       && root.stepIndex(root.controller.setupCurrentStep) > 0) {
+                root.controller.goToSetupPreviousStep()
+            } else if (root.navigationIndex === root.nextNavigationIndex
+                       && root.canAdvance()
+                       && root.controller.setupCurrentStep !== "finish") {
+                root.controller.goToSetupNextStep()
+            } else if (root.navigationIndex === root.nextNavigationIndex
+                       && root.controller.setupCurrentStep === "finish"
+                       && root.controller.setupReadyToFinish) {
+                root.controller.finishSetup()
+            }
+            return true
+        }
+        if (action === "back") {
+            if (root.stepIndex(root.controller.setupCurrentStep) > 0)
+                root.controller.goToSetupPreviousStep()
+            return true
+        }
+        return false
+    }
+
     function selectedOrManualSsid() {
         const manual = root.manualSsidText.trim()
         return manual.length > 0 ? manual : root.selectedSsid
@@ -129,16 +217,12 @@ Item {
         }
     }
 
-    Component.onCompleted: {
-        if (root.controller.deviceChecksModel.count === 0
-                && root.controller.setupDeviceChecksStatus === "idle") {
-            root.controller.runSetupDeviceChecks()
-        }
-        if (root.controller.wifiNetworksModel.count === 0
-                && root.controller.setupWifiStatus === "idle"
-                && root.controller.setupWifiMessage.length === 0
-                && ["starting", "active", "applying"].indexOf(root.controller.setupPhonePortalStatus) < 0) {
-            root.controller.scanWifi()
+    Connections {
+        target: root.controller
+        ignoreUnknownSignals: true
+
+        function onViewStateChanged() {
+            root.synchronizeNavigationFocus()
         }
     }
 
@@ -146,10 +230,17 @@ Item {
         id: welcomeStepComponent
 
         Item {
-            anchors.fill: parent
+            id: welcomeStepRoot
+            width: parent ? parent.width : 0
+            // The results grid has no footprint until real checks complete.
+            // Let the column derive its height so the phone setup card is
+            // reachable without phantom placeholder rows.
+            implicitHeight: welcomeStepLayout.implicitHeight
+            height: implicitHeight
 
             ColumnLayout {
-                anchors.fill: parent
+                id: welcomeStepLayout
+                width: parent.width
                 spacing: root.cardGap
 
                 RowLayout {
@@ -269,17 +360,17 @@ Item {
                             spacing: 10
 
                             StatusChip {
+                                visible: !root.controller.setupDeviceChecksBusy
+                                         && (root.hasDeviceCheckResults
+                                             || root.controller.setupDeviceChecksStatus !== "idle")
                                 theme: root.theme
                                 label: "Checks"
-                                value: root.controller.setupDeviceChecksBusy
-                                       ? "Running"
-                                       : root.statusText(root.controller.setupDeviceChecksStatus)
-                                tone: root.controller.setupDeviceChecksBusy
-                                      ? "warning"
-                                      : root.statusTone(root.controller.setupDeviceChecksStatus)
+                                value: root.statusText(root.controller.setupDeviceChecksStatus)
+                                tone: root.statusTone(root.controller.setupDeviceChecksStatus)
                             }
 
                             Text {
+                                visible: !root.controller.setupDeviceChecksBusy
                                 text: root.controller.setupDeviceChecksMessage.length > 0
                                       ? root.controller.setupDeviceChecksMessage
                                       : "Check config, storage, display, camera, GPIO, and network readiness."
@@ -294,12 +385,36 @@ Item {
                                 Layout.fillWidth: true
                             }
 
+                            RowLayout {
+                                visible: root.controller.setupDeviceChecksBusy
+                                spacing: 10
+                                Layout.fillWidth: true
+
+                                BusyIndicator {
+                                    running: root.controller.setupDeviceChecksBusy
+                                    Layout.preferredWidth: 28
+                                    Layout.preferredHeight: 28
+                                }
+
+                                Text {
+                                    text: "Running device checks…"
+                                    color: root.theme.text
+                                    font.family: root.theme.displayFont
+                                    font.pixelSize: 15
+                                    font.weight: root.theme.weightStrong
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                }
+                            }
+
                             PrimaryButton {
+                                visible: !root.controller.setupDeviceChecksBusy
                                 theme: root.theme
                                 tone: "success"
-                                text: root.controller.setupDeviceChecksBusy ? "RUNNING..." : "RUN CHECKS"
+                                text: root.hasDeviceCheckResults ? "RUN AGAIN" : "RUN CHECKS"
                                 enabled: !root.controller.setupDeviceChecksBusy
                                 Layout.fillWidth: true
+                                navigationFocused: root.navigationIndex === root.runChecksNavigationIndex
                                 onClicked: root.controller.runSetupDeviceChecks()
                             }
                         }
@@ -369,9 +484,9 @@ Item {
                                 SecondaryButton {
                                     theme: root.theme
                                     text: root.controller.setupPhonePortalActive ? "STOP" : "START"
-                                    enabled: root.controller.setupPhonePortalStatus !== "starting"
-                                             && root.controller.setupPhonePortalStatus !== "applying"
+                                    enabled: root.canControlPhoneSetup
                                     implicitWidth: 104
+                                    navigationFocused: root.navigationIndex === root.phoneSetupNavigationIndex
                                     onClicked: {
                                         if (root.controller.setupPhonePortalActive) {
                                             root.controller.stopPhoneSetup()
@@ -420,20 +535,27 @@ Item {
                 }
 
                 GridLayout {
+                    id: deviceCheckGrid
+                    readonly property int cardCount: root.controller.deviceChecksModel.count
+                    readonly property int cardRows: Math.ceil(cardCount / 3)
+                    readonly property real resultsHeight: cardRows * 98
+                                                         + Math.max(0, cardRows - 1) * root.cardGap
+                    visible: root.hasDeviceCheckResults && !root.controller.setupDeviceChecksBusy
                     Layout.fillWidth: true
-                    Layout.fillHeight: true
+                    Layout.preferredHeight: visible ? resultsHeight : 0
+                    Layout.minimumHeight: visible ? resultsHeight : 0
+                    Layout.maximumHeight: visible ? resultsHeight : 0
+                    implicitHeight: visible ? resultsHeight : 0
                     columns: 3
-                    rows: 2
                     columnSpacing: root.cardGap
                     rowSpacing: root.cardGap
 
                     Repeater {
-                        model: Math.max(root.controller.deviceChecksModel.count, 6)
+                        model: deviceCheckGrid.cardCount
 
                         delegate: StatusCard {
                             required property int index
-                            readonly property bool hasData: index < root.controller.deviceChecksModel.count
-                            readonly property var itemData: hasData ? root.controller.deviceChecksModel.get(index) : null
+                            readonly property var itemData: root.controller.deviceChecksModel.get(index)
                             theme: root.theme
                             padding: 14
                             compact: true
@@ -441,11 +563,11 @@ Item {
                             Layout.fillHeight: true
                             Layout.minimumHeight: 0
                             Layout.preferredHeight: 98
-                            title: hasData ? ((itemData.name || "").replace(/_/g, " ")) : "Pending check"
-                            eyebrow: hasData ? "Device check" : "Pending"
-                            value: hasData ? root.statusText(itemData.status || "") : "Waiting"
-                            message: hasData ? (itemData.message || "") : "Run diagnostics to populate this check."
-                            tone: hasData ? root.statusTone(itemData.status || "") : "info"
+                            title: (itemData.name || "").replace(/_/g, " ")
+                            eyebrow: "Device check"
+                            value: root.statusText(itemData.status || "")
+                            message: itemData.message || ""
+                            tone: root.statusTone(itemData.status || "")
                         }
                     }
                 }
@@ -457,16 +579,27 @@ Item {
         id: wifiStepComponent
 
         Item {
-            anchors.fill: parent
+            id: wifiStepRoot
+            width: parent ? parent.width : 0
+            implicitHeight: wifiStepLayout.implicitHeight
+            height: implicitHeight
 
             Component.onCompleted: {
                 if (!root.selectedSsid && root.controller.setupWifiSsid.length > 0) {
                     root.selectedSsid = root.controller.setupWifiSsid
                 }
+                if (root.controller.wifiNetworksModel.count === 0
+                        && root.controller.setupWifiStatus === "idle"
+                        && root.controller.setupWifiMessage.length === 0
+                        && ["starting", "active", "applying"].indexOf(root.controller.setupPhonePortalStatus) < 0) {
+                    root.controller.scanWifi()
+                }
             }
 
             ColumnLayout {
-                anchors.fill: parent
+                id: wifiStepLayout
+                width: parent.width
+                height: implicitHeight
                 spacing: root.cardGap
 
                 RowLayout {
@@ -658,10 +791,15 @@ Item {
         id: openAiStepComponent
 
         Item {
-            anchors.fill: parent
+            id: openAiStepRoot
+            width: parent ? parent.width : 0
+            implicitHeight: openAiStepLayout.implicitHeight
+            height: implicitHeight
 
             ColumnLayout {
-                anchors.fill: parent
+                id: openAiStepLayout
+                width: parent.width
+                height: implicitHeight
                 spacing: root.cardGap
 
                 Flow {
@@ -810,10 +948,15 @@ Item {
         id: cameraStepComponent
 
         Item {
-            anchors.fill: parent
+            id: cameraStepRoot
+            width: parent ? parent.width : 0
+            implicitHeight: cameraStepLayout.implicitHeight
+            height: implicitHeight
 
             ColumnLayout {
-                anchors.fill: parent
+                id: cameraStepLayout
+                width: parent.width
+                height: implicitHeight
                 spacing: root.cardGap
 
                 RowLayout {
@@ -931,10 +1074,15 @@ Item {
         id: gpioStepComponent
 
         Item {
-            anchors.fill: parent
+            id: gpioStepRoot
+            width: parent ? parent.width : 0
+            implicitHeight: gpioStepLayout.implicitHeight
+            height: implicitHeight
 
             ColumnLayout {
-                anchors.fill: parent
+                id: gpioStepLayout
+                width: parent.width
+                height: implicitHeight
                 spacing: root.cardGap
 
                 RowLayout {
@@ -1095,10 +1243,15 @@ Item {
         id: finishStepComponent
 
         Item {
-            anchors.fill: parent
+            id: finishStepRoot
+            width: parent ? parent.width : 0
+            implicitHeight: finishStepLayout.implicitHeight
+            height: implicitHeight
 
             ColumnLayout {
-                anchors.fill: parent
+                id: finishStepLayout
+                width: parent.width
+                height: implicitHeight
                 spacing: root.cardGap
 
                 InfoCard {
@@ -1290,13 +1443,28 @@ Item {
                     Layout.fillWidth: true
                 }
 
-                Item {
+                Flickable {
+                    id: setupBodyFlickable
+                    objectName: "setupBodyFlickable"
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     clip: true
+                    contentWidth: width
+                    contentHeight: Math.max(height, setupBodyLoader.height + 84)
+                    flickableDirection: Flickable.VerticalFlick
+                    boundsBehavior: Flickable.StopAtBounds
+                    interactive: contentHeight > height
+
+                    ScrollBar.vertical: ScrollBar {
+                        policy: setupBodyFlickable.contentHeight > setupBodyFlickable.height
+                                ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff
+                    }
 
                     Loader {
-                        anchors.fill: parent
+                        id: setupBodyLoader
+                        objectName: "setupBodyLoader"
+                        width: setupBodyFlickable.width
+                        height: item ? Math.max(1, item.implicitHeight) : 1
                         sourceComponent: {
                             switch (root.controller.setupCurrentStep) {
                             case "wifi":
@@ -1327,6 +1495,7 @@ Item {
                 text: "BACK"
                 enabled: root.stepIndex(root.controller.setupCurrentStep) > 0
                 implicitWidth: 164
+                navigationFocused: root.navigationIndex === root.backNavigationIndex
                 onClicked: root.controller.goToSetupPreviousStep()
             }
 
@@ -1340,8 +1509,21 @@ Item {
                 text: root.controller.setupCurrentStep === "finish" ? "READY" : "NEXT"
                 enabled: root.canAdvance() && root.controller.setupCurrentStep !== "finish"
                 implicitWidth: 164
+                navigationFocused: root.navigationIndex === root.nextNavigationIndex
                 onClicked: root.controller.goToSetupNextStep()
             }
+        }
+    }
+
+    Timer {
+        id: focusVisibilityTimer
+        interval: 100
+        repeat: true
+        running: true
+        onTriggered: {
+            var activeItem = root.Window.window ? root.Window.window.activeFocusItem : null
+            if (activeItem)
+                FocusScrollHelper.ensureVisible(setupBodyFlickable, activeItem, 22)
         }
     }
 }

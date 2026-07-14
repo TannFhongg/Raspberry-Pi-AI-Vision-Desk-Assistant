@@ -7,6 +7,7 @@ import json
 import threading
 from pathlib import Path
 from typing import Any, Callable
+from uuid import uuid4
 
 from system.storage import atomic_write_json, quarantine_file
 
@@ -153,7 +154,10 @@ class ResultHistoryStore:
         ui_mode, internal_mode = self.resolve_mode_pair(selected_mode, selected_mode_internal)
         history_entries = self.load_entries()
         created_at = self.timestamp_provider()
-        entry_id = str(int(datetime.now().timestamp() * 1000))
+        # Two captures can complete in the same millisecond. A UUID avoids
+        # collisions that otherwise make the History UI select or delete the
+        # wrong saved result.
+        entry_id = uuid4().hex
         history_entry = {
             "id": entry_id,
             "created_at": created_at,

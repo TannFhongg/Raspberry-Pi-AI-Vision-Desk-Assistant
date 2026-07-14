@@ -51,6 +51,25 @@ ai:
 vision:
   screen_optimization: auto
 
+capture_review:
+  default_profile: document
+  quality:
+    sharpness_warning_variance: 80.0
+    brightness_dark_mean: 55.0
+    brightness_bright_mean: 220.0
+    glare_bright_ratio: 0.12
+    minimum_crop_area_ratio: 0.035
+  profiles:
+    document:
+      perspective_default: true
+      auto_enhance_default: true
+    computer_screen:
+      perspective_default: false
+      auto_enhance_default: false
+    diagram:
+      perspective_default: false
+      auto_enhance_default: false
+
 startup:
   behavior: kiosk
 

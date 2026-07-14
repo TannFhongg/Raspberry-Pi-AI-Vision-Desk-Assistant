@@ -69,10 +69,19 @@ class CachedImageStore:
 class VisionDeskImageProvider(QQuickImageProvider):
     """Serve cached images to QML via `image://visiondesk/...` URLs."""
 
-    def __init__(self, *, camera_store: CachedImageStore, result_store: CachedImageStore) -> None:
+    def __init__(
+        self,
+        *,
+        camera_store: CachedImageStore,
+        result_store: CachedImageStore,
+        review_source_store: CachedImageStore | None = None,
+        review_preview_store: CachedImageStore | None = None,
+    ) -> None:
         super().__init__(QQuickImageProvider.Image)
         self._camera_store = camera_store
         self._result_store = result_store
+        self._review_source_store = review_source_store or CachedImageStore()
+        self._review_preview_store = review_preview_store or CachedImageStore()
 
     def requestImage(self, image_id: str, size: QSize, requested_size: QSize) -> QImage:
         del requested_size
@@ -81,6 +90,10 @@ class VisionDeskImageProvider(QQuickImageProvider):
             image = self._camera_store.image()
         elif normalized_id == "result/latest":
             image = self._result_store.image()
+        elif normalized_id == "review/source":
+            image = self._review_source_store.image()
+        elif normalized_id == "review/confirmed":
+            image = self._review_preview_store.image()
         else:
             image = QImage()
         if size is not None and not image.isNull():

@@ -157,6 +157,8 @@ class SetupController(QObject):
 
     @Property(str, notify=stateChanged)
     def deviceChecksStatus(self) -> str:
+        if self.deviceChecksBusy:
+            return "running"
         welcome = self._state.get("steps", {}).get("welcome", {})
         return str(welcome.get("status", "idle"))
 
@@ -301,7 +303,32 @@ class SetupController(QObject):
 
     @Slot()
     def runDeviceChecks(self) -> None:
-        self._run_in_thread("device_checks", self._device_checks_worker, "setup-device-checks")
+        """Run one device-check operation without manufacturing interim results."""
+        store = self._begin_action("device_checks")
+        if store is None:
+            return
+        # A new run replaces any previous result set.  The QML screen uses the
+        # active action state for one compact progress indicator, never a grid
+        # of speculative "pending" cards.
+        store.write_state(
+            {
+                "current_step": "welcome",
+                "steps": {
+                    "welcome": {
+                        "status": "running",
+                        "message": "Running device checks…",
+                        "checks": [],
+                    }
+                },
+            }
+        )
+        self.refresh_state()
+        worker = threading.Thread(
+            target=self._wrap_worker("device_checks", store, self._device_checks_worker),
+            daemon=True,
+            name="setup-device-checks",
+        )
+        worker.start()
 
     @Slot()
     def goToNextStep(self) -> None:
@@ -487,7 +514,23 @@ class SetupController(QObject):
         QTimer.singleShot(300, self.startPhoneSetup)
 
     def _device_checks_worker(self, store: _OperationScopedSetupStateStore) -> None:
-        checks = run_setup_device_checks()
+        try:
+            checks = run_setup_device_checks()
+        except Exception:
+            LOGGER.exception("Device checks could not be completed")
+            store.write_state(
+                {
+                    "current_step": "welcome",
+                    "steps": {
+                        "welcome": {
+                            "status": "fail",
+                            "message": "Device checks could not be completed. Try again.",
+                            "checks": [],
+                        }
+                    },
+                }
+            )
+            return
         store.write_device_checks([check.__dict__ for check in checks])
 
     def _scan_wifi_worker(self, store: _OperationScopedSetupStateStore) -> None:

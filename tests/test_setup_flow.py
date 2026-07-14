@@ -94,6 +94,8 @@ def test_setup_state_defaults_to_welcome_when_authoritative_file_is_missing(tmp_
 
     assert state["setup_complete"] is False
     assert state["current_step"] == "welcome"
+    assert state["steps"]["welcome"]["status"] == "idle"
+    assert state["steps"]["welcome"]["checks"] == []
     runtime.shutdown()
 
 
@@ -386,6 +388,81 @@ def test_setup_controller_scan_wifi_updates_model(qapp, qtbot, tmp_path, monkeyp
         timeout=3000,
     )
     assert "Found 2 Wi-Fi networks" in controller.wifiMessage
+    controller.close()
+    runtime.shutdown()
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 is not installed")
+def test_device_checks_start_empty_then_publish_only_completed_results(qapp, qtbot, tmp_path, monkeypatch) -> None:
+    """The Welcome screen must not invent per-check rows before checks finish."""
+    runtime = build_runtime(tmp_path)
+    controller = SetupController(runtime)
+    started = threading.Event()
+    release = threading.Event()
+    calls: list[str] = []
+
+    def run_checks():
+        calls.append("run")
+        started.set()
+        assert release.wait(timeout=2.0)
+        return [
+            SimpleNamespace(
+                name="config_access",
+                status="pass",
+                message="Configuration is readable.",
+                required=True,
+            ),
+            SimpleNamespace(
+                name="camera_backend",
+                status="fail",
+                message="Camera is unavailable.",
+                required=True,
+            ),
+        ]
+
+    monkeypatch.setattr("qt_app.setup_controller.run_setup_device_checks", run_checks)
+
+    assert controller.deviceChecksModel.count == 0
+    assert controller.deviceChecksStatus == "idle"
+
+    controller.runDeviceChecks()
+    qtbot.waitUntil(started.is_set, timeout=1000)
+    assert controller.deviceChecksBusy is True
+    assert controller.deviceChecksStatus == "running"
+    assert controller.deviceChecksModel.count == 0
+
+    # The controller drops duplicate submissions while the active run owns the state.
+    controller.runDeviceChecks()
+    assert calls == ["run"]
+
+    release.set()
+    qtbot.waitUntil(
+        lambda: not controller.deviceChecksBusy and controller.deviceChecksModel.count == 2,
+        timeout=3000,
+    )
+    assert controller.deviceChecksStatus == "fail"
+    assert controller.deviceChecksModel.get(0)["name"] == "config_access"
+    assert controller.deviceChecksModel.get(1)["name"] == "camera_backend"
+    controller.close()
+    runtime.shutdown()
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 is not installed")
+def test_device_check_failure_shows_one_retryable_error_without_result_rows(qapp, qtbot, tmp_path, monkeypatch) -> None:
+    runtime = build_runtime(tmp_path)
+    controller = SetupController(runtime)
+
+    def fail_checks():
+        raise RuntimeError("private diagnostic detail")
+
+    monkeypatch.setattr("qt_app.setup_controller.run_setup_device_checks", fail_checks)
+
+    controller.runDeviceChecks()
+
+    qtbot.waitUntil(lambda: not controller.deviceChecksBusy, timeout=3000)
+    assert controller.deviceChecksStatus == "fail"
+    assert controller.deviceChecksModel.count == 0
+    assert controller.deviceChecksMessage == "Device checks could not be completed. Try again."
     controller.close()
     runtime.shutdown()
 

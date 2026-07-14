@@ -470,6 +470,11 @@ def processing_progress_for_message(pipeline_message: str) -> tuple[str, int, st
             1,
             PIPELINE_PROGRESS_DETAILS["ANALYZING"],
         ),
+        "Sending confirmed image to OpenAI Vision...": (
+            "ANALYZING",
+            1,
+            PIPELINE_PROGRESS_DETAILS["ANALYZING"],
+        ),
     }
     return message_lookup.get(
         normalized_message,
@@ -720,6 +725,37 @@ def normalize_metric_state(value: Any) -> str:
     return "unavailable"
 
 
+def resolve_global_status(
+    *,
+    ui_state: dict[str, Any],
+    setup_complete: bool,
+    cpu_metric: dict[str, Any],
+    ram_metric: dict[str, Any],
+    wifi_metric: dict[str, Any],
+    camera_metric: dict[str, Any],
+) -> dict[str, str]:
+    """Choose the one safe, actionable status allowed in the product header."""
+    if cpu_metric.get("state") == "error" or ram_metric.get("state") == "error":
+        return {"text": "Device needs attention", "tone": "error"}
+    if camera_metric.get("state") == "error":
+        return {"text": "Camera unavailable", "tone": "error"}
+    if str(wifi_metric.get("value", "")).upper() == "OFFLINE" or wifi_metric.get("state") == "error":
+        return {"text": "Wi-Fi unavailable", "tone": "warning"}
+    error_code = str(ui_state.get("error_code", "")).upper()
+    if error_code.startswith("AI_") or error_code.startswith("OPENAI_"):
+        return {"text": "AI service unavailable", "tone": "warning"}
+    if not setup_complete:
+        return {"text": "Setup required", "tone": "warning"}
+    if bool(ui_state.get("update_available", False)):
+        return {"text": "Update available", "tone": "info"}
+    application_state = str(ui_state.get("application_state", "")).upper()
+    if application_state in {"CONNECTING_WIFI", "WIFI_CONNECTING"}:
+        return {"text": "Connecting to Wi-Fi", "tone": "info"}
+    if application_state in {"STARTING", "CAMERA_PREPARING", "CONNECTING"}:
+        return {"text": "Starting", "tone": "info"}
+    return {"text": "Ready", "tone": "success"}
+
+
 @dataclass(slots=True)
 class HealthSummaryBuilder:
     """Build the shared live health/header payload for the native UI."""
@@ -791,6 +827,14 @@ class HealthSummaryBuilder:
             "camera": camera_metric,
             "camera_preview": self.build_camera_preview_summary(render_screen=render_screen),
             "camera_analysis": self.build_camera_analysis_summary(render_screen=render_screen),
+            "global_status": resolve_global_status(
+                ui_state=ui_state,
+                setup_complete=self.setup_is_complete(),
+                cpu_metric=cpu_metric,
+                ram_metric=ram_metric,
+                wifi_metric=wifi_metric,
+                camera_metric=camera_metric,
+            ),
         }
 
     def build_cpu_health_metric(self, snapshot: dict[str, Any] | None) -> dict[str, Any]:

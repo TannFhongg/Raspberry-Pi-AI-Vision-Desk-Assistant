@@ -11,21 +11,23 @@ Item {
     property int navigationIndex: 1
 
     function handleNavigation(action) {
-        if (action === "up" || action === "down") {
-            root.navigationIndex = root.navigationIndex === 0 ? 1 : 0
+        if (action === "up") {
+            root.navigationIndex = Math.max(0, root.navigationIndex - 1)
+            return true
+        }
+        if (action === "down") {
+            root.navigationIndex = Math.min(4, root.navigationIndex + 1)
             return true
         }
         if (action === "select") {
-            if (root.navigationIndex === 0)
-                root.controller.goBack()
-            else
-                root.controller.capture()
+            if (root.navigationIndex === 0) root.controller.goBack()
+            else if (root.navigationIndex === 1) root.controller.capture()
+            else if (root.navigationIndex === 2) root.controller.captureReview.zoomPreviewIn()
+            else if (root.navigationIndex === 3) root.controller.captureReview.zoomPreviewOut()
+            else root.controller.captureReview.resetPreviewZoom()
             return true
         }
-        if (action === "back") {
-            root.controller.goBack()
-            return true
-        }
+        if (action === "back") { root.controller.goBack(); return true }
         return false
     }
 
@@ -35,239 +37,131 @@ Item {
 
         RowLayout {
             Layout.fillWidth: true
-            spacing: 12
-
             ColumnLayout {
                 Layout.fillWidth: true
                 spacing: 2
-
-                Text {
-                    text: "Camera"
-                    color: root.theme.text
-                    font.family: root.theme.displayFont
-                    font.pixelSize: 34
-                    font.weight: root.theme.weightHeavy
-                    renderType: Text.NativeRendering
-                }
-
-                Text {
-                    text: "Frame your subject, then capture when the preview is clear."
-                    color: root.theme.textMuted
-                    font.family: root.theme.bodyFont
-                    font.pixelSize: 15
-                    font.weight: root.theme.weightRegular
-                    renderType: Text.NativeRendering
-                }
+                Text { text: "Camera preview"; color: root.theme.text; font.family: root.theme.displayFont; font.pixelSize: 34; font.weight: root.theme.weightHeavy }
+                Text { text: "Task: " + root.controller.selectedModeLabel + "  •  Frame the area, then capture for review."; color: root.theme.textMuted; font.family: root.theme.bodyFont; font.pixelSize: 15; Layout.fillWidth: true; elide: Text.ElideRight }
             }
-
-            StatusChip {
-                theme: root.theme
-                label: "Mode"
-                value: root.controller.selectedModeLabel
-                tone: "info"
-            }
+            StatusChip { theme: root.theme; label: root.controller.cameraPreviewAvailable ? "LIVE" : "PREVIEW"; value: root.controller.cameraPreviewAvailable ? "Camera ready" : "Starting"; tone: root.controller.cameraPreviewAvailable ? "success" : "warning" }
         }
 
         RowLayout {
             Layout.fillWidth: true
-            Layout.preferredHeight: 480
-            Layout.maximumHeight: 480
             spacing: 12
 
             ContentCard {
                 theme: root.theme
-                padding: 14
+                padding: 12
                 Layout.fillWidth: true
-                Layout.fillHeight: true
-                Layout.minimumWidth: 0
+                Layout.preferredHeight: 480
 
-                ColumnLayout {
+                Rectangle {
+                    id: previewFrame
                     anchors.fill: parent
-                    spacing: 10
+                    radius: root.theme.radiusControl
+                    color: "#17202d"
+                    clip: true
 
-                    RowLayout {
-                        Layout.fillWidth: true
+                    Image {
+                        id: previewImage
+                        anchors.fill: parent
+                        source: root.controller.cameraPreviewRevision > 0 ? "image://visiondesk/camera/live?seq=" + root.controller.cameraPreviewRevision : ""
+                        fillMode: Image.PreserveAspectFit
+                        cache: false
+                        smooth: true
+                        sourceClipRect: Qt.rect(
+                            root.controller.captureReview.previewZoomX * sourceSize.width,
+                            root.controller.captureReview.previewZoomY * sourceSize.height,
+                            root.controller.captureReview.previewZoomWidth * sourceSize.width,
+                            root.controller.captureReview.previewZoomHeight * sourceSize.height
+                        )
+                        visible: root.controller.cameraPreviewAvailable
+                    }
 
-                        Text {
-                            text: "Live preview"
-                            color: root.theme.text
-                            font.family: root.theme.displayFont
-                            font.pixelSize: 22
-                            font.weight: root.theme.weightHeavy
-                            Layout.fillWidth: true
-                            renderType: Text.NativeRendering
-                        }
-
-                        StatusChip {
-                            theme: root.theme
-                            label: root.controller.cameraPreviewAvailable ? "Camera" : "Camera"
-                            value: root.controller.cameraPreviewAvailable ? "Ready" : "Waiting"
-                            tone: root.controller.cameraPreviewAvailable ? "success" : "warning"
-                        }
+                    CameraGuideOverlay {
+                        anchors.fill: parent
+                        theme: root.theme
+                        profile: root.controller.captureReview.captureProfile
+                        zoomActive: root.controller.captureReview.previewZoomActive
                     }
 
                     Rectangle {
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        radius: root.theme.radiusControl
-                        color: root.theme.surfaceMuted
-                        clip: true
+                        anchors.left: parent.left
+                        anchors.top: parent.top
+                        anchors.margins: 12
+                        width: liveLabel.implicitWidth + 22
+                        height: 32
+                        radius: root.theme.radiusPill
+                        color: root.controller.cameraPreviewAvailable ? Qt.rgba(0.12, 0.55, 0.28, 0.86) : Qt.rgba(0.1, 0.12, 0.18, 0.82)
+                        Text { id: liveLabel; anchors.centerIn: parent; text: root.controller.cameraPreviewAvailable ? "● LIVE" : "● PREVIEW"; color: "white"; font.family: root.theme.bodyFont; font.pixelSize: 13; font.weight: root.theme.weightHeavy }
+                    }
 
-                        Image {
-                            anchors.fill: parent
-                            fillMode: Image.PreserveAspectFit
-                            cache: false
-                            smooth: true
-                            visible: root.controller.cameraPreviewAvailable
-                            source: root.controller.cameraPreviewRevision > 0
-                                    ? "image://visiondesk/camera/live?seq=" + root.controller.cameraPreviewRevision
-                                    : ""
-                        }
+                    ColumnLayout {
+                        anchors.centerIn: parent
+                        width: parent.width * 0.62
+                        visible: !root.controller.cameraPreviewAvailable
+                        Text { text: root.controller.cameraPreviewTitle || "Camera unavailable"; color: "white"; font.family: root.theme.displayFont; font.pixelSize: 28; font.weight: root.theme.weightHeavy; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap; Layout.fillWidth: true }
+                        Text { text: root.controller.cameraPreviewMessage; color: "#E4E7EC"; font.family: root.theme.bodyFont; font.pixelSize: 16; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap; Layout.fillWidth: true }
+                    }
 
-                        ColumnLayout {
-                            anchors.centerIn: parent
-                            width: parent.width * 0.66
-                            visible: !root.controller.cameraPreviewAvailable
-                            spacing: 8
-
-                            Rectangle {
-                                Layout.alignment: Qt.AlignHCenter
-                                Layout.preferredWidth: 54
-                                Layout.preferredHeight: 42
-                                radius: 14
-                                color: root.theme.primarySoft
-
-                                Text {
-                                    anchors.centerIn: parent
-                                    text: "CAM"
-                                    color: root.theme.primaryStrong
-                                    font.family: root.theme.displayFont
-                                    font.pixelSize: 14
-                                    font.weight: root.theme.weightHeavy
-                                }
-                            }
-
-                            Text {
-                                text: root.controller.cameraPreviewTitle
-                                color: root.theme.text
-                                font.family: root.theme.displayFont
-                                font.pixelSize: 28
-                                font.weight: root.theme.weightHeavy
-                                horizontalAlignment: Text.AlignHCenter
-                                Layout.fillWidth: true
-                                wrapMode: Text.WordWrap
-                            }
-
-                            Text {
-                                text: root.controller.cameraPreviewMessage
-                                color: root.theme.textMuted
-                                font.family: root.theme.bodyFont
-                                font.pixelSize: 16
-                                horizontalAlignment: Text.AlignHCenter
-                                Layout.fillWidth: true
-                                wrapMode: Text.WordWrap
-                            }
+                    MouseArea {
+                        anchors.fill: parent
+                        enabled: root.controller.cameraPreviewAvailable && root.controller.captureReview.previewZoomActive
+                        onPositionChanged: function(mouse) {
+                            var width = root.controller.captureReview.previewZoomWidth
+                            var height = root.controller.captureReview.previewZoomHeight
+                            root.controller.captureReview.setPreviewZoomRegion(
+                                Math.max(0, Math.min(1 - width, mouse.x / previewFrame.width - width / 2)),
+                                Math.max(0, Math.min(1 - height, mouse.y / previewFrame.height - height / 2)),
+                                width, height)
                         }
                     }
                 }
             }
 
-            ColumnLayout {
+            ContentCard {
+                theme: root.theme
+                padding: 16
                 Layout.preferredWidth: 300
                 Layout.minimumWidth: 300
                 Layout.maximumWidth: 300
-                Layout.fillHeight: true
-                spacing: 12
+                Layout.preferredHeight: 480
 
-                StatusCard {
-                    theme: root.theme
-                    padding: 16
-                    fillColor: root.theme.primarySoft
-                    borderColor: "#C9DCFF"
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 118
-                    title: "Current mode"
-                    eyebrow: "Capture"
-                    value: root.controller.selectedModeLabel
-                    message: "The selected mode controls the AI workflow after capture."
-                    tone: "info"
-                }
-
-                ContentCard {
-                    theme: root.theme
-                    padding: 14
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-
-                    ColumnLayout {
-                        anchors.fill: parent
-                        spacing: 10
-
-                        Text {
-                            text: "Camera status"
-                            color: root.theme.text
-                            font.family: root.theme.displayFont
-                            font.pixelSize: 21
-                            font.weight: root.theme.weightHeavy
+                ColumnLayout {
+                    anchors.fill: parent
+                    spacing: 10
+                    Text { text: "Capture profile"; color: root.theme.text; font.family: root.theme.displayFont; font.pixelSize: 21; font.weight: root.theme.weightHeavy }
+                    Repeater {
+                        model: root.controller.captureReview.captureProfilesModel.count
+                        delegate: SecondaryButton {
+                            required property int index
+                            property var itemData: root.controller.captureReview.captureProfilesModel.get(index)
+                            theme: root.theme
+                            text: itemData.label || "Profile"
                             Layout.fillWidth: true
+                            tone: root.controller.captureReview.captureProfile === (itemData.id || "") ? "primary" : "neutral"
+                            onClicked: root.controller.captureReview.setCaptureProfile(itemData.id || "document")
                         }
-
-                        GridLayout {
-                            columns: 1
-                            columnSpacing: 8
-                            rowSpacing: 8
-                            Layout.fillWidth: true
-
-                            Repeater {
-                                model: root.controller.cameraAnalysisModel.count
-
-                                delegate: StatusCard {
-                                    required property int index
-                                    property var itemData: root.controller.cameraAnalysisModel.get(index)
-                                    theme: root.theme
-                                    padding: 11
-                                    title: itemData.key || "Camera"
-                                    eyebrow: itemData.key || "Camera"
-                                    value: itemData.label || "Waiting"
-                                    message: ""
-                                    tone: itemData.status || "info"
-                                    Layout.fillWidth: true
-                                    Layout.preferredHeight: 72
-                                }
-                            }
-                        }
-
-                        Item { Layout.fillHeight: true }
                     }
+                    Text { text: "Focus: " + root.controller.captureReview.autofocusSupportMessage; color: root.theme.textMuted; font.family: root.theme.bodyFont; font.pixelSize: 14; wrapMode: Text.WordWrap; Layout.fillWidth: true }
+                    Text { text: "Exposure: " + root.controller.captureReview.exposureSupportMessage; color: root.theme.textMuted; font.family: root.theme.bodyFont; font.pixelSize: 14; wrapMode: Text.WordWrap; Layout.fillWidth: true }
+                    Item { Layout.fillHeight: true }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        SecondaryButton { theme: root.theme; text: "ZOOM +"; implicitWidth: 132; navigationFocused: root.navigationIndex === 2; onClicked: root.controller.captureReview.zoomPreviewIn() }
+                        SecondaryButton { theme: root.theme; text: "ZOOM −"; implicitWidth: 132; navigationFocused: root.navigationIndex === 3; onClicked: root.controller.captureReview.zoomPreviewOut() }
+                    }
+                    SecondaryButton { theme: root.theme; text: "RESET ZOOM"; Layout.fillWidth: true; navigationFocused: root.navigationIndex === 4; onClicked: root.controller.captureReview.resetPreviewZoom() }
                 }
             }
         }
 
         RowLayout {
             Layout.fillWidth: true
-            spacing: 12
-
-            SecondaryButton {
-                theme: root.theme
-                text: "BACK"
-                navigationFocused: root.navigationIndex === 0
-                onClicked: root.controller.goBack()
-            }
-
-            NavigationHint {
-                theme: root.theme
-                text: "UP/DOWN Choose  ·  SELECT Confirm  ·  BACK Return"
-                Layout.fillWidth: true
-            }
-
-            PrimaryButton {
-                theme: root.theme
-                tone: "success"
-                text: "CAPTURE"
-                enabled: !root.controller.applicationState.startsWith("CAPTUR")
-                navigationFocused: root.navigationIndex === 1
-                onClicked: root.controller.capture()
-            }
+            SecondaryButton { theme: root.theme; text: "BACK"; navigationFocused: root.navigationIndex === 0; onClicked: root.controller.goBack() }
+            NavigationHint { theme: root.theme; text: "UP/DOWN Choose  ·  SELECT Confirm  ·  BACK Return"; Layout.fillWidth: true }
+            PrimaryButton { theme: root.theme; tone: "success"; text: root.controller.captureReview.state === "capturing" ? "CAPTURING…" : "CAPTURE"; enabled: root.controller.cameraPreviewAvailable && root.controller.captureReview.state !== "capturing"; navigationFocused: root.navigationIndex === 1; onClicked: root.controller.capture() }
         }
     }
 }

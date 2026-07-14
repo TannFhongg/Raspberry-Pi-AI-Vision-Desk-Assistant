@@ -15,12 +15,15 @@ from pipeline import (
     PipelineResult,
     build_capture_session_paths,
     run_analyze,
+    run_analyze_confirmed,
+    run_capture,
     run_capture_analyze,
     save_latest_result,
 )
 from qt_app.image_provider import CachedImageStore
 from qt_app.mock_backend import build_mock_pipeline_result, build_mock_preview_bytes
 from qt_app.models import DictListModel
+from qt_app.pipeline_review_worker import ReviewCaptureWorker
 from qt_app.runtime import VisionDeskRuntime
 from system.error_mapping import redact_technical_detail
 from system.offline_retry import OfflineRetryQueueError, OfflineRetryQueueFullError
@@ -48,11 +51,13 @@ class _PipelineWorker(QObject):
         *,
         selected_mode: str,
         selected_mode_internal: str,
+        confirmed_path: str | Path | None = None,
     ) -> None:
         super().__init__()
         self.runtime = runtime
         self.selected_mode = selected_mode
         self.selected_mode_internal = selected_mode_internal
+        self.confirmed_path = Path(confirmed_path) if confirmed_path else None
         self._terminal_emitted = False
 
     @Slot()
@@ -62,7 +67,9 @@ class _PipelineWorker(QObject):
         processed_path = None
         payload: dict[str, Any] | None = None
         try:
-            if self.runtime.mock_hardware:
+            if self.confirmed_path is not None:
+                result, preview_bytes = self._run_confirmed_submission()
+            elif self.runtime.mock_hardware:
                 for message in (
                     "Capturing image...",
                     "Preprocessing image...",
@@ -128,6 +135,34 @@ class _PipelineWorker(QObject):
             if payload is None:
                 payload = self._unexpected_error_payload(RuntimeError("Pipeline did not produce an outcome"))
             self._emit_terminal(payload)
+
+    def _run_confirmed_submission(self) -> tuple[PipelineResult, bytes]:
+        """Analyze only the image explicitly confirmed in the review screen."""
+        if self.confirmed_path is None:
+            raise PipelineError("No confirmed image is available.")
+        if self.runtime.mock_hardware:
+            self.progress.emit("Sending confirmed image to OpenAI Vision...")
+            time.sleep(0.08)
+            mock = build_mock_pipeline_result(self.selected_mode_internal)
+            result = PipelineResult(
+                captured_path=None,
+                processed_path=self.confirmed_path,
+                answer=mock.answer,
+                mode=self.selected_mode_internal,
+                camera_backend_used="mock-camera",
+                camera_resolution=mock.camera_resolution,
+                status="success",
+                warnings=mock.warnings,
+                model_used=mock.model_used,
+                duration_seconds=mock.duration_seconds,
+            )
+        else:
+            result = run_analyze_confirmed(
+                self.selected_mode_internal,
+                self.confirmed_path,
+                status_callback=self.progress.emit,
+            )
+        return result, self._read_preview_bytes(self.confirmed_path)
 
     def _retry_or_error_payload(self, exc: PipelineError) -> dict[str, Any]:
         queue = self.runtime.offline_retry_queue
@@ -271,6 +306,7 @@ class PipelineController(QObject):
     busyChanged = Signal()
     progressChanged = Signal()
     payloadReady = Signal(object)
+    reviewCaptureReady = Signal(object)
 
     def __init__(
         self,
@@ -356,6 +392,78 @@ class PipelineController(QObject):
             self.runtime,
             selected_mode=selected_mode,
             selected_mode_internal=selected_mode_internal,
+        )
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.progress.connect(self._on_worker_progress)
+        worker.finished.connect(self._on_worker_finished)
+        worker.finished.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(self._clear_worker_refs)
+        self._thread = thread
+        self._worker = worker
+        thread.start()
+        return True
+
+    def start_capture_for_review(self) -> bool:
+        """Capture a frame for review. This path cannot call the AI service."""
+        if self._busy or self._resetting:
+            return False
+        if not self.runtime.live_preview.pause(timeout_seconds=PREVIEW_RELEASE_TIMEOUT_SECONDS):
+            self._last_start_error = "Camera is still busy. Wait a moment and try capture again."
+            self.runtime.live_preview.resume()
+            self._set_progress(
+                progress_state="ERROR",
+                progress_message=self._last_start_error,
+                progress_error_step=0,
+            )
+            return False
+        self._last_start_error = ""
+        self._terminal_received = False
+        self._set_busy(True)
+        self._set_progress(
+            progress_state="CAPTURING",
+            progress_message="Capturing image...",
+            progress_error_step=-1,
+        )
+        thread = QThread(self)
+        worker = ReviewCaptureWorker(self.runtime)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.progress.connect(self._on_worker_progress)
+        worker.finished.connect(self._on_review_capture_finished)
+        worker.finished.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(self._clear_worker_refs)
+        self._thread = thread
+        self._worker = worker
+        thread.start()
+        return True
+
+    def start_submit_confirmed(self, *, selected_mode: str, selected_mode_internal: str, confirmed_path: str | Path) -> bool:
+        """Submit a review-rendered image once; no capture or second preprocess occurs."""
+        if self._busy or self._resetting:
+            return False
+        confirmed = Path(confirmed_path)
+        if not confirmed.is_file():
+            self._last_start_error = "The confirmed image is no longer available. Retake the image."
+            return False
+        self._last_start_error = ""
+        self._terminal_received = False
+        self._set_busy(True)
+        self._set_progress(
+            progress_state="ANALYZING",
+            progress_message="Sending confirmed image to OpenAI Vision...",
+            progress_error_step=-1,
+        )
+        thread = QThread(self)
+        worker = _PipelineWorker(
+            self.runtime,
+            selected_mode=selected_mode,
+            selected_mode_internal=selected_mode_internal,
+            confirmed_path=confirmed,
         )
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
@@ -488,6 +596,26 @@ class PipelineController(QObject):
             self.runtime.live_preview.resume()
         self._set_busy(False)
         self.payloadReady.emit(payload)
+
+    def _on_review_capture_finished(self, payload: dict[str, Any]) -> None:
+        """Finish the pre-review phase without resuming a camera under review."""
+        kind = payload.get("kind")
+        if kind == "captured":
+            self._set_progress(
+                progress_state="DONE",
+                progress_message="Image captured. Review it before analysis.",
+                progress_error_step=-1,
+            )
+        else:
+            self._set_progress(
+                progress_state="ERROR",
+                progress_message=payload.get("friendly_error", "Capture failed"),
+                progress_error_step=0,
+                current_step=0,
+            )
+            self.runtime.live_preview.resume()
+        self._set_busy(False)
+        self.reviewCaptureReady.emit(payload)
 
     def _set_busy(self, value: bool) -> None:
         if value != self._busy:

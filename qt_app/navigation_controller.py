@@ -9,7 +9,10 @@ class NavigationController:
     """Resolve screen transitions for the Qt kiosk workflow."""
 
     valid_screens = frozenset(
-        {"setup", "home", "camera", "processing", "result", "error", "history", "history_detail"}
+        {
+            "setup", "home", "camera", "review", "processing", "result", "error",
+            "history", "history_detail", "settings", "device_health",
+        }
     )
 
     @classmethod

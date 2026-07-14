@@ -15,7 +15,7 @@ Item {
     property bool pendingRemoveWifiProfile: false
     property int navigationIndex: 0
 
-    readonly property int navigationItemCount: root.controller.modeCardsModel.count + 2
+    readonly property int navigationItemCount: root.controller.modeCardsModel.count + 3
 
     function moveNavigation(delta) {
         if (root.navigationItemCount <= 0)
@@ -45,8 +45,10 @@ Item {
                 root.controller.selectMode(mode.id || mode.mode_id || "")
             } else if (root.navigationIndex === modeCount) {
                 root.controller.openHistory()
-            } else {
+            } else if (root.navigationIndex === modeCount + 1) {
                 root.openDeviceActionsPreview()
+            } else {
+                root.controller.openSettings()
             }
             return true
         }
@@ -187,7 +189,7 @@ Item {
             SecondaryButton {
                 theme: root.theme
                 text: "RECENT RESULTS"
-                implicitWidth: 248
+                implicitWidth: 210
                 navigationFocused: root.navigationIndex === root.controller.modeCardsModel.count
                 onClicked: root.controller.openHistory()
             }
@@ -202,10 +204,18 @@ Item {
                 theme: root.theme
                 tone: "danger"
                 text: "DEVICE ACTIONS"
-                implicitWidth: 248
+                implicitWidth: 210
                 enabled: !root.controller.deviceActionsBusy
                 navigationFocused: root.navigationIndex === root.controller.modeCardsModel.count + 1
                 onClicked: deviceActionsDialog.open()
+            }
+
+            SecondaryButton {
+                theme: root.theme
+                text: "SETTINGS"
+                implicitWidth: 156
+                navigationFocused: root.navigationIndex === root.controller.modeCardsModel.count + 2
+                onClicked: root.controller.openSettings()
             }
         }
     }
