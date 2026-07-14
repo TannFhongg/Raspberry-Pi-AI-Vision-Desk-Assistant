@@ -18,6 +18,8 @@ camera:
   max_dimension: 1600
 
 display:
+  # Matches the 1200x800 QML design canvas for windowed development. The kiosk
+  # runs fullscreen at the connected 11.6-inch HDMI panel's native resolution.
   size:
     width: 1200
     height: 800
@@ -41,7 +43,7 @@ led:
   active_high: true
 
 ai:
-  default_mode: document_reader
+  default_mode: read_text
 
 vision:
   screen_optimization: auto

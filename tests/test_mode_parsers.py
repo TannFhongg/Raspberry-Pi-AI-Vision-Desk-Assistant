@@ -27,7 +27,7 @@ class ModeParserCompatibilityTests(unittest.TestCase):
                 max_dimension=1600,
             ),
             button=SimpleNamespace(pin=17),
-            ai=SimpleNamespace(default_mode="document_reader"),
+            ai=SimpleNamespace(default_mode="read_text"),
             vision=SimpleNamespace(screen_optimization="auto"),
         )
 
@@ -35,16 +35,22 @@ class ModeParserCompatibilityTests(unittest.TestCase):
         parser = main.build_parser(self.settings)
         args = parser.parse_args(["--mode", "solve_problem"])
 
-        self.assertEqual(args.mode, "math_solver")
+        self.assertEqual(args.mode, "solve_problem")
 
     def test_openai_test_parser_accepts_legacy_mode_alias(self) -> None:
         parser = test_ai_vision.build_parser()
         args = parser.parse_args(["--image", "test_images/document.jpg", "--mode", "summarize_document"])
 
-        self.assertEqual(args.mode, "document_reader")
+        self.assertEqual(args.mode, "summarize_document")
 
     def test_gpio_parser_accepts_legacy_mode_alias(self) -> None:
         parser = test_gpio_button.build_parser(self.settings)
         args = parser.parse_args(["--mode", "analyze_image"])
 
-        self.assertEqual(args.mode, "general_vision")
+        self.assertEqual(args.mode, "analyze_image")
+
+    def test_parsers_migrate_previous_internal_mode_ids(self) -> None:
+        parser = main.build_parser(self.settings)
+        args = parser.parse_args(["--mode", "document_reader"])
+
+        self.assertEqual(args.mode, "read_text")

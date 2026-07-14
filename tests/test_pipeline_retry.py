@@ -48,7 +48,7 @@ class PipelineRetryMetadataTests(unittest.TestCase):
         self.assertTrue(error.exception.retryable)
         self.assertEqual(error.exception.captured_path, captured_path)
         self.assertEqual(error.exception.processed_path, processed_path)
-        self.assertEqual(error.exception.mode, "document_reader")
+        self.assertEqual(error.exception.mode, "read_text")
 
 
 def _raise_vision_error(error: VisionClientError):

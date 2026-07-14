@@ -91,5 +91,5 @@ class DeviceStatusHelperTests(unittest.TestCase):
         contents = result_path.read_text(encoding="utf-8")
 
         self.assertIn("Status: cleared", contents)
-        self.assertIn("Mode: math_solver", contents)
+        self.assertIn("Mode: solve_problem", contents)
         self.assertIn("Message: No result available", contents)

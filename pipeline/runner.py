@@ -21,7 +21,9 @@ _DEFAULT_PATHS = resolve_visiondesk_paths()
 DEFAULT_CAPTURED_PATH = _DEFAULT_PATHS.private_current_path / "captured.jpg"
 DEFAULT_PROCESSED_PATH = _DEFAULT_PATHS.private_current_path / "processed.jpg"
 DEFAULT_RESULT_PATH = _DEFAULT_PATHS.latest_result_path
-TEXT_HEAVY_MODES = frozenset({"document_reader", "math_solver", "meeting_assistant"})
+TEXT_HEAVY_MODES = frozenset(
+    {"read_text", "summarize_document", "professional_assistant", "solve_problem"}
+)
 VALID_SCREEN_OPTIMIZATIONS = ("auto", "on", "off")
 StatusCallback = Callable[[str], None]
 LOGGER = logging.getLogger(__name__)

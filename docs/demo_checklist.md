@@ -7,7 +7,8 @@
 - start the native app with `python -m qt_app.main --windowed --mock-hardware` for desktop demoing or use `visiondesk.service` on an installed device
 - confirm `data/latest_result.txt`, `data/result_history.json`, and `data/private/retry_queue.json` are writable in development
 - if demoing an installed appliance, confirm `/var/lib/visiondesk/latest_result.txt`, `/var/lib/visiondesk/result_history.json`, and `/var/lib/visiondesk/private/retry_queue.json` are writable
-- confirm the header metrics render and the main window loads at the expected display size
+- confirm the 1200x800 design canvas scales correctly in fullscreen on the 11.6-inch HDMI display
+- keep a USB keyboard and mouse connected: the production display has no touch input
 
 ## Core flow to show
 

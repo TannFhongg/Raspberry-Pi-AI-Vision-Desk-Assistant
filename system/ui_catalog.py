@@ -21,37 +21,37 @@ UI_MODE_OPTIONS = (
     {
         "id": "read_text",
         "name": "Read Text",
-        "description": "Hear printed text clearly",
+        "description": "Read printed text accurately",
         "button_label": "BUTTON 1",
-        "internal_mode": "document_reader",
+        "internal_mode": "read_text",
     },
     {
         "id": "summarize_document",
         "name": "Summarize Document",
         "description": "Get the key points quickly",
         "button_label": "BUTTON 2",
-        "internal_mode": "document_reader",
+        "internal_mode": "summarize_document",
     },
     {
         "id": "analyze_image",
         "name": "Analyze Image",
         "description": "Understand what you see",
         "button_label": "BUTTON 3",
-        "internal_mode": "general_vision",
+        "internal_mode": "analyze_image",
     },
     {
         "id": "professional_assistant",
         "name": "Professional Assistant",
         "description": "Write, plan, and organize",
         "button_label": "BUTTON 4",
-        "internal_mode": "general_vision",
+        "internal_mode": "professional_assistant",
     },
     {
         "id": "solve_problem",
         "name": "Solve Problem",
         "description": "Work through questions step by step",
         "button_label": "BUTTON 5",
-        "internal_mode": "math_solver",
+        "internal_mode": "solve_problem",
     },
 )
 UI_MODE_BY_ID = {mode["id"]: mode for mode in UI_MODE_OPTIONS}
@@ -60,10 +60,7 @@ UI_MODE_TO_INTERNAL_MODE = {
     mode["id"]: mode["internal_mode"] for mode in UI_MODE_OPTIONS
 }
 INTERNAL_TO_UI_MODE = {
-    "document_reader": "read_text",
-    "math_solver": "solve_problem",
-    "engineering_mode": "analyze_image",
-    "general_vision": "analyze_image",
+    mode["internal_mode"]: mode["id"] for mode in UI_MODE_OPTIONS
 }
 
 PROGRESS_STEPS = ("Image captured", "Processing", "Result")
@@ -173,7 +170,7 @@ def resolve_mode_pair(
     *,
     fallback_to_default: bool = False,
     default_capture_mode: str = "read_text",
-    default_capture_internal_mode: str = "document_reader",
+    default_capture_internal_mode: str = "read_text",
 ) -> tuple[str, str]:
     """Return the UI mode id and canonical internal mode for the current state."""
     ui_mode = normalize_ui_mode(selected_mode)

@@ -17,14 +17,14 @@ class AssistantModeContextTests(unittest.TestCase):
         self.assertEqual(len(set(contexts.values())), len(contexts))
 
     def test_context_includes_small_screen_guidance(self) -> None:
-        context = build_mode_context("document_reader")
+        context = build_mode_context("read_text")
 
         self.assertIn("small standalone screen", context)
         self.assertIn("Use short paragraphs and bullet points when helpful.", context)
+        self.assertIn("untrusted reference material", context)
 
     def test_extra_instruction_is_appended(self) -> None:
-        context = build_mode_context("engineering_mode", "Focus on dimensions first.")
+        context = build_mode_context("analyze_image", "Focus on dimensions first.")
 
-        self.assertIn("Current assistant mode: Engineering Mode.", context)
+        self.assertIn("Current assistant mode: Analyze Image.", context)
         self.assertIn("Additional internal guidance: Focus on dimensions first.", context)
-

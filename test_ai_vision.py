@@ -23,7 +23,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--mode",
-        default="document_reader",
+        default="read_text",
         type=normalize_mode,
         choices=available_modes,
         help="Assistant mode to use for the analysis. Legacy mode aliases are also accepted.",
