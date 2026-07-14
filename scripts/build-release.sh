@@ -146,7 +146,9 @@ create_checksums() {
   (
     cd "${release_root}"
     while IFS= read -r -d '' path; do
-      sha256sum -- "${path}"
+      # Cygwin's default output marks files with `*` (binary mode), while the
+      # appliance contract uses the portable GNU text checksum form: `hash  ./path`.
+      sha256sum --text -- "${path}"
     done < <(find . -type f ! -path './checksums.sha256' -print0 | LC_ALL=C sort -z)
   ) > "${release_root}/checksums.sha256"
 }

@@ -103,6 +103,13 @@ def test_valid_manifest_checksum_and_layout_are_accepted(tmp_path: Path) -> None
     assert int(result["checksummed_files"]) >= len(release_contract.REQUIRED_PATHS)
 
 
+def test_release_builder_forces_portable_text_checksum_entries() -> None:
+    """Avoid Cygwin's binary-marker checksum output in a cross-platform release."""
+    source = Path("scripts/build-release.sh").read_text(encoding="utf-8")
+
+    assert 'sha256sum --text -- "${path}"' in source
+
+
 def test_checksum_mismatch_is_rejected(tmp_path: Path) -> None:
     release_root = _create_release_tree(tmp_path)
     (release_root / "requirements.txt").write_text("tampered\n", encoding="utf-8")
