@@ -9,6 +9,7 @@ Button {
     required property string description
     property string modeId: ""
     property bool selected: false
+    property bool navigationFocused: false
 
     implicitHeight: 148
     hoverEnabled: true
@@ -98,8 +99,10 @@ Button {
         Rectangle {
             anchors.fill: parent
             radius: root.theme.radiusSetupCard
-            border.width: 1
-            border.color: root.selected ? root.theme.primaryStrong : root.theme.borderSoft
+            border.width: root.navigationFocused ? 3 : 1
+            border.color: root.navigationFocused || root.selected
+                          ? root.theme.primaryStrong
+                          : root.theme.borderSoft
             color: root.selected ? root.theme.primaryStrong : root.theme.surface
 
             Behavior on color {

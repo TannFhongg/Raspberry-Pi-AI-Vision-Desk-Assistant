@@ -5,6 +5,7 @@ Button {
     id: root
     required property QtObject theme
     property string tone: "primary"
+    property bool navigationFocused: false
 
     implicitHeight: 50
     implicitWidth: 164
@@ -60,9 +61,9 @@ Button {
             anchors.topMargin: 1
             radius: parent.radius
             color: "transparent"
-            border.width: root.visualFocus ? 2 : 0
+            border.width: root.visualFocus || root.navigationFocused ? 2 : 0
             border.color: "#9DC2FF"
-            opacity: root.visualFocus ? 1.0 : 0.0
+            opacity: root.visualFocus || root.navigationFocused ? 1.0 : 0.0
         }
     }
 }

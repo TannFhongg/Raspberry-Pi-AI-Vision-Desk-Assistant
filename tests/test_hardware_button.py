@@ -128,6 +128,35 @@ class GPIOButtonTriggerTests(unittest.TestCase):
         self.assertTrue(returned.wait(1))
         self.assertEqual(back_calls, ["back"])
 
+    def test_navigation_buttons_trigger_their_logical_actions_once(self) -> None:
+        triggered = threading.Event()
+        navigation_calls: list[str] = []
+
+        def record(action: str):
+            def callback() -> bool:
+                navigation_calls.append(action)
+                if len(navigation_calls) == 3:
+                    triggered.set()
+                return True
+
+            return callback
+
+        trigger = _build_trigger(
+            trigger_action=lambda: True,
+            clear_action=lambda: True,
+            navigation_up_action=record("up"),
+            navigation_down_action=record("down"),
+            navigation_select_action=record("select"),
+            get_device_state=lambda: DeviceState.READY,
+        )
+
+        trigger._handle_navigation_release("up")
+        trigger._handle_navigation_release("down")
+        trigger._handle_navigation_release("select")
+
+        self.assertTrue(triggered.wait(1))
+        self.assertCountEqual(navigation_calls, ["up", "down", "select"])
+
     def test_input_is_ignored_during_processing_states(self) -> None:
         capture_calls: list[str] = []
         clear_calls: list[str] = []
@@ -217,6 +246,9 @@ def _build_trigger(
     clear_action,
     back_action=None,
     mode_action=None,
+    navigation_up_action=None,
+    navigation_down_action=None,
+    navigation_select_action=None,
     get_device_state,
 ) -> GPIOButtonTrigger:
     """Create a trigger with patched device settings for deterministic tests."""
@@ -227,6 +259,9 @@ def _build_trigger(
             clear_action=clear_action,
             back_action=back_action,
             mode_action=mode_action,
+            navigation_up_action=navigation_up_action,
+            navigation_down_action=navigation_down_action,
+            navigation_select_action=navigation_select_action,
             get_device_state=get_device_state,
         )
 
@@ -244,6 +279,9 @@ class _FakeButtonSettings:
     enabled = True
     pin = 17
     back_button_pin = None
+    navigation_up_pin = 23
+    navigation_down_pin = 24
+    navigation_select_pin = 25
     debounce_seconds = 0.15
     hold_seconds = 1.2
 

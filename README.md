@@ -79,7 +79,7 @@ python -m qt_app.main
 
 The production hardware profile uses an 11.6-inch non-touch HDMI display in landscape orientation. The Qt/QML layout has a 1200x800 design canvas. In normal kiosk operation the app runs fullscreen at the HDMI panel's native resolution; it does not force the panel to 1200x800.
 
-`display.size` in `config/device.yaml` and `UI_SCREEN_WIDTH` / `UI_SCREEN_HEIGHT` in `.env` control the initial size only when the app is run with `--windowed`. Keep them at `1200x800` for the design reference. The display has no touch input, so retain a USB keyboard and mouse for setup and any UI path not assigned to GPIO buttons.
+`display.size` in `config/device.yaml` and `UI_SCREEN_WIDTH` / `UI_SCREEN_HEIGHT` in `.env` control the initial size only when the app is run with `--windowed`. Keep them at `1200x800` for the design reference. The display has no touch input: GPIO 23/24/25 provide Up, Down, and Select for normal navigation. Retain a USB keyboard and mouse for setup and administrative text entry.
 
 Run tests:
 

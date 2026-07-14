@@ -10,6 +10,7 @@ Item {
     property int radius: root.theme.radiusSetupCard
     property bool elevated: true
     property bool clipContent: false
+    property bool navigationFocused: false
     default property alias contentData: contentHost.data
     Layout.minimumWidth: 0
 
@@ -32,8 +33,8 @@ Item {
         anchors.fill: parent
         radius: root.radius
         color: root.fillColor
-        border.width: 1
-        border.color: root.borderColor
+        border.width: root.navigationFocused ? 3 : 1
+        border.color: root.navigationFocused ? root.theme.primaryStrong : root.borderColor
 
         Behavior on color {
             ColorAnimation { duration: root.theme.animationShort }

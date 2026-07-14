@@ -15,6 +15,7 @@ Item {
     property int notePixelSize: 15
     property int bodyPixelSize: 18
     property string contentFontFamily: root.theme.bodyFont
+    property bool navigationFocused: false
     readonly property color accentColor: root.emphasizeError ? root.theme.errorStrong
                                        : root.emphasizeQueued ? root.theme.warningStrong
                                        : root.theme.primaryStrong
@@ -41,10 +42,19 @@ Item {
                "</style></head><body>" + root.html + "</body></html>"
     }
 
+    function scrollBy(delta) {
+        var flickable = scrollView.contentItem
+        if (!flickable || flickable.contentY === undefined)
+            return
+        var maximum = Math.max(0, flickable.contentHeight - flickable.height)
+        flickable.contentY = Math.max(0, Math.min(maximum, flickable.contentY + delta))
+    }
+
     ContentCard {
         anchors.fill: parent
         theme: root.theme
         padding: 20
+        navigationFocused: root.navigationFocused
         fillColor: root.surfaceColor
         borderColor: root.emphasizeError ? "#F0BABA"
                      : root.emphasizeQueued ? "#F1D38C"
@@ -90,6 +100,7 @@ Item {
             }
 
             ScrollView {
+                id: scrollView
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 clip: true

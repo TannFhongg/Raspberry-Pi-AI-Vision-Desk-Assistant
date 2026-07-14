@@ -1,4 +1,4 @@
-"""GPIO button controller with capture, clear, and optional mode-selection buttons."""
+"""GPIO button controller with capture, mode, and non-touch navigation actions."""
 
 from __future__ import annotations
 
@@ -43,6 +43,9 @@ class GPIOButtonTrigger:
         debounce_seconds: float | None = None,
         hold_seconds: float | None = None,
         back_button_pin: int | None = None,
+        navigation_up_pin: int | None = None,
+        navigation_down_pin: int | None = None,
+        navigation_select_pin: int | None = None,
         mode: str | None = None,
         backend: str | None = None,
         camera_index: int | None = None,
@@ -58,6 +61,9 @@ class GPIOButtonTrigger:
         trigger_action: Callable[[], bool] | None = None,
         clear_action: Callable[[], bool] | None = None,
         back_action: Callable[[], bool] | None = None,
+        navigation_up_action: Callable[[], bool] | None = None,
+        navigation_down_action: Callable[[], bool] | None = None,
+        navigation_select_action: Callable[[], bool] | None = None,
         mode_buttons: dict[str, int] | None = None,
         mode_action: Callable[[str], bool] | None = None,
         get_device_state: Callable[[], DeviceState | str] | None = None,
@@ -104,7 +110,40 @@ class GPIOButtonTrigger:
             configured_back_pin,
             reserved_pins=reserved_action_pins,
         )
+        if self.back_button_pin is not None:
+            reserved_action_pins.add(self.back_button_pin)
+        navigation_pin_inputs = {
+            "up": (
+                getattr(button_settings, "navigation_up_pin", None)
+                if navigation_up_pin is None
+                else navigation_up_pin
+            ),
+            "down": (
+                getattr(button_settings, "navigation_down_pin", None)
+                if navigation_down_pin is None
+                else navigation_down_pin
+            ),
+            "select": (
+                getattr(button_settings, "navigation_select_pin", None)
+                if navigation_select_pin is None
+                else navigation_select_pin
+            ),
+        }
+        self.navigation_pins: dict[str, int] = {}
+        for action, configured_pin in navigation_pin_inputs.items():
+            resolved_pin = self._normalize_auxiliary_pin(
+                configured_pin,
+                reserved_pins=reserved_action_pins,
+            )
+            if resolved_pin is not None:
+                self.navigation_pins[action] = resolved_pin
+                reserved_action_pins.add(resolved_pin)
         self.back_action = back_action or self._run_managed_back
+        self.navigation_actions = {
+            "up": navigation_up_action or (lambda: False),
+            "down": navigation_down_action or (lambda: False),
+            "select": navigation_select_action or (lambda: False),
+        }
         self.mode_action = mode_action or self._set_managed_mode
         self.get_device_state = get_device_state
         self.led_indicator = led_indicator
@@ -115,6 +154,7 @@ class GPIOButtonTrigger:
         self._button = None
         self._mode_button_devices: list[Any] = []
         self._back_button = None
+        self._navigation_button_devices: list[Any] = []
         self._managed_pipeline = trigger_action is None
         self._device_state = DeviceState.READY
 
@@ -138,11 +178,13 @@ class GPIOButtonTrigger:
             self._button.when_released = self._handle_release
             self._bind_mode_buttons(button_class)
             self._bind_back_button(button_class)
+            self._bind_navigation_buttons(button_class)
             LOGGER.info(
-                "GPIO button listener started capture_pin=%s mode_pins=%s back_pin=%s",
+                "GPIO button listener started capture_pin=%s mode_pins=%s back_pin=%s navigation_pins=%s",
                 self.pin,
                 self.mode_buttons,
                 self.back_button_pin,
+                self.navigation_pins,
             )
         except Exception as exc:
             self.close()
@@ -181,6 +223,12 @@ class GPIOButtonTrigger:
             except Exception:
                 pass
             self._back_button = None
+        for button in self._navigation_button_devices:
+            try:
+                button.close()
+            except Exception:
+                pass
+        self._navigation_button_devices = []
 
     def _bind_mode_buttons(self, button_class: ButtonFactory) -> None:
         """Create optional mode-selection buttons alongside the capture button."""
@@ -204,6 +252,17 @@ class GPIOButtonTrigger:
             bounce_time=self.debounce_seconds,
         )
         self._back_button.when_released = self._handle_back_release
+
+    def _bind_navigation_buttons(self, button_class: ButtonFactory) -> None:
+        """Bind optional Up, Down, and Select buttons for non-touch navigation."""
+        for action, pin in self.navigation_pins.items():
+            button = button_class(
+                pin,
+                pull_up=True,
+                bounce_time=self.debounce_seconds,
+            )
+            button.when_released = lambda action=action: self._handle_navigation_release(action)
+            self._navigation_button_devices.append(button)
 
     def _normalize_mode_buttons(self, mode_buttons: dict[str, int] | None) -> dict[str, int]:
         """Return a cleaned map of mode ids to GPIO pins."""
@@ -311,6 +370,23 @@ class GPIOButtonTrigger:
         )
         worker.start()
 
+    def _handle_navigation_release(self, action: str) -> None:
+        """Trigger a non-touch navigation action when the device is idle."""
+        if action not in self.navigation_actions:
+            return
+        if self._input_is_blocked():
+            print("Device is busy. Ignoring button input.")
+            LOGGER.info("Ignoring GPIO navigation press because device is busy action=%s", action)
+            return
+
+        worker = threading.Thread(
+            target=self._run_navigation_action,
+            args=(action,),
+            daemon=True,
+            name=f"gpio-navigation-{action}",
+        )
+        worker.start()
+
     def _run_trigger_action(self) -> None:
         """Run the configured short-press action behind a duplicate-trigger guard."""
         try:
@@ -360,6 +436,19 @@ class GPIOButtonTrigger:
         except Exception as exc:
             print(f"Error: {exc}")
             LOGGER.exception("GPIO mode action failed mode=%s", mode)
+
+    def _run_navigation_action(self, action: str) -> None:
+        """Run one queued navigation action and record whether QML accepted it."""
+        try:
+            changed = self.navigation_actions[action]()
+            if changed:
+                LOGGER.info(
+                    "GPIO navigation action accepted action=%s pin=%s",
+                    action,
+                    self.navigation_pins.get(action),
+                )
+        except Exception:
+            LOGGER.exception("GPIO navigation action failed action=%s", action)
 
     def _current_device_state(self) -> DeviceState:
         """Return the externally-managed or internal device state."""

@@ -42,6 +42,9 @@ class LoadDeviceSettingsTests(unittest.TestCase):
               mode_button_4_pin: 19
               mode_button_5_pin: 26
               back_button_pin: 21
+              navigation_up_pin: 23
+              navigation_down_pin: 24
+              navigation_select_pin: 25
             ai:
               default_mode: document_reader
             vision:
@@ -78,6 +81,9 @@ class LoadDeviceSettingsTests(unittest.TestCase):
         self.assertEqual(settings.button.mode_button_4_pin, 19)
         self.assertEqual(settings.button.mode_button_5_pin, 26)
         self.assertEqual(settings.button.back_button_pin, 21)
+        self.assertEqual(settings.button.navigation_up_pin, 23)
+        self.assertEqual(settings.button.navigation_down_pin, 24)
+        self.assertEqual(settings.button.navigation_select_pin, 25)
         self.assertAlmostEqual(settings.button.debounce_seconds, 0.15)
         self.assertAlmostEqual(settings.button.hold_seconds, 1.2)
         self.assertFalse(settings.led.enabled)
@@ -125,6 +131,9 @@ class LoadDeviceSettingsTests(unittest.TestCase):
               mode_button_4_pin: 19
               mode_button_5_pin: 26
               back_button_pin: 21
+              navigation_up_pin: 23
+              navigation_down_pin: 24
+              navigation_select_pin: 25
             ai:
               default_mode: document_reader
             vision:
@@ -166,6 +175,9 @@ class LoadDeviceSettingsTests(unittest.TestCase):
                 "MODE_BUTTON_4_PIN": "8",
                 "MODE_BUTTON_5_PIN": "7",
                 "BACK_BUTTON_PIN": "16",
+                "NAVIGATION_UP_PIN": "20",
+                "NAVIGATION_DOWN_PIN": "21",
+                "NAVIGATION_SELECT_PIN": "12",
                 "GPIO_BUTTON_DEBOUNCE_SECONDS": "0.4",
                 "GPIO_BUTTON_HOLD_SECONDS": "1.8",
                 "ENABLE_GPIO_LED": "1",
@@ -205,6 +217,9 @@ class LoadDeviceSettingsTests(unittest.TestCase):
         self.assertEqual(settings.button.mode_button_4_pin, 8)
         self.assertEqual(settings.button.mode_button_5_pin, 7)
         self.assertEqual(settings.button.back_button_pin, 16)
+        self.assertEqual(settings.button.navigation_up_pin, 20)
+        self.assertEqual(settings.button.navigation_down_pin, 21)
+        self.assertEqual(settings.button.navigation_select_pin, 12)
         self.assertAlmostEqual(settings.button.debounce_seconds, 0.4)
         self.assertAlmostEqual(settings.button.hold_seconds, 1.8)
         self.assertTrue(settings.led.enabled)

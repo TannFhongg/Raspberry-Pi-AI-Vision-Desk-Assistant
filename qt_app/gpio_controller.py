@@ -18,6 +18,9 @@ class GPIOController(QObject):
     captureRequested = Signal()
     backRequested = Signal()
     clearRequested = Signal()
+    navigateUpRequested = Signal()
+    navigateDownRequested = Signal()
+    navigateSelectRequested = Signal()
     modeSelected = Signal(str)
 
     def __init__(self, runtime: VisionDeskRuntime, *, get_device_state, parent=None) -> None:
@@ -53,11 +56,17 @@ class GPIOController(QObject):
                 debounce_seconds=self.runtime.settings.button.debounce_seconds,
                 hold_seconds=self.runtime.settings.button.hold_seconds,
                 back_button_pin=self.runtime.settings.button.back_button_pin,
+                navigation_up_pin=self.runtime.settings.button.navigation_up_pin,
+                navigation_down_pin=self.runtime.settings.button.navigation_down_pin,
+                navigation_select_pin=self.runtime.settings.button.navigation_select_pin,
                 mode_buttons=configured_mode_buttons,
                 mode_action=self._emit_mode_selected,
                 trigger_action=self._emit_capture_requested,
                 back_action=self._emit_back_requested,
                 clear_action=self._emit_clear_requested,
+                navigation_up_action=self._emit_navigate_up_requested,
+                navigation_down_action=self._emit_navigate_down_requested,
+                navigation_select_action=self._emit_navigate_select_requested,
                 get_device_state=self.get_device_state,
                 led_indicator=self.runtime.led_indicator,
             )
@@ -90,7 +99,18 @@ class GPIOController(QObject):
         self.backRequested.emit()
         return True
 
+    def _emit_navigate_up_requested(self) -> bool:
+        self.navigateUpRequested.emit()
+        return True
+
+    def _emit_navigate_down_requested(self) -> bool:
+        self.navigateDownRequested.emit()
+        return True
+
+    def _emit_navigate_select_requested(self) -> bool:
+        self.navigateSelectRequested.emit()
+        return True
+
     def _emit_clear_requested(self) -> bool:
         self.clearRequested.emit()
         return True
-

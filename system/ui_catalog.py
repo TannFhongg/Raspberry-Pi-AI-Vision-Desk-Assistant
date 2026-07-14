@@ -15,6 +15,9 @@ SETUP_GPIO_LABELS = {
     "mode_professional_assistant": "Professional Assistant Button",
     "mode_solve_problem": "Solve Problem Button",
     "back": "Back Button",
+    "navigation_up": "Navigate Up Button",
+    "navigation_down": "Navigate Down Button",
+    "navigation_select": "Select Button",
 }
 
 UI_MODE_OPTIONS = (

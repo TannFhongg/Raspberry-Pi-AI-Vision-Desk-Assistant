@@ -13,6 +13,45 @@ Item {
     property string pendingResetTitle: ""
     property string pendingResetDescription: ""
     property bool pendingRemoveWifiProfile: false
+    property int navigationIndex: 0
+
+    readonly property int navigationItemCount: root.controller.modeCardsModel.count + 2
+
+    function moveNavigation(delta) {
+        if (root.navigationItemCount <= 0)
+            return
+        root.navigationIndex = (root.navigationIndex + delta + root.navigationItemCount)
+                               % root.navigationItemCount
+    }
+
+    function handleNavigation(action) {
+        if (deviceActionsDialog.visible) {
+            if (action === "back")
+                deviceActionsDialog.close()
+            return true
+        }
+        if (action === "up") {
+            root.moveNavigation(-1)
+            return true
+        }
+        if (action === "down") {
+            root.moveNavigation(1)
+            return true
+        }
+        if (action === "select") {
+            var modeCount = root.controller.modeCardsModel.count
+            if (root.navigationIndex < modeCount) {
+                var mode = root.controller.modeCardsModel.get(root.navigationIndex)
+                root.controller.selectMode(mode.id || mode.mode_id || "")
+            } else if (root.navigationIndex === modeCount) {
+                root.controller.openHistory()
+            } else {
+                root.openDeviceActionsPreview()
+            }
+            return true
+        }
+        return action === "back"
+    }
 
     function configureReset(mode) {
         pendingResetMode = mode
@@ -119,6 +158,7 @@ Item {
                         title: itemData.name || ""
                         description: itemData.description || ""
                         selected: (itemData.id || itemData.mode_id || "") === root.controller.selectedMode
+                        navigationFocused: root.navigationIndex === index
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         Layout.minimumWidth: 0
@@ -148,10 +188,13 @@ Item {
                 theme: root.theme
                 text: "RECENT RESULTS"
                 implicitWidth: 248
+                navigationFocused: root.navigationIndex === root.controller.modeCardsModel.count
                 onClicked: root.controller.openHistory()
             }
 
-            Item {
+            NavigationHint {
+                theme: root.theme
+                text: "UP/DOWN Choose  ·  SELECT Open"
                 Layout.fillWidth: true
             }
 
@@ -161,6 +204,7 @@ Item {
                 text: "DEVICE ACTIONS"
                 implicitWidth: 248
                 enabled: !root.controller.deviceActionsBusy
+                navigationFocused: root.navigationIndex === root.controller.modeCardsModel.count + 1
                 onClicked: deviceActionsDialog.open()
             }
         }

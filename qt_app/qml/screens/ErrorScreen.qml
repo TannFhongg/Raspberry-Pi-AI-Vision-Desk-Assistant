@@ -8,6 +8,27 @@ Item {
     id: root
     required property QtObject theme
     required property var controller
+    property int navigationIndex: 0
+
+    function handleNavigation(action) {
+        var retryAvailable = root.controller.canRetry
+        if ((action === "up" || action === "down") && retryAvailable) {
+            root.navigationIndex = root.navigationIndex === 0 ? 1 : 0
+            return true
+        }
+        if (action === "select") {
+            if (root.navigationIndex === 1 && retryAvailable)
+                root.controller.retry()
+            else
+                root.controller.clearResult()
+            return true
+        }
+        if (action === "back") {
+            root.controller.clearResult()
+            return true
+        }
+        return action === "up" || action === "down"
+    }
 
     ColumnLayout {
         anchors.fill: parent
@@ -84,10 +105,17 @@ Item {
             SecondaryButton {
                 theme: root.theme
                 text: "BACK"
+                navigationFocused: root.navigationIndex === 0
                 onClicked: root.controller.clearResult()
             }
 
-            Item { Layout.fillWidth: true }
+            NavigationHint {
+                theme: root.theme
+                text: root.controller.canRetry
+                      ? "UP/DOWN Choose  ·  SELECT Confirm  ·  BACK Home"
+                      : "SELECT or BACK to return Home"
+                Layout.fillWidth: true
+            }
 
             PrimaryButton {
                 theme: root.theme
@@ -95,6 +123,7 @@ Item {
                 text: "RETRY"
                 visible: root.controller.canRetry
                 enabled: root.controller.canRetry
+                navigationFocused: root.navigationIndex === 1 && root.controller.canRetry
                 onClicked: root.controller.retry()
             }
         }

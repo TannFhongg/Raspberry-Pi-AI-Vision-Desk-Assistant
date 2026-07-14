@@ -16,8 +16,8 @@ Recommended for setup and testing:
 - USB keyboard and mouse for first setup and any non-GPIO UI navigation
 - Raspberry Pi case with heatsink or cooling fan
 
-Required for GPIO button trigger (Phase 6):
-- Six momentary push buttons
+Required for non-touch GPIO operation:
+- Ten momentary push buttons
 - Default BCM mapping:
 - Button Main / Capture -> GPIO17
 - Button 1 / Read Text -> GPIO5
@@ -25,6 +25,10 @@ Required for GPIO button trigger (Phase 6):
 - Button 3 / Analyze Image -> GPIO13
 - Button 4 / Professional Assistant -> GPIO19
 - Button 5 / Solve Problem -> GPIO26
+- Back -> GPIO22
+- Navigate Up -> GPIO23
+- Navigate Down -> GPIO24
+- Select / Confirm -> GPIO25
 - Jumper wires
 - Breadboard (optional but recommended for easier wiring)
 
@@ -37,5 +41,5 @@ Display configuration:
 - In kiosk mode, VisionDesk runs fullscreen at the HDMI panel's native resolution.
 - `display.size` in `config/device.yaml` and `UI_SCREEN_WIDTH` / `UI_SCREEN_HEIGHT`
   are the windowed-development size, not a command to change the monitor resolution.
-- This display has no touch input. Use the GPIO buttons for capture/mode selection and
-  keep a USB keyboard and mouse available for setup and screens not yet mapped to GPIO.
+- This display has no touch input. The ten GPIO buttons cover normal operation; keep a
+  USB keyboard and mouse available for setup and administrative text entry.

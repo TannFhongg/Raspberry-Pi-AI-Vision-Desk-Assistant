@@ -614,6 +614,47 @@ def test_gpio_signal_delivery_reaches_qt_main_thread(qapp, qtbot, tmp_path) -> N
     runtime.shutdown()
 
 
+def test_gpio_navigation_signal_delivery_reaches_qt_main_thread(qapp, qtbot, tmp_path) -> None:
+    runtime = build_runtime(tmp_path, setup_completed=True)
+    controller = GPIOController(runtime, get_device_state=lambda: "READY")
+    spy = QSignalSpy(controller.navigateDownRequested)
+
+    worker = threading.Thread(target=controller._emit_navigate_down_requested, daemon=True)
+    worker.start()
+    worker.join(timeout=1.0)
+
+    qtbot.waitUntil(lambda: spy.count() == 1, timeout=1000)
+    assert spy.count() == 1
+    controller.stop()
+    runtime.shutdown()
+
+
+def test_setup_gpio_requirements_include_non_touch_navigation_buttons(qapp, tmp_path) -> None:
+    runtime = build_runtime(tmp_path, setup_completed=False)
+    pins_by_label = {
+        item["label"]: item["pin"] for item in runtime.build_setup_gpio_requirements()
+    }
+
+    assert pins_by_label["navigation_up"] == 23
+    assert pins_by_label["navigation_down"] == 24
+    assert pins_by_label["navigation_select"] == 25
+    runtime.shutdown()
+
+
+def test_app_controller_emits_logical_navigation_actions(qapp, tmp_path) -> None:
+    runtime, controller = build_controller(tmp_path)
+    received: list[str] = []
+    controller.navigationRequested.connect(received.append)
+
+    controller.navigateUp()
+    controller.navigateDown()
+    controller.activateFocused()
+    controller.requestBackNavigation()
+
+    assert received == ["up", "down", "select", "back"]
+    controller.shutdown()
+
+
 def test_history_navigation_detail_and_newest_first(qapp, qtbot, tmp_path) -> None:
     runtime, controller = build_controller(tmp_path)
     older_entry = append_history_entry(runtime, answer="Older result body.")

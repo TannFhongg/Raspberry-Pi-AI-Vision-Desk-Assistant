@@ -23,6 +23,40 @@ ApplicationWindow {
         Math.min(viewportWidth / designWidth, viewportHeight / designHeight)
     )
 
+    function dispatchNavigation(action) {
+        if (screenLoader.item
+                && typeof screenLoader.item.handleNavigation === "function"
+                && screenLoader.item.handleNavigation(action)) {
+            return
+        }
+        if (action === "back")
+            appController.goBack()
+    }
+
+    Keys.onPressed: function(event) {
+        var action = ""
+        if (event.key === Qt.Key_Up)
+            action = "up"
+        else if (event.key === Qt.Key_Down)
+            action = "down"
+        else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space)
+            action = "select"
+        else if (event.key === Qt.Key_Escape || event.key === Qt.Key_Back)
+            action = "back"
+        if (action.length > 0) {
+            window.dispatchNavigation(action)
+            event.accepted = true
+        }
+    }
+
+    Connections {
+        target: appController
+
+        function onNavigationRequested(action) {
+            window.dispatchNavigation(action)
+        }
+    }
+
     Theme {
         id: appTheme
     }

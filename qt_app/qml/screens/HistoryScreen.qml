@@ -8,6 +8,8 @@ Item {
     id: root
     required property QtObject theme
     required property var controller
+    property int navigationIndex: 0
+    property int confirmationNavigationIndex: 0
 
     function humanize(value) {
         return String(value || "").replace(/_/g, " ").toUpperCase()
@@ -39,6 +41,70 @@ Item {
     readonly property bool showBanner: root.controller.historyState === "recovered"
                                   || (root.controller.historyState === "error" && hasEntries)
                                   || root.controller.historyState === "loading"
+
+    function moveNavigation(delta) {
+        var itemCount = root.controller.historyEntriesModel.count
+        if (itemCount <= 0)
+            return
+        var targetCount = itemCount + 1 // The final target is Clear History.
+        root.navigationIndex = (root.navigationIndex + delta + targetCount) % targetCount
+        if (root.navigationIndex < itemCount)
+            historyList.positionViewAtIndex(root.navigationIndex, ListView.Contain)
+    }
+
+    function handleNavigation(action) {
+        if (clearHistoryDialog.visible) {
+            if (action === "up" || action === "down") {
+                root.confirmationNavigationIndex = root.confirmationNavigationIndex === 0 ? 1 : 0
+                return true
+            }
+            if (action === "select") {
+                if (root.confirmationNavigationIndex === 1) {
+                    clearHistoryDialog.close()
+                    root.controller.clearHistory()
+                } else {
+                    clearHistoryDialog.close()
+                }
+                return true
+            }
+            if (action === "back") {
+                clearHistoryDialog.close()
+                return true
+            }
+            return false
+        }
+        if (action === "up") {
+            root.moveNavigation(-1)
+            return true
+        }
+        if (action === "down") {
+            root.moveNavigation(1)
+            return true
+        }
+        if (action === "select" && root.hasEntries) {
+            var itemCount = root.controller.historyEntriesModel.count
+            if (root.navigationIndex < itemCount) {
+                var itemData = root.controller.historyEntriesModel.get(root.navigationIndex)
+                root.controller.openHistoryItem(itemData.id || itemData.entry_id || "")
+            } else if (root.controller.historyState !== "loading") {
+                root.confirmationNavigationIndex = 0
+                clearHistoryDialog.open()
+            }
+            return true
+        }
+        if (action === "back") {
+            root.controller.goBack()
+            return true
+        }
+        return action === "select"
+    }
+
+    onHasEntriesChanged: {
+        if (!root.hasEntries)
+            root.navigationIndex = 0
+        else if (root.navigationIndex > root.controller.historyEntriesModel.count)
+            root.navigationIndex = root.controller.historyEntriesModel.count
+    }
 
     ColumnLayout {
         anchors.fill: parent
@@ -168,6 +234,7 @@ Item {
                         width: historyList.width
                         height: 124
                         fillColor: root.theme.surface
+                        navigationFocused: root.navigationIndex === index
 
                         RowLayout {
                             anchors.fill: parent
@@ -250,7 +317,13 @@ Item {
                 onClicked: root.controller.goBack()
             }
 
-            Item { Layout.fillWidth: true }
+            NavigationHint {
+                theme: root.theme
+                text: root.hasEntries
+                      ? "UP/DOWN Choose  ·  SELECT Open  ·  BACK Return"
+                      : "BACK Return"
+                Layout.fillWidth: true
+            }
 
             SecondaryButton {
                 theme: root.theme
@@ -258,6 +331,8 @@ Item {
                 text: "CLEAR HISTORY"
                 implicitWidth: 190
                 enabled: root.hasEntries && root.controller.historyState !== "loading"
+                navigationFocused: root.hasEntries
+                                   && root.navigationIndex === root.controller.historyEntriesModel.count
                 onClicked: clearHistoryDialog.open()
             }
         }
@@ -309,6 +384,7 @@ Item {
                 SecondaryButton {
                     theme: root.theme
                     text: "CANCEL"
+                    navigationFocused: root.confirmationNavigationIndex === 0
                     onClicked: clearHistoryDialog.close()
                 }
 
@@ -316,6 +392,7 @@ Item {
                     theme: root.theme
                     tone: "danger"
                     text: "CLEAR"
+                    navigationFocused: root.confirmationNavigationIndex === 1
                     onClicked: {
                         clearHistoryDialog.close()
                         root.controller.clearHistory()

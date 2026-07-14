@@ -53,6 +53,7 @@ class AppController(QObject):
     viewStateChanged = Signal()
     deviceActionsChanged = Signal()
     factoryResetWorkerFinished = Signal()
+    navigationRequested = Signal(str)
 
     def __init__(
         self,
@@ -497,6 +498,26 @@ class AppController(QObject):
         self.clearResult()
 
     @Slot()
+    def navigateUp(self) -> None:
+        """Ask the active QML screen to move its non-touch focus upward."""
+        self._request_navigation("up")
+
+    @Slot()
+    def navigateDown(self) -> None:
+        """Ask the active QML screen to move its non-touch focus downward."""
+        self._request_navigation("down")
+
+    @Slot()
+    def activateFocused(self) -> None:
+        """Ask the active QML screen to activate its focused non-touch control."""
+        self._request_navigation("select")
+
+    @Slot()
+    def requestBackNavigation(self) -> None:
+        """Route the hardware Back button through the active QML screen first."""
+        self._request_navigation("back")
+
+    @Slot()
     def retry(self) -> None:
         if self.currentScreen == "error" and self.canRetry and self.selectedMode:
             self.capture()
@@ -711,8 +732,19 @@ class AppController(QObject):
         self.setup_controller.setupCompleted.connect(self._handle_setup_completed)
         self.gpio_controller.modeSelected.connect(self.selectMode)
         self.gpio_controller.captureRequested.connect(self.capture)
-        self.gpio_controller.backRequested.connect(self.goBack)
+        self.gpio_controller.backRequested.connect(self.requestBackNavigation)
         self.gpio_controller.clearRequested.connect(self.clearResult)
+        self.gpio_controller.navigateUpRequested.connect(self.navigateUp)
+        self.gpio_controller.navigateDownRequested.connect(self.navigateDown)
+        self.gpio_controller.navigateSelectRequested.connect(self.activateFocused)
+
+    def _request_navigation(self, action: str) -> None:
+        """Emit a safe logical navigation action for the visible QML screen."""
+        if self.pipeline_controller.busy or self._device_actions_busy:
+            return
+        if self.currentScreen == "setup" and not self.runtime.setup_is_complete():
+            return
+        self.navigationRequested.emit(action)
 
     def _handle_pipeline_progress_changed(self) -> None:
         state = self.pipeline_controller.progressState

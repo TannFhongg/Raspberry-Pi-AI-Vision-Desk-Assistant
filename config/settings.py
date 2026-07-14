@@ -123,6 +123,9 @@ class ButtonSettings:
     back_button_pin: int | None
     debounce_seconds: float
     hold_seconds: float
+    navigation_up_pin: int | None = None
+    navigation_down_pin: int | None = None
+    navigation_select_pin: int | None = None
 
 
 @dataclass(slots=True)
@@ -413,6 +416,21 @@ def load_device_settings(
                 button.get("hold_seconds", DEFAULT_BUTTON_HOLD_SECONDS),
                 "button.hold_seconds",
                 minimum=0.0,
+            ),
+            navigation_up_pin=_parse_optional_int(
+                button.get("navigation_up_pin"),
+                "button.navigation_up_pin",
+                minimum=0,
+            ),
+            navigation_down_pin=_parse_optional_int(
+                button.get("navigation_down_pin"),
+                "button.navigation_down_pin",
+                minimum=0,
+            ),
+            navigation_select_pin=_parse_optional_int(
+                button.get("navigation_select_pin"),
+                "button.navigation_select_pin",
+                minimum=0,
             ),
         ),
         led=LEDSettings(
@@ -764,6 +782,14 @@ def _apply_environment_overrides(
         env,
         "BACK_BUTTON_PIN",
         "GPIO_BACK_BUTTON_PIN",
+    )
+    _set_if_present(merged["button"], "navigation_up_pin", env, "NAVIGATION_UP_PIN")
+    _set_if_present(merged["button"], "navigation_down_pin", env, "NAVIGATION_DOWN_PIN")
+    _set_if_present(
+        merged["button"],
+        "navigation_select_pin",
+        env,
+        "NAVIGATION_SELECT_PIN",
     )
     _set_if_present(
         merged["button"],

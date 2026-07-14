@@ -281,6 +281,15 @@ class VisionDeskRuntime:
             required.append(
                 {"label": "back", "pin": self.settings.button.back_button_pin, "pressed": False}
             )
+        navigation_button_pairs = [
+            ("navigation_up", self.settings.button.navigation_up_pin),
+            ("navigation_down", self.settings.button.navigation_down_pin),
+            ("navigation_select", self.settings.button.navigation_select_pin),
+        ]
+        for label, pin in navigation_button_pairs:
+            if pin is None:
+                continue
+            required.append({"label": label, "pin": pin, "pressed": False})
         return required
 
     def build_setup_required_pin_map(self) -> dict[str, int]:

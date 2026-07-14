@@ -8,6 +8,26 @@ Item {
     id: root
     required property QtObject theme
     required property var controller
+    property int navigationIndex: 1
+
+    function handleNavigation(action) {
+        if (action === "up" || action === "down") {
+            root.navigationIndex = root.navigationIndex === 0 ? 1 : 0
+            return true
+        }
+        if (action === "select") {
+            if (root.navigationIndex === 0)
+                root.controller.goBack()
+            else
+                root.controller.capture()
+            return true
+        }
+        if (action === "back") {
+            root.controller.goBack()
+            return true
+        }
+        return false
+    }
 
     ColumnLayout {
         anchors.fill: parent
@@ -230,16 +250,22 @@ Item {
             SecondaryButton {
                 theme: root.theme
                 text: "BACK"
+                navigationFocused: root.navigationIndex === 0
                 onClicked: root.controller.goBack()
             }
 
-            Item { Layout.fillWidth: true }
+            NavigationHint {
+                theme: root.theme
+                text: "UP/DOWN Choose  ·  SELECT Confirm  ·  BACK Return"
+                Layout.fillWidth: true
+            }
 
             PrimaryButton {
                 theme: root.theme
                 tone: "success"
                 text: "CAPTURE"
                 enabled: !root.controller.applicationState.startsWith("CAPTUR")
+                navigationFocused: root.navigationIndex === 1
                 onClicked: root.controller.capture()
             }
         }

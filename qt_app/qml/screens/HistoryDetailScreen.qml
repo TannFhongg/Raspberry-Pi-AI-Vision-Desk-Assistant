@@ -11,6 +11,27 @@ Item {
 
     readonly property bool hasSelection: root.controller.hasSelectedHistoryItem
 
+    function handleNavigation(action) {
+        if (deleteItemDialog.visible) {
+            if (action === "back")
+                deleteItemDialog.close()
+            return true
+        }
+        if (action === "up") {
+            selectedResultCard.scrollBy(-150)
+            return true
+        }
+        if (action === "down") {
+            selectedResultCard.scrollBy(150)
+            return true
+        }
+        if (action === "select" || action === "back") {
+            root.controller.goBack()
+            return true
+        }
+        return false
+    }
+
     ColumnLayout {
         anchors.fill: parent
         spacing: 12
@@ -112,6 +133,7 @@ Item {
             spacing: 12
 
             ScrollableResultCard {
+                id: selectedResultCard
                 theme: root.theme
                 title: root.controller.selectedHistoryTitle || "Result"
                 note: root.controller.selectedHistoryNote
@@ -124,6 +146,7 @@ Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 Layout.minimumWidth: 0
+                navigationFocused: true
             }
 
             ScrollableResultCard {
@@ -183,10 +206,15 @@ Item {
             SecondaryButton {
                 theme: root.theme
                 text: "BACK"
+                navigationFocused: true
                 onClicked: root.controller.goBack()
             }
 
-            Item { Layout.fillWidth: true }
+            NavigationHint {
+                theme: root.theme
+                text: "UP/DOWN Scroll  ·  SELECT or BACK Return"
+                Layout.fillWidth: true
+            }
 
             SecondaryButton {
                 theme: root.theme

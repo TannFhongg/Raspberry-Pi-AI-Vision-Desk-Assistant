@@ -9,6 +9,22 @@ Item {
     required property QtObject theme
     required property var controller
 
+    function handleNavigation(action) {
+        if (action === "up") {
+            answerCard.scrollBy(-150)
+            return true
+        }
+        if (action === "down") {
+            answerCard.scrollBy(150)
+            return true
+        }
+        if (action === "select" || action === "back") {
+            root.controller.clearResult()
+            return true
+        }
+        return false
+    }
+
     ColumnLayout {
         anchors.fill: parent
         spacing: 12
@@ -114,6 +130,7 @@ Item {
             }
 
             ScrollableResultCard {
+                id: answerCard
                 theme: root.theme
                 title: root.controller.resultTitle
                 note: root.controller.resultNote
@@ -126,6 +143,7 @@ Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 Layout.minimumWidth: 0
+                navigationFocused: true
             }
         }
 
@@ -139,7 +157,11 @@ Item {
                 onClicked: root.controller.clearResult()
             }
 
-            Item { Layout.fillWidth: true }
+            NavigationHint {
+                theme: root.theme
+                text: "UP/DOWN Scroll  ·  SELECT New Capture  ·  BACK Home"
+                Layout.fillWidth: true
+            }
 
             PrimaryButton {
                 theme: root.theme
