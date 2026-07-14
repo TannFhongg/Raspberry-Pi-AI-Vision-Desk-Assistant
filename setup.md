@@ -163,14 +163,58 @@ Portal chỉ tự chạy trên thiết bị thật có setup chưa hoàn tất. 
 `--mock-hardware`. QR chỉ chứa URL cục bộ, ví dụ `http://192.168.4.1`; password
 Wi-Fi tạm và pairing code 8 số nằm trên màn VisionDesk.
 
-Lưu ý: profile repository hiện đánh dấu `setup.completed: true` vì đây là trạng
-thái thiết bị đã setup. Để demo luồng first-boot trên Pi, dùng Configuration
-Reset ở mục 9 hoặc triển khai một cấu hình thiết bị mới có `setup.completed: false`.
+Mẫu cấu hình phát hành đặt `setup.completed: false`, vì vậy một thiết bị mới sẽ
+vào Welcome và hiển thị phone-first setup ngay sau lần cài đầu. Chỉ dùng
+Configuration Reset ở mục 9 khi cần đưa một thiết bị đã vận hành trở lại luồng
+first-boot.
 
-## 6. Cài đặt lên Raspberry Pi
+## 6. Cài mới một thiết bị Raspberry Pi
 
-Mục tiêu production là Raspberry Pi OS Desktop, LightDM autologin và user
-`visiondesk` chuyên dụng.
+Mục tiêu production là Raspberry Pi OS Desktop 64-bit, LightDM autologin và
+user `visiondesk` chuyên dụng. Cần có bản mã nguồn/release trên Pi trước khi
+chạy installer: `install.sh` đóng gói chính thư mục đó thành release đang chạy
+ở `/opt/visiondesk`.
+
+### 6.1 Chuẩn bị hệ điều hành
+
+1. Dùng Raspberry Pi Imager ghi **Raspberry Pi OS Desktop 64-bit** vào microSD.
+2. Trong Imager, đặt username/password, múi giờ và Wi-Fi; bật SSH nếu bạn sẽ
+   thao tác từ máy khác.
+3. Cắm HDMI 11.6 inch, webcam, keyboard/mouse và mạng; boot Pi rồi đăng nhập.
+4. Cập nhật hệ điều hành và khởi động lại:
+
+```bash
+sudo apt update
+sudo apt full-upgrade -y
+sudo reboot
+```
+
+Sau khi Pi khởi động lại, mở Terminal hoặc SSH trở lại thiết bị.
+
+### 6.2 Lấy đúng mã nguồn phát hành
+
+Với repository hiện tại, clone về thư mục home của user quản trị (không clone
+vào `/opt` và không dùng `sudo git clone`):
+
+```bash
+sudo apt install -y git
+git clone --depth 1 --branch master \
+  https://github.com/TannFhongg/Raspberry-Pi-AI-Vision-Desk-Assistant.git \
+  ~/visiondesk
+cd ~/visiondesk
+git rev-parse --short HEAD
+```
+
+Ghi lại commit ID cuối cùng để biết chính xác thiết bị đang được cài từ phiên
+bản nào. Khi có tag/release thương mại, thay `master` bằng tag đã kiểm thử.
+Nếu Pi không có Internet, chép một thư mục source/release đã kiểm tra bằng USB
+hoặc `scp`, rồi `cd` vào thư mục đó trước khi cài.
+
+Không cần tạo `.env` trong source hay đặt OpenAI API key trước khi cài một thiết
+bị mới. API key sẽ được nhập và xác minh trong phone-first setup; installer tạo
+file secret `/etc/visiondesk/visiondesk.env` với quyền hạn chế.
+
+### 6.3 Cài appliance
 
 ```bash
 sudo ./install.sh
@@ -187,6 +231,9 @@ sudo ./install.sh --force
 
 Installer sẽ cài system packages, tạo release virtualenv, service, thư mục bền
 vững và PolicyKit rule giới hạn quyền NetworkManager cho nhóm `visiondesk`.
+Sau khi hoàn tất, source ở `~/visiondesk` chỉ là bản dùng cho bảo trì/cập nhật;
+service chạy release đã được cài ở `/opt/visiondesk/current`.
+
 Sau khi cài, xác nhận:
 
 ```bash

@@ -55,9 +55,11 @@ startup:
   behavior: kiosk
 
 setup:
-  completed: true
-  completed_at: "2026-07-11T00:00:00"
-  version: 1
+  # Factory default: the first boot must enter the phone-first setup flow.
+  # The setup wizard writes the completed state to persistent device data.
+  completed: false
+  completed_at: ""
+  version: 0
 
 setup_portal:
   enabled: true
