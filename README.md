@@ -97,17 +97,17 @@ first receive this repository or an equivalent checked source tree.
 ```bash
 sudo apt update
 sudo apt install -y git
-git clone --depth 1 --branch master \
+git clone --depth 1 --branch v1.0.0 \
   https://github.com/TannFhongg/Raspberry-Pi-AI-Vision-Desk-Assistant.git \
   ~/visiondesk
 cd ~/visiondesk
-git rev-parse --short HEAD
+git describe --tags --exact-match
+chmod +x install.sh
 sudo ./install.sh
 ```
 
-The repository currently has no release tag. Record the printed commit ID with
-each deployed device. **TODO:** create an audited, versioned release/tag process
-before commercial handoff so installations are not taken from a moving branch.
+Production deployments use the fixed `v1.0.0` tag. Developers may use `master`
+for ongoing work, but it is not a production deployment target.
 
 The factory configuration has `setup.completed: false`. After the first boot,
 the device enters Welcome and attempts phone-first setup when the Wi-Fi adapter
@@ -126,12 +126,9 @@ journalctl -u visiondesk.service -f
 sudo ./update.sh --check
 ```
 
-`update.sh --local /path/to/archive.tar.gz` accepts only a technician-supplied
-archive that contains `manifest.json` and its checksum file. The updater verifies
-the archive, creates an isolated environment, runs migrations and diagnostics,
-and rolls back if the new service does not produce a matching readiness marker
-and remain stable. **TODO:** this repository does not yet provide a release
-archive creation command.
+Use the official package builder and verifier before a local update. The release
+format, GitHub upload, dry-run, update, and rollback instructions are in
+[docs/release-packaging.md](docs/release-packaging.md).
 
 Persistent paths on the appliance:
 
@@ -154,5 +151,7 @@ Persistent paths on the appliance:
   recovery boundary.
 - [docs/demo_checklist.md](docs/demo_checklist.md) — factual product-demo
   checklist.
+- [docs/release-packaging.md](docs/release-packaging.md) — official appliance
+  archive contract, build, verification, GitHub upload, update, and rollback.
 - [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) — concise code map and operational
   invariants for contributors.

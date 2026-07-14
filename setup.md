@@ -200,18 +200,17 @@ vào `/opt` và không dùng `sudo git clone`):
 
 ```bash
 sudo apt install -y git
-git clone --depth 1 --branch master \
+git clone --depth 1 --branch v1.0.0 \
   https://github.com/TannFhongg/Raspberry-Pi-AI-Vision-Desk-Assistant.git \
   ~/visiondesk
 cd ~/visiondesk
-git rev-parse --short HEAD
+git describe --tags --exact-match
+chmod +x install.sh
 ```
 
-Ghi lại commit ID cuối cùng để biết chính xác thiết bị đang được cài từ phiên
-bản nào. Hiện repository chưa có Git tag/release; **TODO:** tạo tag và archive
-đã kiểm thử trước khi bàn giao thương mại, sau đó thay `master` bằng tag đó.
-Nếu Pi không có Internet, chép một thư mục source/release đã kiểm tra bằng USB
-hoặc `scp`, rồi `cd` vào thư mục đó trước khi cài.
+Production cài từ tag cố định `v1.0.0`, không dùng `master`. `master` chỉ dành
+cho development. Nếu Pi không có Internet, chép source đã checkout đúng tag
+bằng USB hoặc `scp`, rồi `cd` vào thư mục đó trước khi cài.
 
 Không cần tạo `.env` trong source hay đặt OpenAI API key trước khi cài một thiết
 bị mới. API key sẽ được nhập và xác minh trong phone-first setup; installer tạo
@@ -300,14 +299,16 @@ Update và rollback:
 
 ```bash
 sudo ./update.sh --check
-sudo ./update.sh --local /path/to/visiondesk-release.tar.gz --version 1.0.0
+sudo ./update.sh --local /path/to/visiondesk-1.0.0.tar.gz --version 1.0.0 --dry-run
+sudo ./update.sh --local /path/to/visiondesk-1.0.0.tar.gz --version 1.0.0
 sudo ./update.sh --rollback
 ```
 
-`update.sh --local` chỉ nhận archive có `manifest.json` và checksum hợp lệ;
-updater sẽ chạy migration/diagnostics, restart service và tự rollback nếu
-readiness marker hoặc thời gian ổn định không đạt. **TODO:** repository chưa có
-lệnh tạo release archive đạt định dạng này.
+Build/verify archive trên maintenance workstation, upload GitHub Release,
+contract `manifest.json` và checksum được mô tả tại
+[docs/release-packaging.md](docs/release-packaging.md).
+Không dùng GitHub-generated Source code.zip/Source code.tar.gz trực tiếp cho
+`update.sh`.
 
 Reset dữ liệu hoặc quay lại Setup Wizard:
 

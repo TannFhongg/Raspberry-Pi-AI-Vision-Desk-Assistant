@@ -80,8 +80,9 @@ environment, runs migrations and diagnostics, switches the `current` symlink,
 then requires a fresh readiness marker from the expected service process and a
 stable running period. Otherwise it restores the prior release.
 
-**TODO:** The repository contains the updater but not a command that builds the
-required release archive and manifest.
+`scripts/build-release.sh` creates the matching archive from a Git ref, and
+`scripts/verify-release.sh` validates it without installing. The exact package
+contract is in [release-packaging.md](release-packaging.md).
 
 ## Storage and configuration
 

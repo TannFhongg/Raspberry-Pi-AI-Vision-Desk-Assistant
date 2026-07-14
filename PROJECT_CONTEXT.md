@@ -34,14 +34,17 @@ python -m pytest -q
 python tools/capture_ui_screenshots.py
 sudo ./install.sh
 sudo ./update.sh --check
-sudo ./update.sh --local /path/to/release.tar.gz
+scripts/build-release.sh --git-ref v1.0.0
+scripts/verify-release.sh /path/to/visiondesk-1.0.0.tar.gz --expected-version 1.0.0
+sudo ./update.sh --local /path/to/visiondesk-1.0.0.tar.gz --version 1.0.0 --dry-run
 sudo ./update.sh --rollback
 sudo ./factory-reset.sh --mode user_data
 sudo ./uninstall.sh
 ```
 
-`update.sh --local` requires an archive with `manifest.json` and checksums.
-**TODO:** no archive-building command is present in this repository.
+`scripts/build-release.sh` exports an exact Git ref into the official release
+layout. `scripts/verify-release.sh` validates it without installing. See
+[docs/release-packaging.md](docs/release-packaging.md) for the contract.
 
 ## Main modules
 

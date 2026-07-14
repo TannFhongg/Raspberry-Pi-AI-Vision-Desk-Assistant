@@ -7,6 +7,7 @@ static/captured.jpg
 static/processed.jpg
 static/*.meta.json
 debug/
+dist/
 data/latest_result.txt
 data/web_feedback.json
 .env
