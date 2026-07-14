@@ -44,7 +44,13 @@ BCM GPIO mặc định:
 Dây LAN không bắt buộc. Mang theo LAN, keyboard/mouse và mobile hotspot làm
 phương án dự phòng cho buổi demo.
 
-## 3. Môi trường phát triển Windows
+## 3. Môi trường phát triển
+
+Yêu cầu chung: Python 3.10 trở lên và một desktop session X11/Wayland nếu chạy
+Qt/QML có cửa sổ. Môi trường Linux dưới đây dành cho máy phát triển Ubuntu/Debian
+hoặc Raspberry Pi OS Desktop; nó không thay thế quy trình cài appliance ở mục 6.
+
+### 3.1 Windows
 
 Tại thư mục dự án:
 
@@ -55,7 +61,33 @@ python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
-Các dependency runtime được quản lý trong `requirements.txt`: PySide6,
+### 3.2 Linux (Ubuntu/Debian/Raspberry Pi OS Desktop)
+
+Cài Python, công cụ virtual environment và các thư viện Qt cần để PySide6 chạy
+trên X11/Wayland. Không cần cài `python3-rpi.gpio` hoặc NetworkManager cho máy
+phát triển không gắn GPIO/phone portal.
+
+```bash
+sudo apt update
+sudo apt install -y python3 python3-pip python3-venv \
+  libdbus-1-3 libegl1 libgl1 libopengl0 libx11-xcb1 libxcb-cursor0 \
+  libxcb-keysyms1 libxcb-icccm4 libxcb-image0 libxcb-randr0 \
+  libxcb-render-util0 libxcb-xfixes0 libxcb-xinerama0 libxkbcommon-x11-0
+
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+
+Trên Linux headless/SSH, chỉ chạy test không cần cửa sổ bằng cách đặt Qt ở chế
+độ offscreen:
+
+```bash
+QT_QPA_PLATFORM=offscreen python -m pytest -q
+```
+
+Các dependency Python runtime được quản lý trong `requirements.txt`: PySide6,
 OpenAI SDK, Pillow, `python-dotenv`, `gpiozero`, PyYAML, NumPy và `qrcode`.
 `pytest`/`pytest-qt` phục vụ kiểm thử. Không cần cài Flask để chạy ứng dụng hiện tại.
 
@@ -63,6 +95,12 @@ Tạo `.env` nếu cần override cấu hình local:
 
 ```powershell
 Copy-Item .env.example .env
+```
+
+Trên Linux dùng:
+
+```bash
+cp .env.example .env
 ```
 
 Để chạy phân tích OpenAI thật, thêm API key vào `.env`:
@@ -77,25 +115,25 @@ Không commit `.env`, không gửi key vào chat, Git hoặc ảnh chụp màn h
 
 Chạy UI với camera/GPIO/pipeline giả lập:
 
-```powershell
+```bash
 python -m qt_app.main --windowed --mock-hardware
 ```
 
 Chạy với phần cứng cục bộ:
 
-```powershell
+```bash
 python -m qt_app.main
 ```
 
 Chạy regression suite:
 
-```powershell
+```bash
 python -m pytest -q
 ```
 
 Chụp các UI Qt/QML bằng mock data:
 
-```powershell
+```bash
 python tools/capture_ui_screenshots.py
 ```
 
