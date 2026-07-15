@@ -1,5 +1,8 @@
 # 1366 x 768 display and text-readability migration report
 
+Applies to VisionDesk **1.0.2** (`v1.0.2`, documentation synchronized
+2026-07-15).
+
 ## Outcome
 
 VisionDesk now renders directly into the real application window. The production
@@ -10,8 +13,8 @@ offscreen reference surface.
 
 The migration was rendered and regression-tested on Windows in Qt's offscreen
 software backend. It has **not** been validated on the physical Raspberry Pi,
-11-inch HDMI panel, touchscreen, or GPIO hardware. No claim about physical text
-sharpness is made until the hardware checklist is completed.
+11-inch HDMI panel, GPIO hardware, or any optional touch controller. No claim
+about physical text sharpness is made until the hardware checklist is completed.
 
 ## Audit findings resolved
 
@@ -53,7 +56,8 @@ The detailed pre-change audit and risk analysis is in
 
 - Runtime/configuration: `.env.example`, `config/device.yaml`,
   `config/settings.py`, `qt_app/main.py`, `qt_app/app_controller.py`, and
-  `qt_app/health_controller.py`.
+  `qt_app/health_controller.py`. Finish Setup presentation also updates
+  `qt_app/setup_controller.py`.
 - Window/theme: `qt_app/qml/Main.qml` and `qt_app/qml/theme/Theme.qml`.
 - Shared QML components: `AppHeader.qml`, `AppStatusBadge.qml`, `BrandLogo.qml`,
   `CameraGuideOverlay.qml`, `ClockCard.qml`, `HealthPill.qml`, `InputField.qml`,
@@ -72,8 +76,9 @@ The detailed pre-change audit and risk analysis is in
 - Tests/tools: `tests/test_qt_app.py`, `tools/capture_ui_screenshots.py`,
   `tools/ui_preview/AppScreensPreview.qml`, and
   `tools/ui_preview/SetupWizardPreview.qml`.
-- The 19 existing numbered production screenshot files and their contact sheet
-  were regenerated at 1366 x 768; Settings and Large Text captures were added.
+- The current portfolio contains 27 individual 1366 x 768 screenshots plus one
+  contact sheet: the 21-capture display-migration set and six focused Finish
+  Setup validation captures.
 
 ## Resolution and responsive layout
 
@@ -100,6 +105,20 @@ The detailed pre-change audit and risk analysis is in
 3 px focus border, corner radii, and shared icon sizes. `Theme.qml` exposes these
 tokens to screens and components so the migration does not introduce per-page
 resolution constants.
+
+## Finish Setup validation cards
+
+- `StatusCard.qml` is a content-driven vertical layout with centralized padding,
+  wrapped non-condensed description text, and no fixed diagnostic height.
+- `SetupScreen.qml` keeps two columns at 1366 x 768. Cards in each row fill the
+  taller row height, while later rows remain independent; no card is forced to
+  the height of the longest card on the page.
+- The Setup body `Flickable` owns long content and reserves footer clearance.
+  Back and Ready remain fixed, visible, and in the existing keyboard/GPIO focus
+  order.
+- Known OpenCV/GPIO/network failures are converted to concise user-facing
+  summaries. Desktop mock limitations are explicitly labeled and raw GPIO pin
+  factory exceptions are not used as primary messages.
 
 ## Typography, contrast, and rendering
 
@@ -173,9 +192,11 @@ The new tests cover reference metrics, absence of a root design transform,
 typography roles, minimum touch size, font selection/fallback, text preference
 persistence, aspect-fit rectangles, letterbox/pillarbox clamping, coordinate
 round trips, zoom bounds, camera/review painted-rectangle use, and footer/static
-layout invariants. The preserved suite covers setup, navigation, crop, rotation,
-perspective correction, quality/capability paths, history, errors, and exact
-confirmed-image submission.
+layout invariants. Finish Setup coverage additionally guards content-driven card
+height, wrapping, same-row height, non-overlapping rows, scroll/footer clearance,
+mock-mode summaries, focus visibility, and Large Text. The preserved suite covers
+setup, navigation, crop, rotation, perspective correction, quality/capability
+paths, history, errors, and exact confirmed-image submission.
 
 ## Screenshot output
 
@@ -216,7 +237,7 @@ No active UI-resolution assumption is retained. Remaining literals are justified
 
 - Windows offscreen rendering cannot prove physical font sharpness, the Pi font
   rasterizer, HDMI timing, monitor 1:1 mode, overscan, real DPI accuracy,
-  fractional compositor scaling, touchscreen calibration, camera latency, or
+  fractional compositor scaling, optional touch calibration, camera latency, or
   GPIO focus behavior.
 - Native versus Qt text rendering remains a physical visual choice. The safe
   production default is Qt rendering until the exact panel is compared.

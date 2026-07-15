@@ -1,6 +1,6 @@
 # Hướng dẫn cài đặt và demo VisionDesk
 
-Áp dụng cho VisionDesk **1.0.0**.
+Áp dụng cho VisionDesk **1.0.2** (`v1.0.2`).
 
 Tài liệu này phản ánh trạng thái hiện tại của dự án: một appliance Raspberry Pi
 chạy ứng dụng native `PySide6 + Qt Quick/QML`, màn HDMI 11.6 inch không cảm ứng,
@@ -8,8 +8,8 @@ chạy ứng dụng native `PySide6 + Qt Quick/QML`, màn HDMI 11.6 inch không 
 
 ## 1. Phạm vi hiện tại
 
-- Tám màn hình chính: Setup, Home, Camera, Processing, Result, History,
-  History Detail và Error.
+- Mười một màn hình chính: Setup, Home, Camera, Review and Adjust, Processing,
+  Result, History, History Detail, Error, Settings và Device Health.
 - Năm workflow AI độc lập: Read Text, Summarize Document, Analyze Image,
   Professional Assistant và Solve Problem.
 - Màn 11.6 inch không cảm ứng: điều hướng bằng GPIO Up/Down/Select; vẫn nên có
@@ -127,10 +127,22 @@ Chạy với phần cứng cục bộ:
 python -m qt_app.main
 ```
 
-Chạy regression suite:
+Chạy regression suite trên Linux/Raspberry Pi OS:
 
 ```bash
 python -m pytest -q
+```
+
+Trên Windows, chạy nhóm không Qt và nhóm Qt trong hai process riêng. OpenCV và
+PySide có thể xung đột native khi cùng được nạp trong một process pytest dù cả
+hai nhóm đều vượt qua khi chạy độc lập:
+
+```powershell
+$env:QT_QPA_PLATFORM = "offscreen"
+$env:QT_QUICK_BACKEND = "software"
+$env:QSG_RHI_BACKEND = "software"
+python -m pytest -q --ignore=tests/test_qt_app.py
+python -m pytest -q tests/test_qt_app.py
 ```
 
 Chụp các UI Qt/QML bằng mock data:
@@ -139,8 +151,11 @@ Chụp các UI Qt/QML bằng mock data:
 python tools/capture_ui_screenshots.py
 ```
 
-Ảnh được ghi vào `debug/ui-screenshots/`; file `00-contact-sheet.png` là ảnh
-tổng hợp Setup, Home, Camera, Processing, Result, History, History Detail và Error.
+Ảnh được ghi vào `debug/ui-screenshots/`. Công cụ hiện tạo 27 ảnh riêng ở đúng
+1366 x 768 và file tổng hợp `00-contact-sheet.png`, bao phủ các trạng thái
+Setup/Finish Setup, Home/header, Settings, Large Text, Device Health, Camera,
+Review and Adjust, Processing, Result, History, History Detail và Error. Bộ ảnh
+đã duyệt nằm trong `docs/images/app-screens/`.
 
 ## 5. Cấu hình màn hình và setup portal
 
@@ -152,6 +167,11 @@ resolution phần cứng. Kích thước 1200x800 trước đây là giả đị
 Installer cài Noto Sans và kiểm tra bằng fontconfig. Nếu font này không có,
 VisionDesk lần lượt dùng Inter, DejaVu Sans hoặc Roboto OFL đi kèm. Thiết lập
 `display.text_size` hỗ trợ `standard`, `large` và `extra_large`.
+
+Finish Setup dùng các thẻ validation hai cột có chiều cao theo nội dung. Thông
+báo dài tự xuống dòng trong thẻ và phần nội dung cuộn phía trên footer Back/Ready
+cố định. Desktop mock mode ghi rõ giới hạn giả lập thay vì dùng raw exception
+phần cứng làm thông báo chính.
 
 Cấu hình phone-first portal:
 
@@ -205,7 +225,7 @@ vào `/opt` và không dùng `sudo git clone`):
 
 ```bash
 sudo apt install -y git
-git clone --depth 1 --branch v1.0.0 \
+git clone --depth 1 --branch v1.0.2 \
   https://github.com/TannFhongg/Raspberry-Pi-AI-Vision-Desk-Assistant.git \
   ~/visiondesk
 cd ~/visiondesk
@@ -213,7 +233,7 @@ git describe --tags --exact-match
 chmod +x install.sh
 ```
 
-Production cài từ tag cố định `v1.0.0`, không dùng `master`. `master` chỉ dành
+Production cài từ tag cố định `v1.0.2`, không dùng `master`. `master` chỉ dành
 cho development. Nếu Pi không có Internet, chép source đã checkout đúng tag
 bằng USB hoặc `scp`, rồi `cd` vào thư mục đó trước khi cài.
 
@@ -274,7 +294,9 @@ NetworkManager khả dụng.
 5. VisionDesk phản hồi yêu cầu, xóa AP tạm, kết nối Wi-Fi đích, xác minh API key
    và kiểm tra camera.
 6. Nhấn mỗi trong 10 nút GPIO một lần để hoàn tất wiring test.
-7. Thiết bị restart vào Home.
+7. Kiểm tra các gate ở Finish Setup. Lỗi dài vẫn đọc được bằng cách cuộn; nút
+   Ready chỉ bật khi Wi-Fi, xác minh API, camera và GPIO đều đạt.
+8. Hoàn tất setup để thiết bị restart vào Home.
 
 Nếu AP không chạy, dùng keyboard/mouse với Setup Wizard trực tiếp. Kiểm tra
 `nmcli device status`, `nmcli general permissions` và `journalctl -u visiondesk.service -b`.
@@ -304,8 +326,8 @@ Update và rollback:
 
 ```bash
 sudo ./update.sh --check
-sudo ./update.sh --local /path/to/visiondesk-1.0.0.tar.gz --version 1.0.0 --dry-run
-sudo ./update.sh --local /path/to/visiondesk-1.0.0.tar.gz --version 1.0.0
+sudo ./update.sh --local /path/to/visiondesk-1.0.2.tar.gz --version 1.0.2 --dry-run
+sudo ./update.sh --local /path/to/visiondesk-1.0.2.tar.gz --version 1.0.2
 sudo ./update.sh --rollback
 ```
 

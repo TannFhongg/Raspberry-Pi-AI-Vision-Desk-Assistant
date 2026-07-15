@@ -2,7 +2,10 @@
 
 > Historical note: this report predates the corrected 1366 x 768 hardware
 > target. Any 1200 x 800 references below describe obsolete captures or the old
-> implementation, not the current production resolution.
+> implementation, not the current production resolution. The commercial
+> UI/camera-review work remains part of VisionDesk 1.0.2; current display,
+> Finish Setup, tests, and screenshots are documented in the
+> [1366 x 768 report](display-1366x768-text-readability-report.md).
 
 ## Delivered scope
 
@@ -133,13 +136,16 @@ Commands executed:
 & .\.venv\Scripts\python.exe tools\capture_ui_screenshots.py --output-dir docs\images\app-screens
 ```
 
-Result: `224 passed, 5 skipped, 16 subtests passed` in 15.37 seconds. The
-focused new-review/status/Qt set also passed `48` tests.
+Historical result at delivery: `224 passed, 5 skipped, 16 subtests passed` in
+15.37 seconds. The focused new-review/status/Qt set also passed `48` tests.
+The current v1.0.2 split result is 239 passing tests; see the current display
+report for the exact command grouping and Windows native-library caveat.
 
 ## Screenshots
 
-The historical portfolio-safe mock screenshots were 1200 x 800 in
-`docs/images/app-screens/`. The set includes the contact sheet plus:
+The historical portfolio-safe mock screenshots were 1200 x 800 and are now
+archived under `docs/images/app-screens/legacy-pre-1366x768/`. The historical
+set included the contact sheet plus:
 
 - initial setup, compact device-check progress, completed setup checks, and setup scrolled (`01-*`), Ready and Wi-Fi unavailable headers;
 - Device Health;
@@ -148,8 +154,8 @@ The historical portfolio-safe mock screenshots were 1200 x 800 in
   states;
 - Processing, Result, History, History Detail, and Error.
 
-The screenshot script only replaces its own numbered images so pre-existing
-documentation captures remain intact. The warning/capability screenshots use
+The current screenshot script renders 27 individual 1366 x 768 images plus one
+contact sheet. The warning/capability screenshots use
 clearly simulated mock fixtures; they do not represent a real customer's image
 or physical-camera test.
 

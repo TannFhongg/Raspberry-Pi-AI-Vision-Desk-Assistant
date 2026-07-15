@@ -1,6 +1,7 @@
 # VisionDesk
 
-**Version 1.0.1** — Raspberry Pi AI Vision Desk Assistant.
+**Version 1.0.2** — Raspberry Pi AI Vision Desk Assistant. Documentation was
+synchronized with tag `v1.0.2` on 2026-07-15.
 
 VisionDesk is a native `PySide6 + Qt Quick/QML` appliance for a Raspberry Pi 5.
 It captures a USB-camera image, prepares it locally, sends the image to OpenAI,
@@ -10,8 +11,8 @@ application, or persistent browser-based management UI.
 
 ## What is in this repository
 
-- Eight QML screens: Setup, Home, Camera, Processing, Result, History, History
-  Detail, and Error.
+- Eleven QML screens: Setup, Home, Camera, Review and Adjust, Processing,
+  Result, History, History Detail, Error, Settings, and Device Health.
 - Five distinct AI workflows: Read Text, Summarize Document, Analyze Image,
   Professional Assistant, and Solve Problem.
 - A six-step setup flow for Wi-Fi, OpenAI key verification, camera, GPIO, and
@@ -33,6 +34,21 @@ marked historical material.
 
 Not implemented: text-to-speech / “Hear printed text”. Do not present it as a
 delivered feature.
+
+Current `v1.0.2` UI status:
+
+- The application renders responsively at the 1366 x 768 production target
+  without a root-level design-canvas transform.
+- Finish Setup validation cards use content-driven heights, wrapped diagnostics,
+  equal heights within each two-column row, and a scrollable body above the
+  fixed Back/Ready footer.
+- Desktop mock limitations are labeled as expected mock-mode limitations;
+  raw GPIO implementation exceptions are not used as the primary message.
+- The current documentation capture set contains 27 individual 1366 x 768
+  screenshots plus one contact sheet.
+- The verified split regression run contains 239 passing tests. Physical HDMI,
+  camera, and GPIO validation is still required on the target Pi; any optional
+  touch controller is also unverified.
 
 ## Hardware target
 
@@ -80,10 +96,22 @@ key:
 python -m qt_app.main --windowed --mock-hardware
 ```
 
-Run the test suite:
+Run the test suite on Linux/Raspberry Pi OS:
 
 ```bash
 python -m pytest -q
+```
+
+On Windows, keep the non-Qt and Qt application groups in separate processes.
+This avoids a native OpenCV/PySide teardown conflict observed when both stacks
+are loaded by one pytest process:
+
+```powershell
+$env:QT_QPA_PLATFORM = "offscreen"
+$env:QT_QUICK_BACKEND = "software"
+$env:QSG_RHI_BACKEND = "software"
+python -m pytest -q --ignore=tests/test_qt_app.py
+python -m pytest -q tests/test_qt_app.py
 ```
 
 For a headless Linux/SSH test run:
@@ -106,7 +134,7 @@ first receive this repository or an equivalent checked source tree.
 ```bash
 sudo apt update
 sudo apt install -y git
-git clone --depth 1 --branch v1.0.1 \
+git clone --depth 1 --branch v1.0.2 \
   https://github.com/TannFhongg/Raspberry-Pi-AI-Vision-Desk-Assistant.git \
   ~/visiondesk
 cd ~/visiondesk
@@ -115,7 +143,7 @@ chmod +x install.sh
 sudo ./install.sh
 ```
 
-Production deployments use the fixed `v1.0.1` tag. Developers may use `master`
+Production deployments use the fixed `v1.0.2` tag. Developers may use `master`
 for ongoing work, but it is not a production deployment target.
 
 The factory configuration has `setup.completed: false`. After the first boot,
@@ -163,5 +191,11 @@ Persistent paths on the appliance:
   checklist.
 - [docs/release-packaging.md](docs/release-packaging.md) — official appliance
   archive contract, build, verification, GitHub upload, update, and rollback.
+- [docs/display-1366x768-text-readability-report.md](docs/display-1366x768-text-readability-report.md)
+  — current display, typography, Finish Setup, test, and screenshot status.
+- [docs/1366x768-hardware-validation.md](docs/1366x768-hardware-validation.md)
+  — required real Raspberry Pi/HDMI validation checklist.
+- [docs/ui-commercial-upgrade-report.md](docs/ui-commercial-upgrade-report.md)
+  — historical record of the earlier commercial UI/camera-review upgrade.
 - [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) — concise code map and operational
   invariants for contributors.

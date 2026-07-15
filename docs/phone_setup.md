@@ -1,6 +1,6 @@
 # Phone-first provisioning
 
-This procedure applies to a new VisionDesk 1.0.0 appliance with the 11.6-inch
+This procedure applies to a new VisionDesk 1.0.2 appliance with the 11.6-inch
 non-touch display. The device panel shows the temporary network and progress;
 a phone supplies Wi-Fi credentials and the OpenAI API key.
 
@@ -39,7 +39,11 @@ nmcli general permissions
 5. Submit once. VisionDesk stops and removes the temporary AP, then connects to
    the chosen Wi-Fi, verifies the OpenAI key, and runs the camera check.
 6. Press each of the ten physical buttons during the GPIO step. The application
-   completes setup and restarts into Home.
+   advances to Finish Setup.
+7. Review the Wi-Fi, API, camera, and GPIO gates. Ready is enabled only when all
+   required gates pass; long messages wrap inside their cards and the page can
+   scroll without the fixed footer covering content.
+8. Finish setup. The application completes setup and restarts into Home.
 
 The QR payload contains only the local URL. It never contains the temporary
 Wi-Fi password, the pairing code, Wi-Fi credentials, or the API key.
@@ -68,6 +72,12 @@ Wi-Fi password, the pairing code, Wi-Fi credentials, or the API key.
 
 Do not paste Wi-Fi passwords or OpenAI keys into shell commands or logs while
 diagnosing.
+
+When reproducing the flow with `--mock-hardware` on a desktop, camera/GPIO
+limitations are labeled `Not available in desktop mock mode`. This is an
+expected simulation boundary, not proof that the physical device is ready. Raw
+driver exceptions are reserved for technical diagnostics/logging rather than
+the primary Setup message.
 
 ## Security boundary
 

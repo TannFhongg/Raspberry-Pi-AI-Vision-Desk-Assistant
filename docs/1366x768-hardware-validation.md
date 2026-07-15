@@ -4,6 +4,9 @@ This checklist must be completed on the intended Raspberry Pi and the exact
 11-inch HDMI panel. Offscreen Windows screenshots and automated tests do not
 validate physical sharpness, touch alignment, overscan, or display scaling.
 
+Documentation baseline: VisionDesk 1.0.2 (`v1.0.2`). Leave every unchecked item
+pending until it is observed on the named physical test system.
+
 ## Record the test environment
 
 - Raspberry Pi model and RAM:
@@ -47,6 +50,11 @@ validate physical sharpness, touch alignment, overscan, or display scaling.
 ## Layout and navigation
 
 - [ ] Confirm Setup progress steps, cards, scroll, and fixed footer do not overlap.
+- [ ] On Finish Setup, confirm short and long Wi-Fi/API/camera/GPIO messages stay
+      inside their cards, grid rows do not overlap, and the Back/Ready footer
+      remains fixed and fully visible while the card area scrolls.
+- [ ] Confirm production failures use concise user-facing summaries and that
+      desktop mock limitations are not presented as physical-hardware success.
 - [ ] Confirm all five Home task cards fit and their GPIO focus order is logical.
 - [ ] Confirm header branding never overlaps the Ready/status badge.
 - [ ] Confirm every footer remains visible and does not cover page content.
@@ -68,7 +76,8 @@ validate physical sharpness, touch alignment, overscan, or display scaling.
 - [ ] Confirm perspective boundary lines align with the displayed document.
 - [ ] Confirm display-only review zoom does not change the submitted crop.
 - [ ] Confirm the image shown after confirmation is the image submitted for analysis.
-- [ ] Confirm touchscreen coordinates align at all four corners and the center.
+- [ ] If a touch controller is fitted, confirm its coordinates align at all four
+      corners and the center.
 
 ## Sign-off
 

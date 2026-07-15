@@ -1,22 +1,22 @@
 # VisionDesk Setup and Demo Guide
 
-Applies to VisionDesk **1.0.0**.
+Applies to VisionDesk **1.0.2** (`v1.0.2`).
 
 This document reflects the project’s current state: a Raspberry Pi appliance running a
-native \`PySide6 + Qt Quick/QML\` application, with an 11.6-inch non-touch HDMI display,
+native `PySide6 + Qt Quick/QML` application, with an 11.6-inch non-touch HDMI display,
 10 GPIO buttons, and first-time setup from a phone through a temporary Wi-Fi AP.
 
 ## 1. Current scope
 
-- Eight main screens: Setup, Home, Camera, Processing, Result, History,
-  History Detail, and Error.
+- Eleven main screens: Setup, Home, Camera, Review and Adjust, Processing,
+  Result, History, History Detail, Error, Settings, and Device Health.
 - Five independent AI workflows: Read Text, Summarize Document, Analyze Image,
   Professional Assistant, and Solve Problem.
 - The 11.6-inch display is non-touch: navigate with GPIO Up/Down/Select; keep a
   keyboard and mouse available for recovery and administration.
 - Phone-first setup: QR code, temporary SSID/password, and a pairing code appear while
   setup is incomplete; use a phone to enter the target Wi-Fi details and OpenAI API key.
-- Production runs only the native Qt service \`visiondesk.service\`; Flask is not part of
+- Production runs only the native Qt service `visiondesk.service`; Flask is not part of
   the product runtime. The phone portal uses a short-lived internal HTTP server.
 
 ## 2. Required hardware
@@ -58,20 +58,20 @@ installation process in section 6.
 
 From the project directory:
 
-\`\`\`powershell
+```powershell
 py -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
-\`\`\`
+```
 
 ### 3.2 Linux (Ubuntu/Debian/Raspberry Pi OS Desktop)
 
 Install Python, virtual-environment tools, and the Qt libraries required for PySide6 to
-run on X11/Wayland. You do not need to install \`python3-rpi.gpio\` or NetworkManager on a
+run on X11/Wayland. You do not need to install `python3-rpi.gpio` or NetworkManager on a
 development machine without GPIO or the phone portal.
 
-\`\`\`bash
+```bash
 sudo apt update
 sudo apt install -y python3 python3-pip python3-venv \
   libdbus-1-3 libegl1 libgl1 libopengl0 libx11-xcb1 libxcb-cursor0 \
@@ -82,83 +82,103 @@ python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
-\`\`\`
+```
 
 On headless Linux or over SSH, run windowless tests by setting Qt to offscreen mode:
 
-\`\`\`bash
+```bash
 QT_QPA_PLATFORM=offscreen python -m pytest -q
-\`\`\`
+```
 
-Runtime Python dependencies are managed in \`requirements.txt\`: PySide6, the OpenAI SDK,
-Pillow, \`python-dotenv\`, \`gpiozero\`, PyYAML, NumPy, and \`qrcode\`.
-\`pytest\`/\`pytest-qt\` are for testing. Flask is not required to run the current
+Runtime Python dependencies are managed in `requirements.txt`: PySide6, the OpenAI SDK,
+Pillow, `python-dotenv`, `gpiozero`, PyYAML, NumPy, and `qrcode`.
+`pytest`/`pytest-qt` are for testing. Flask is not required to run the current
 application.
 
-Create \`.env\` if you need to override local configuration:
+Create `.env` if you need to override local configuration:
 
-\`\`\`powershell
+```powershell
 Copy-Item .env.example .env
-\`\`\`
+```
 
 On Linux, use:
 
-\`\`\`bash
+```bash
 cp .env.example .env
-\`\`\`
+```
 
-To run real OpenAI analysis, add your API key to \`.env\`:
+To run real OpenAI analysis, add your API key to `.env`:
 
-\`\`\`dotenv
+```dotenv
 OPENAI_API_KEY=sk-your-real-key
-\`\`\`
+```
 
-Do not commit \`.env\` or share the key in chat, Git, or screenshots.
+Do not commit `.env` or share the key in chat, Git, or screenshots.
 
 ## 4. Run and test locally
 
 Run the UI with simulated camera, GPIO, and pipeline:
 
-\`\`\`bash
+```bash
 python -m qt_app.main --windowed --mock-hardware
-\`\`\`
+```
 
 Run with local hardware:
 
-\`\`\`bash
+```bash
 python -m qt_app.main
-\`\`\`
+```
 
-Run the regression suite:
+Run the regression suite on Linux/Raspberry Pi OS:
 
-\`\`\`bash
+```bash
 python -m pytest -q
-\`\`\`
+```
+
+On Windows, use separate processes for the non-Qt and Qt groups. A native
+OpenCV/PySide teardown conflict can occur when both are loaded in one pytest
+process even though both groups pass independently:
+
+```powershell
+$env:QT_QPA_PLATFORM = "offscreen"
+$env:QT_QUICK_BACKEND = "software"
+$env:QSG_RHI_BACKEND = "software"
+python -m pytest -q --ignore=tests/test_qt_app.py
+python -m pytest -q tests/test_qt_app.py
+```
 
 Capture Qt/QML UI screenshots with mock data:
 
-\`\`\`bash
+```bash
 python tools/capture_ui_screenshots.py
-\`\`\`
+```
 
-Images are written to \`debug/ui-screenshots/\`; \`00-contact-sheet.png\` is a composite
-of Setup, Home, Camera, Processing, Result, History, History Detail, and Error.
+Images are written to `debug/ui-screenshots/`. The current generator produces
+27 individual images at exactly 1366 x 768 plus `00-contact-sheet.png`, covering
+Setup/Finish Setup states, Home/header states, Settings, Large Text, Device
+Health, Camera, Review and Adjust, Processing, Result, History, History Detail,
+and Error. The reviewed documentation set is in `docs/images/app-screens/`.
 
 ## 5. Display configuration and setup portal
 
-\`display.size: 1366x768\` in \`config/device.yaml\` is the primary windowed-development
+`display.size: 1366x768` in `config/device.yaml` is the primary windowed-development
 target. In the production kiosk, Qt uses the HDMI screen’s actual fullscreen geometry;
 VisionDesk does not stretch an offscreen canvas. This value does not change the hardware
 resolution. The earlier 1200x800 value was an incorrect target assumption.
 
 The installer adds Noto Sans and verifies it with fontconfig. If unavailable,
 VisionDesk falls back to Inter, DejaVu Sans, or bundled OFL Roboto. The
-\`display.text_size\` setting supports \`standard\`, \`large\`, and \`extra_large\`.
-Use \`UI_TEXT_RENDERING=native\` only for a controlled comparison on the real panel.
+`display.text_size` setting supports `standard`, `large`, and `extra_large`.
+Use `UI_TEXT_RENDERING=native` only for a controlled comparison on the real panel.
+
+Finish Setup uses content-driven two-column validation cards. Long diagnostics
+wrap inside their cards and the page scrolls above a fixed Back/Ready footer.
+Desktop mock mode identifies unavailable camera/GPIO checks as expected mock
+limitations instead of presenting raw hardware exceptions as the primary text.
 
 Phone-first portal configuration:
 
-\`\`\`yaml
+```yaml
 setup_portal:
   enabled: true
   auto_start_when_setup_incomplete: true
@@ -167,14 +187,14 @@ setup_portal:
   address: 192.168.4.1
   port: 80
   ssid_prefix: VisionDesk-Setup
-\`\`\`
+```
 
 The portal starts only on a real device whose setup is incomplete. It does not run with
-\`--mock-hardware\`. The QR code contains only the local URL, for example
-\`http://192.168.4.1\`; the temporary Wi-Fi password and 8-digit pairing code appear on
+`--mock-hardware`. The QR code contains only the local URL, for example
+`http://192.168.4.1`; the temporary Wi-Fi password and 8-digit pairing code appear on
 the VisionDesk screen.
 
-The shipped configuration sets \`setup.completed: false\`, so a new device enters Welcome
+The shipped configuration sets `setup.completed: false`, so a new device enters Welcome
 and displays phone-first setup immediately after the initial installation. Use the
 Configuration Reset in section 9 only when you need to return an operating device to the
 first-boot flow.
@@ -182,9 +202,9 @@ first-boot flow.
 ## 6. Install a new Raspberry Pi device
 
 The production target is Raspberry Pi OS Desktop 64-bit, LightDM autologin, and a
-dedicated \`visiondesk\` user. The source/release must be available on the Pi before
-running the installer: \`install.sh\` packages that source directory into the active
-release under \`/opt/visiondesk\`.
+dedicated `visiondesk` user. The source/release must be available on the Pi before
+running the installer: `install.sh` packages that source directory into the active
+release under `/opt/visiondesk`.
 
 ### 6.1 Prepare the operating system
 
@@ -196,85 +216,85 @@ release under \`/opt/visiondesk\`.
    and sign in.
 4. Update the operating system and reboot:
 
-\`\`\`bash
+```bash
 sudo apt update
 sudo apt full-upgrade -y
 sudo reboot
-\`\`\`
+```
 
 After the Pi restarts, open Terminal or reconnect through SSH.
 
 ### 6.2 Get the correct release source
 
 For the current repository, clone it into the administrator user’s home directory (do not
-clone into \`/opt\` and do not use \`sudo git clone\`):
+clone into `/opt` and do not use `sudo git clone`):
 
-\`\`\`bash
+```bash
 sudo apt install -y git
-git clone --depth 1 --branch v1.0.0 \
+git clone --depth 1 --branch v1.0.2 \
   https://github.com/TannFhongg/Raspberry-Pi-AI-Vision-Desk-Assistant.git \
   ~/visiondesk
 cd ~/visiondesk
 git describe --tags --exact-match
 chmod +x install.sh
-\`\`\`
+```
 
-Production is installed from the fixed \`v1.0.0\` tag, not \`master\`. \`master\` is for
+Production is installed from the fixed `v1.0.2` tag, not `master`. `master` is for
 development only. If the Pi has no internet connection, copy source already checked out
-at the correct tag via USB or \`scp\`, then \`cd\` into that directory before installing.
+at the correct tag via USB or `scp`, then `cd` into that directory before installing.
 
-You do not need to create \`.env\` in the source or set an OpenAI API key before installing
+You do not need to create `.env` in the source or set an OpenAI API key before installing
 a new device. The API key is entered and verified during phone-first setup; the installer
-creates the restricted secret file \`/etc/visiondesk/visiondesk.env\`.
+creates the restricted secret file `/etc/visiondesk/visiondesk.env`.
 
 ### 6.3 Install the appliance
 
-\`\`\`bash
+```bash
 sudo ./install.sh
-\`\`\`
+```
 
 Options:
 
-\`\`\`bash
+```bash
 sudo ./install.sh --non-interactive
 sudo ./install.sh --skip-hardware-check
 sudo ./install.sh --reset-config
 sudo ./install.sh --force
-\`\`\`
+```
 
 The installer installs system packages, creates the release virtual environment and
 service, creates persistent directories, and adds a PolicyKit rule that limits
-NetworkManager permissions for the \`visiondesk\` group. Once complete, the source in
-\`~/visiondesk\` is only for maintenance/updates; the service runs the installed release
-at \`/opt/visiondesk/current\`.
+NetworkManager permissions for the `visiondesk` group. Once complete, the source in
+`~/visiondesk` is only for maintenance/updates; the service runs the installed release
+at `/opt/visiondesk/current`.
 
 After installation, confirm:
 
-\`\`\`bash
+```bash
 nmcli device status
 nmcli general permissions
 sudo systemctl status NetworkManager
 sudo systemctl status visiondesk.service
-\`\`\`
+```
 
 Production paths:
 
-- \`/opt/visiondesk/current\`: active release.
-- \`/etc/visiondesk/device.yaml\`: persistent device configuration.
-- \`/etc/visiondesk/visiondesk.env\`: secrets, with \`0600\` permissions.
-- \`/var/lib/visiondesk/\`: setup state, history, and private retry media.
-- \`/var/log/visiondesk/\`: service and lifecycle logs.
+- `/opt/visiondesk/current`: active release.
+- `/etc/visiondesk/device.yaml`: persistent device configuration.
+- `/etc/visiondesk/visiondesk.env`: secrets, with `0600` permissions.
+- `/var/lib/visiondesk/`: setup state, history, and private retry media.
+- `/var/log/visiondesk/`: service and lifecycle logs.
 
-Do not edit \`config/device.yaml\` in the release source to change production
-configuration; use \`/etc/visiondesk/device.yaml\` and \`/etc/visiondesk/visiondesk.env\`.
+Do not edit `config/device.yaml` in the release source to change production
+configuration; use `/etc/visiondesk/device.yaml` and `/etc/visiondesk/visiondesk.env`.
 
 ## 7. Phone-first setup flow
 
-Requirements: \`setup.completed: false\`, the portal enabled, \`wlan0\` supporting AP
+Requirements: `setup.completed: false`, the portal enabled, `wlan0` supporting AP
 mode, and NetworkManager available.
 
 1. Power on VisionDesk and wait for the Welcome screen.
-2. The screen displays a **Phone setup** card with the \`VisionDesk-Setup-XXXX\` SSID,
+2. The screen displays a **Phone setup** card with the `VisionDesk-Setup-XXXX` SSID,
    temporary password, QR code, URL, and 8-digit pairing code.
 3. Connect the phone to the temporary SSID, then scan the QR code or open the URL shown
    on the display.
@@ -283,11 +303,13 @@ mode, and NetworkManager available.
 5. VisionDesk accepts the request, removes the temporary AP, connects to the target
    Wi-Fi, verifies the API key, and checks the camera.
 6. Press each of the 10 GPIO buttons once to complete the wiring test.
-7. The device restarts into Home.
+7. Review the Finish Setup gates. Long failures remain readable by scrolling;
+   Ready is enabled only when Wi-Fi, API verification, camera, and GPIO pass.
+8. Finish setup and let the device restart into Home.
 
 If the AP does not start, use the Setup Wizard directly with a keyboard/mouse. Check
-\`nmcli device status\`, \`nmcli general permissions\`, and
-\`journalctl -u visiondesk.service -b\`.
+`nmcli device status`, `nmcli general permissions`, and
+`journalctl -u visiondesk.service -b`.
 
 ## 8. Quick demo
 
@@ -306,51 +328,51 @@ in the current version.
 
 Manage the service:
 
-\`\`\`bash
+```bash
 sudo systemctl restart visiondesk.service
 sudo systemctl status visiondesk.service
 journalctl -u visiondesk.service -f
-\`\`\`
+```
 
 Update and roll back:
 
-\`\`\`bash
+```bash
 sudo ./update.sh --check
-sudo ./update.sh --local /path/to/visiondesk-1.0.0.tar.gz --version 1.0.0 --dry-run
-sudo ./update.sh --local /path/to/visiondesk-1.0.0.tar.gz --version 1.0.0
+sudo ./update.sh --local /path/to/visiondesk-1.0.2.tar.gz --version 1.0.2 --dry-run
+sudo ./update.sh --local /path/to/visiondesk-1.0.2.tar.gz --version 1.0.2
 sudo ./update.sh --rollback
-\`\`\`
+```
 
 Build and verify the archive on a maintenance workstation, upload it as a GitHub Release,
-and follow the \`manifest.json\` contract and checksum described in
+and follow the `manifest.json` contract and checksum described in
 [docs/release-packaging.md](docs/release-packaging.md).
 Do not use GitHub-generated Source code.zip/Source code.tar.gz directly with
-\`update.sh\`.
+`update.sh`.
 
 Reset data or return to the Setup Wizard:
 
-\`\`\`bash
+```bash
 sudo ./factory-reset.sh --mode user_data --yes
 sudo ./factory-reset.sh --mode configuration --yes
 sudo ./factory-reset.sh --mode factory_reset --phrase "ERASE VISIONDESK"
-\`\`\`
+```
 
-A \`configuration\` reset removes the API key and setup state, then returns to Welcome
-so phone-first setup can run again. Use \`--remove-wifi\` with a factory reset if saved
+A `configuration` reset removes the API key and setup state, then returns to Welcome
+so phone-first setup can run again. Use `--remove-wifi` with a factory reset if saved
 Wi-Fi profiles must also be removed.
 
 Uninstall while keeping data/configuration by default:
 
-\`\`\`bash
+```bash
 sudo ./uninstall.sh
-\`\`\`
+```
 
 Preview or fully remove:
 
-\`\`\`bash
+```bash
 sudo ./uninstall.sh --dry-run
 sudo ./uninstall.sh --purge
-\`\`\`
+```
 
 See [docs/architecture.md](docs/architecture.md) for architecture details and
 [docs/phone_setup.md](docs/phone_setup.md) for the portal’s security boundary.

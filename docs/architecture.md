@@ -1,6 +1,6 @@
 # VisionDesk architecture
 
-Applies to VisionDesk **1.0.0**. VisionDesk is a native Raspberry Pi desktop
+Applies to VisionDesk **1.0.2**. VisionDesk is a native Raspberry Pi desktop
 appliance, not a browser kiosk. `visiondesk.service` starts the only production
 UI: the `PySide6 + Qt Quick/QML` application in `qt_app/`.
 
@@ -66,6 +66,27 @@ actions. Setup's scrollable body uses focus-aware scrolling so a selected item
 is kept clear of its fixed footer; Review preserves Back as Retake and guards
 against duplicate confirmation while capture or submission is busy.
 
+Finish Setup renders its four gate results as content-driven `StatusCard`
+instances in a two-column `GridLayout`. Each row adopts the taller card, long
+diagnostics wrap without elision, and the page scrolls above the fixed footer.
+`qt_app.setup_controller.present_setup_diagnostic` converts known raw failures
+to user-facing summaries and distinguishes desktop mock limitations from
+physical Raspberry Pi failures without inventing successful readiness.
+
+## Display and typography model
+
+The production reference is 1366 x 768, while fullscreen mode uses the actual
+Qt screen geometry. The shell has no 1200 x 800 design surface, root scale, or
+non-uniform transform. `DisplayMetrics.qml` centralizes layout/touch dimensions;
+`Typography.qml` provides Standard, Large, and Extra Large roles without
+scaling the whole UI.
+
+Body text uses the first available family in the Noto Sans, Inter, DejaVu Sans,
+and bundled Roboto chain. Qt rendering with vertical hinting is the safe default;
+native text rendering remains an explicit real-panel comparison. Camera and
+review input map through the aspect-fit painted image rectangle so letterboxing
+and pillarboxing do not shift crop or zoom coordinates.
+
 ## First boot and phone provisioning
 
 `system/setup_flow.py` owns the authoritative setup state. On a newly installed
@@ -95,8 +116,9 @@ For the operator workflow and recovery steps, see
 `install.sh`, run from a checked source tree, does the following:
 
 1. Validates prerequisites, installs system packages, creates the dedicated
-   `visiondesk` user/group, and installs the narrow NetworkManager PolicyKit
-   rule in `deployment/49-visiondesk-networkmanager.rules`.
+   `visiondesk` user/group, installs Noto Sans/fontconfig, and installs the
+   narrow NetworkManager PolicyKit rule in
+   `deployment/49-visiondesk-networkmanager.rules`.
 2. Seeds `/etc/visiondesk/device.yaml` and `/etc/visiondesk/visiondesk.env` on
    first install.
 3. Copies the source into `/opt/visiondesk/releases/<version>`, builds its

@@ -2,8 +2,10 @@
 
 > Historical note: this document recorded the earlier 1200 x 800 implementation.
 > That resolution was later confirmed to be an incorrect production assumption.
-> The current implementation and validation target are 1366 x 768; see
-> `display-1366x768-text-readability-plan.md`.
+> The commercial UI/camera-review scope was delivered before the display
+> correction. VisionDesk 1.0.2 now targets 1366 x 768; see the current
+> [display report](display-1366x768-text-readability-report.md). The findings and
+> future-tense wording below are retained as a pre-change record.
 
 ## Audit scope and findings
 
@@ -132,9 +134,9 @@ cleanup, no AI call before confirmation, confirmed image identity, and
 double-submit prevention. Existing test modules remain part of the regression
 run.
 
-Visual verification will use the established QML preview/capture tooling at
-the then-assumed 1200 x 800. Current tooling instead produces safe 1366 x 768 fixture screenshots for the requested header,
-setup, health, preview, review/crop/perspective/warning, and unsupported-control
-states. Manual hardware validation remains required for physical autofocus,
-exposure, camera-driver control semantics, GPIO focus navigation, and
-real-world document detection.
+Visual verification was originally scoped around the then-assumed 1200 x 800.
+Current tooling instead produces safe 1366 x 768 fixture screenshots for the
+requested header, setup, health, preview, review/crop/perspective/warning, and
+unsupported-control states. Manual hardware validation remains required for
+physical autofocus, exposure, camera-driver control semantics, GPIO focus
+navigation, and real-world document detection.

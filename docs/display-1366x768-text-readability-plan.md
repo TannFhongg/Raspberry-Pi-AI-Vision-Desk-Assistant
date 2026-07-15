@@ -1,5 +1,10 @@
 # 1366 x 768 display and text-readability migration plan
 
+> Status: implemented in VisionDesk 1.0.2. This file intentionally preserves
+> the pre-change audit, assumptions, and planned work for traceability. Current
+> implementation, verification, screenshots, and remaining hardware work are in
+> [display-1366x768-text-readability-report.md](display-1366x768-text-readability-report.md).
+
 ## Audit scope
 
 VisionDesk is a PySide6 6.11 / Qt Quick Controls application rooted at
@@ -94,5 +99,8 @@ existing screenshots, and project documentation.
 - Full regression suite in mock hardware mode.
 - Offscreen visual captures for setup, home, camera, review, processing, result,
   history, history detail, error, settings, Device Health, and Large Text.
-- Physical validation remains mandatory for DPI, overscan, touchscreen alignment,
-  font sharpness, and the Qt-versus-native rendering comparison.
+- Physical validation remains mandatory for DPI, overscan, font sharpness, the
+  Qt-versus-native rendering comparison, and optional touch alignment if fitted.
+
+All automated/offscreen items above are complete. The separate physical checks
+remain open in [1366x768-hardware-validation.md](1366x768-hardware-validation.md).

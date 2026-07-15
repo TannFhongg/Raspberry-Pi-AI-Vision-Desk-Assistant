@@ -1,7 +1,8 @@
 # VisionDesk project context
 
-Maintainer reference for VisionDesk **1.0.0**. This file is a code map, not an
-end-user installation guide; use [setup-en.md](setup-en.md) for deployment steps.
+Maintainer reference for VisionDesk **1.0.2** (`v1.0.2`, 2026-07-15). This is a
+code map, not an end-user installation guide; use [setup-en.md](setup-en.md) for
+deployment steps.
 
 ## Product boundary
 
@@ -16,8 +17,8 @@ runtime.
 
 The product currently provides:
 
-- Setup, Home, Camera, Processing, Result, History, History Detail, and Error
-  screens.
+- Setup, Home, Camera, Review and Adjust, Processing, Result, History, History
+  Detail, Error, Settings, and Device Health screens.
 - Five modes: `read_text`, `summarize_document`, `analyze_image`,
   `professional_assistant`, and `solve_problem`.
 - A six-step setup state machine: welcome, Wi-Fi, OpenAI, camera, GPIO, finish.
@@ -34,9 +35,9 @@ python -m pytest -q
 python tools/capture_ui_screenshots.py
 sudo ./install.sh
 sudo ./update.sh --check
-scripts/build-release.sh --git-ref v1.0.0
-scripts/verify-release.sh /path/to/visiondesk-1.0.0.tar.gz --expected-version 1.0.0
-sudo ./update.sh --local /path/to/visiondesk-1.0.0.tar.gz --version 1.0.0 --dry-run
+scripts/build-release.sh --git-ref v1.0.2
+scripts/verify-release.sh /path/to/visiondesk-1.0.2.tar.gz --expected-version 1.0.2
+sudo ./update.sh --local /path/to/visiondesk-1.0.2.tar.gz --version 1.0.2 --dry-run
 sudo ./update.sh --rollback
 sudo ./factory-reset.sh --mode user_data
 sudo ./uninstall.sh
@@ -55,6 +56,11 @@ layout. `scripts/verify-release.sh` validates it without installing. See
 - `qt_app/runtime.py` — shared settings, paths, lifecycle, reset recovery, and
   service readiness wiring.
 - `qt_app/setup_controller.py` — setup wizard and phone-portal lifecycle.
+- `qt_app/display_integration.py` and `vision/display_mapping.py` — display
+  diagnostics and aspect-fit coordinate mapping.
+- `qt_app/capture_review_controller.py` and `vision/review_processing.py` —
+  private capture-review session, crop/rotation/perspective processing, and
+  confirmed-image submission.
 - `qt_app/pipeline_controller.py` — camera capture and analysis orchestration.
 - `qt_app/history_controller.py`, `health_controller.py`, and
   `gpio_controller.py` — QML-facing feature controllers.
@@ -93,6 +99,25 @@ updates `device.yaml` for compatibility. The factory configuration begins with
 - Keep production writes within the paths allowed by `visiondesk.service`.
 - Do not replace the temporary WPA2 phone setup channel with an open AP or a
   general LAN bind.
+- Treat 1366 x 768 as the production reference and use the actual fullscreen
+  screen geometry. Do not reintroduce the removed 1200 x 800 design canvas or
+  whole-tree scaling.
+- Keep Setup diagnostics inside content-driven cards. Long messages must wrap
+  and scroll above the fixed footer; mock limitations must not masquerade as
+  successful physical-hardware checks.
+- Keep body, result, instruction, and diagnostic text on the readable
+  non-condensed font chain. Standard/Large/Extra Large change typography tokens,
+  never the whole application scale.
+
+## Current verification status
+
+- Windows offscreen split run: 196 passed, 5 skipped, and 16 subtests passed
+  outside `tests/test_qt_app.py`; 43 Qt application tests passed separately.
+- Current visual set: 27 individual 1366 x 768 mock screenshots plus
+  `docs/images/app-screens/00-contact-sheet.png`.
+- Raspberry Pi HDMI sharpness, DPI/scaling, camera alignment, and GPIO behavior
+  remain pending; optional touch input is also unverified. Use the checklist in
+  [docs/1366x768-hardware-validation.md](docs/1366x768-hardware-validation.md).
 
 See [docs/architecture.md](docs/architecture.md) for the full runtime and
 deployment design.
