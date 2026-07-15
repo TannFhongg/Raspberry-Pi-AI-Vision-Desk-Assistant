@@ -40,11 +40,11 @@ Item {
             Text {
                 text: "Something needs attention"
                 color: root.theme.text
-                font.family: root.theme.displayFont
-                font.pixelSize: 34
+                font.family: root.theme.bodyFont
+                font.pixelSize: root.theme.fontPageTitle
                 font.weight: root.theme.weightHeavy
                 Layout.fillWidth: true
-                renderType: Text.NativeRendering
+                renderType: root.theme.textRenderType
             }
 
             StatusChip {
@@ -61,8 +61,8 @@ Item {
             fillColor: "#FFFDFD"
             borderColor: "#F2D1D1"
             Layout.fillWidth: true
-            Layout.preferredHeight: 480
-            Layout.maximumHeight: 480
+            Layout.fillHeight: true
+            Layout.minimumHeight: 0
 
             ColumnLayout {
                 anchors.fill: parent
@@ -100,11 +100,12 @@ Item {
 
         RowLayout {
             Layout.fillWidth: true
+            Layout.preferredHeight: root.theme.footerHeight
             spacing: 12
 
             SecondaryButton {
                 theme: root.theme
-                text: "BACK"
+                text: "Back"
                 navigationFocused: root.navigationIndex === 0
                 onClicked: root.controller.clearResult()
             }
@@ -120,7 +121,7 @@ Item {
             PrimaryButton {
                 theme: root.theme
                 tone: "success"
-                text: "RETRY"
+                text: "Retry"
                 visible: root.controller.canRetry
                 enabled: root.controller.canRetry
                 navigationFocused: root.navigationIndex === 1 && root.controller.canRetry

@@ -50,6 +50,7 @@ class HealthController(QObject):
             self,
         )
         self._summary: dict[str, Any] = {}
+        self._display_diagnostics: dict[str, str] = {}
         self._builder = HealthSummaryBuilder(
             load_ui_state=self.ui_state_provider,
             resolve_mode_pair=runtime.resolve_mode_pair,
@@ -126,6 +127,12 @@ class HealthController(QObject):
     def summary(self) -> dict[str, Any]:
         """Return the last computed summary payload."""
         return dict(self._summary)
+
+    def set_display_diagnostics(self, values: dict[str, Any]) -> None:
+        """Publish non-sensitive Qt display details in Device Health."""
+        self._display_diagnostics = {str(key): str(value) for key, value in values.items()}
+        self.device_health_model.set_items(self._build_device_health_cards(self._summary))
+        self.summaryChanged.emit()
 
     def _build_device_health_cards(self, summary: dict[str, Any]) -> list[dict[str, str]]:
         """Build Device Health from existing snapshots without new polling work."""
@@ -239,6 +246,41 @@ class HealthController(QObject):
                     "success" if supported else "info",
                 )
             )
+        technical_labels = (
+            ("screen_name", "Screen name"),
+            ("geometry", "Screen geometry"),
+            ("available_geometry", "Available geometry"),
+            ("fullscreen_geometry", "Fullscreen geometry"),
+            ("device_pixel_ratio", "Device pixel ratio"),
+            ("logical_dpi", "Logical DPI"),
+            ("physical_dpi", "Physical DPI"),
+            ("selected_font_family", "Selected body font"),
+            ("font_fallback", "Font fallback order"),
+            ("qt_platform", "Qt platform"),
+        )
+        for key, title in technical_labels:
+            if key not in self._display_diagnostics:
+                continue
+            cards.append(
+                self._card(
+                    f"display_{key}",
+                    "Technical Details",
+                    title,
+                    self._display_diagnostics[key],
+                    "Display diagnostics contain no credentials or captured content.",
+                    "info",
+                )
+            )
+        cards.append(
+            self._card(
+                "display_text_rendering",
+                "Technical Details",
+                "Text rendering policy",
+                "NativeRendering" if self.runtime.settings.display.text_rendering == "native" else "QtRendering",
+                "Use UI_TEXT_RENDERING=native only for a real-panel comparison.",
+                "info",
+            )
+        )
         return cards
 
     def _storage_card(self) -> dict[str, str]:

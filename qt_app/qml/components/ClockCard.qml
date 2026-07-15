@@ -36,8 +36,8 @@ Rectangle {
 
         Text {
             text: root.timeText
-            font.family: root.theme.displayFont
-            font.pixelSize: 36
+            font.family: root.theme.bodyFont
+            font.pixelSize: root.theme.fontPageTitle
             font.weight: root.theme.weightStrong
             color: root.theme.text
             Layout.alignment: Qt.AlignHCenter
@@ -45,8 +45,8 @@ Rectangle {
 
         Text {
             text: root.dayText
-            font.family: root.theme.displayFont
-            font.pixelSize: 28
+            font.family: root.theme.bodyFont
+            font.pixelSize: root.theme.fontCardTitle
             font.weight: root.theme.weightStrong
             color: root.theme.text
             Layout.alignment: Qt.AlignHCenter

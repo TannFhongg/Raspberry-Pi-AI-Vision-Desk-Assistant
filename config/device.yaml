@@ -16,15 +16,13 @@ camera:
   capture_delay_seconds: 1.0
   grayscale: false
   max_dimension: 1600
-
 display:
-  # Matches the 1200x800 QML design canvas for windowed development. The kiosk
-  # runs fullscreen at the connected 11.6-inch HDMI panel's native resolution.
   size:
-    width: 1200
-    height: 800
+    width: 1366
+    height: 768
   orientation: landscape
-
+  text_size: standard
+  text_rendering: auto
 button:
   enabled: true
   pin: 17
@@ -39,18 +37,14 @@ button:
   navigation_select_pin: 25
   debounce_seconds: 0.15
   hold_seconds: 1.2
-
 led:
   enabled: true
   pin: 27
   active_high: true
-
 ai:
   default_mode: read_text
-
 vision:
   screen_optimization: auto
-
 capture_review:
   default_profile: document
   quality:
@@ -69,17 +63,12 @@ capture_review:
     diagram:
       perspective_default: false
       auto_enhance_default: false
-
 startup:
   behavior: kiosk
-
 setup:
-  # Factory default: the first boot must enter the phone-first setup flow.
-  # The setup wizard writes the completed state to persistent device data.
   completed: false
-  completed_at: ""
+  completed_at: ''
   version: 0
-
 setup_portal:
   enabled: true
   auto_start_when_setup_incomplete: true
@@ -88,17 +77,14 @@ setup_portal:
   address: 192.168.4.1
   port: 80
   ssid_prefix: VisionDesk-Setup
-
 network:
   wifi:
-    ssid: ""
-    connection_name: ""
+    ssid: ''
+    connection_name: ''
     auto_connect: true
     managed_by: nmcli
-
 localization:
   locale: en
-
 reliability:
   log_level: INFO
   log_max_bytes: 1048576
@@ -109,14 +95,12 @@ reliability:
   openai_timeout_seconds: 30.0
   openai_retry_attempts: 3
   openai_retry_backoff_seconds: 2.0
-
 retention:
   store_images: false
   text_history_max_items: 100
   text_history_retention_days: 30
   retry_media_retention_hours: 24.0
   purge_on_startup: true
-
 offline_retry:
   enabled: true
   max_items: 10

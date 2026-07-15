@@ -7,7 +7,7 @@ InputField {
     property bool toggleEnabled: true
 
     secret: !root.revealed
-    trailingText: root.toggleEnabled ? (root.revealed ? "HIDE" : "SHOW") : ""
+    trailingText: root.toggleEnabled ? (root.revealed ? "Hide" : "Show") : ""
 
     MouseArea {
         anchors.right: parent.right

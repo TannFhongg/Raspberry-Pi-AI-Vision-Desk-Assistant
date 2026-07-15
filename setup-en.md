@@ -146,9 +146,15 @@ of Setup, Home, Camera, Processing, Result, History, History Detail, and Error.
 
 ## 5. Display configuration and setup portal
 
-\`display.size: 1200x800\` in \`config/device.yaml\` is the reference canvas when running
-windowed. In the production kiosk, the application is fullscreen at the HDMI display’s
-native resolution; this value does not change the hardware resolution.
+\`display.size: 1366x768\` in \`config/device.yaml\` is the primary windowed-development
+target. In the production kiosk, Qt uses the HDMI screen’s actual fullscreen geometry;
+VisionDesk does not stretch an offscreen canvas. This value does not change the hardware
+resolution. The earlier 1200x800 value was an incorrect target assumption.
+
+The installer adds Noto Sans and verifies it with fontconfig. If unavailable,
+VisionDesk falls back to Inter, DejaVu Sans, or bundled OFL Roboto. The
+\`display.text_size\` setting supports \`standard\`, \`large\`, and \`extra_large\`.
+Use \`UI_TEXT_RENDERING=native\` only for a controlled comparison on the real panel.
 
 Phone-first portal configuration:
 

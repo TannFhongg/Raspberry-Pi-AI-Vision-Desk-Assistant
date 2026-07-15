@@ -89,10 +89,10 @@ Item {
                         anchors.centerIn: parent
                         text: completed ? "\u2713" : String(index + 1)
                         color: completed || active ? root.theme.surface : root.theme.textMuted
-                        font.family: root.theme.displayFont
-                        font.pixelSize: 15
+                        font.family: root.theme.bodyFont
+                        font.pixelSize: root.theme.fontCaption
                         font.weight: root.theme.weightHeavy
-                        renderType: Text.NativeRendering
+                        renderType: root.theme.textRenderType
                     }
                 }
 
@@ -101,11 +101,11 @@ Item {
                     text: root.shortLabel(stepId)
                     color: active ? root.theme.text : root.theme.textMuted
                     font.family: root.theme.bodyFont
-                    font.pixelSize: 12
+                    font.pixelSize: root.theme.fontCaption
                     font.weight: active ? root.theme.weightStrong : root.theme.weightRegular
                     horizontalAlignment: Text.AlignHCenter
                     wrapMode: Text.WordWrap
-                    renderType: Text.NativeRendering
+                    renderType: root.theme.textRenderType
                 }
             }
 

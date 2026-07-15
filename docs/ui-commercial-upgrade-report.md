@@ -1,8 +1,12 @@
-# Commercial UI upgrade report
+# Commercial UI upgrade report (historical)
+
+> Historical note: this report predates the corrected 1366 x 768 hardware
+> target. Any 1200 x 800 references below describe obsolete captures or the old
+> implementation, not the current production resolution.
 
 ## Delivered scope
 
-The normal 1200 x 800 header now contains the VisionDesk brand and one concise,
+The then-current 1200 x 800 header contained the VisionDesk brand and one concise,
 safe status badge. Technical metrics have moved to **Settings -> Device
 Health**. Setup has a scrollable, footer-safe content area with focus-aware
 autoscroll. Camera capture now pauses at **Review and adjust**: it does not call
@@ -134,7 +138,7 @@ focused new-review/status/Qt set also passed `48` tests.
 
 ## Screenshots
 
-All portfolio-safe mock screenshots are exactly 1200 x 800 in
+The historical portfolio-safe mock screenshots were 1200 x 800 in
 `docs/images/app-screens/`. The set includes the contact sheet plus:
 
 - initial setup, compact device-check progress, completed setup checks, and setup scrolled (`01-*`), Ready and Wi-Fi unavailable headers;
@@ -162,7 +166,7 @@ or physical-camera test.
   physical autofocus, exposure, camera negotiation, GPIO focus navigation, or
   real-world perspective correction has been production-validated.
 
-Manual acceptance on the Pi should cover: 1200 x 800 kiosk layout at default
+Current manual acceptance on the Pi must cover: 1366 x 768 kiosk layout at default
 and larger text; long SSIDs/messages; all setup outcomes; touch, keyboard, and
 GPIO navigation; each capture profile; retake/crop/rotate/zoom/confirm; an
 unsupported camera; dark, blurry, glare-heavy, and skewed subjects; Wi-Fi and

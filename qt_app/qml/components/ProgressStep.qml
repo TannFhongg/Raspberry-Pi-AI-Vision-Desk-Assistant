@@ -36,10 +36,10 @@ Item {
                 anchors.centerIn: parent
                 text: root.complete ? "OK" : root.failed ? "!" : ""
                 color: root.theme.surface
-                font.family: root.theme.displayFont
-                font.pixelSize: root.complete ? 13 : 20
+                font.family: root.theme.bodyFont
+                font.pixelSize: root.complete ? root.theme.fontCaption : root.theme.fontCardTitle
                 font.weight: root.theme.weightHeavy
-                renderType: Text.NativeRendering
+                renderType: root.theme.textRenderType
             }
         }
 
@@ -47,14 +47,14 @@ Item {
             text: root.label
             color: root.active ? root.theme.text : root.theme.textMuted
             font.family: root.theme.bodyFont
-            font.pixelSize: 14
+            font.pixelSize: root.theme.fontCaption
             font.weight: root.active ? root.theme.weightStrong : root.theme.weightRegular
             horizontalAlignment: Text.AlignHCenter
             wrapMode: Text.WordWrap
             Layout.fillWidth: true
             maximumLineCount: 2
             elide: Text.ElideRight
-            renderType: Text.NativeRendering
+            renderType: root.theme.textRenderType
         }
     }
 }

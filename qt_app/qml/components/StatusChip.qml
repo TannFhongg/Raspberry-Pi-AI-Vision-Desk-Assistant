@@ -45,9 +45,9 @@ Rectangle {
             text: root.value.length > 0 ? root.label + " " + root.value : root.label
             color: root.accentColor
             font.family: root.theme.bodyFont
-            font.pixelSize: 14
+            font.pixelSize: root.theme.fontCaption
             font.weight: root.theme.weightStrong
-            renderType: Text.NativeRendering
+            renderType: root.theme.textRenderType
         }
     }
 }

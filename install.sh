@@ -31,6 +31,8 @@ SYSTEM_PACKAGES=(
   network-manager
   systemd
   v4l-utils
+  fontconfig
+  fonts-noto-core
   libdbus-1-3
   libegl1
   libgl1
@@ -236,6 +238,20 @@ install_system_packages() {
   apt-get update
   apt-get install "${apt_args[@]}" "${SYSTEM_PACKAGES[@]}"
   systemctl enable NetworkManager >/dev/null 2>&1 || true
+}
+
+verify_ui_font() {
+  local selected_font
+  if ! command -v fc-match >/dev/null 2>&1; then
+    log "[WARN] fontconfig is unavailable; Qt will use its system font fallback."
+    return 0
+  fi
+  selected_font="$(fc-match -f '%{family}\n' 'Noto Sans' 2>/dev/null | head -n 1 || true)"
+  if [[ -n "${selected_font}" ]]; then
+    log "[OK] UI body font available: ${selected_font}"
+  else
+    log "[WARN] Noto Sans was not matched; VisionDesk will fall back to Inter, DejaVu Sans, or bundled Roboto."
+  fi
 }
 
 ensure_group() {
@@ -511,6 +527,7 @@ main() {
   validate_platform
   confirm_continue
   install_system_packages
+  verify_ui_font
   ensure_user
   install_networkmanager_policy
   prepare_directories

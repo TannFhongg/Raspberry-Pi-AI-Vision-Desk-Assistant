@@ -8,8 +8,8 @@ import "../../qt_app/qml/screens"
 
 Rectangle {
     id: window
-    width: 1200
-    height: 800
+    width: 1366
+    height: 768
     color: appTheme.setupPageBackground
 
     property string requestedStep: "welcome"
@@ -57,6 +57,7 @@ Rectangle {
 
         property string currentScreen: "setup"
         property string setupCurrentStep: window.normalizeStep(String(window.requestedStep || "").toLowerCase())
+        property string setupRuntimeContext: "desktop_mock"
         property string setupFinishMessage: "Setup complete. VisionDesk will relaunch into Home after the wizard finishes."
         property string setupWarningsText: ""
         property string globalStatusText: "Setup required"

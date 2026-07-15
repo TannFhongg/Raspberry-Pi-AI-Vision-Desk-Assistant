@@ -14,7 +14,7 @@ Item {
         return root.theme.primaryStrong
     }
     implicitWidth: statusRow.implicitWidth + 20
-    implicitHeight: 42
+    implicitHeight: root.theme.minimumTouchTarget
 
     Rectangle {
         anchors.fill: parent
@@ -36,13 +36,10 @@ Item {
             color: root.accent
         }
 
-        Text {
+        StatusText {
+            theme: root.theme
             text: root.text
             color: root.theme.text
-            font.family: root.theme.bodyFont
-            font.pixelSize: 16
-            font.weight: root.theme.weightStrong
-            renderType: Text.NativeRendering
             wrapMode: Text.NoWrap
         }
     }

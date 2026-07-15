@@ -11,9 +11,9 @@ Item {
     property string html: ""
     property bool emphasizeError: false
     property bool emphasizeQueued: false
-    property int titlePixelSize: 30
-    property int notePixelSize: 15
-    property int bodyPixelSize: 18
+    property int titlePixelSize: root.theme.fontPageTitle
+    property int notePixelSize: root.theme.fontCaption
+    property int bodyPixelSize: root.theme.fontResultContent
     property string contentFontFamily: root.theme.bodyFont
     property bool navigationFocused: false
     readonly property color accentColor: root.emphasizeError ? root.theme.errorStrong
@@ -24,14 +24,14 @@ Item {
                                         : root.theme.surface
     readonly property string styledHtml: {
         var bodyFont = (root.contentFontFamily || root.theme.bodyFont).replace(/'/g, "&apos;")
-        var headingFont = (root.theme.displayFont || bodyFont).replace(/'/g, "&apos;")
-        var bodySize = Math.max(14, root.bodyPixelSize)
+        var headingFont = bodyFont
+        var bodySize = Math.max(root.theme.fontSecondaryBody, root.bodyPixelSize)
         var heading3 = Math.round(bodySize * 1.22)
         var heading4 = Math.round(bodySize * 1.1)
         var heading5 = Math.round(bodySize * 1.04)
         return "<html><head><style>" +
-               "body { margin: 0; font-family: '" + bodyFont + "'; font-size: " + bodySize + "px; font-weight: 600; color: " + root.theme.text + "; line-height: 1.28; }" +
-               "h3, h4, h5 { margin: 0 0 10px 0; font-family: '" + headingFont + "'; font-weight: 800; line-height: 1.02; color: " + root.theme.text + "; }" +
+               "body { margin: 0; font-family: '" + bodyFont + "'; font-size: " + bodySize + "px; font-weight: 400; color: " + root.theme.text + "; line-height: " + root.theme.resultLineHeight + "; }" +
+               "h3, h4, h5 { margin: 0 0 10px 0; font-family: '" + headingFont + "'; font-weight: 700; line-height: 1.18; color: " + root.theme.text + "; }" +
                "h3 { font-size: " + heading3 + "px; }" +
                "h4 { font-size: " + heading4 + "px; }" +
                "h5 { font-size: " + heading5 + "px; }" +
@@ -79,12 +79,12 @@ Item {
                 Text {
                     text: root.title
                     color: root.theme.text
-                    font.family: root.theme.displayFont
+                    font.family: root.theme.bodyFont
                     font.pixelSize: root.titlePixelSize
                     font.weight: root.theme.weightHeavy
                     Layout.fillWidth: true
                     wrapMode: Text.WordWrap
-                    renderType: Text.NativeRendering
+                    renderType: root.theme.textRenderType
                 }
             }
 
@@ -114,6 +114,8 @@ Item {
                     font.family: root.contentFontFamily
                     font.pixelSize: root.bodyPixelSize
                     font.weight: root.theme.weightRegular
+                    font.hintingPreference: root.theme.hintingPreference
+                    renderType: root.theme.textRenderType
                     color: root.theme.text
                     background: null
                     selectByMouse: false

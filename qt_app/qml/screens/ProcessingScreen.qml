@@ -19,11 +19,11 @@ Item {
             Text {
                 text: "Processing"
                 color: root.theme.text
-                font.family: root.theme.displayFont
-                font.pixelSize: 34
+                font.family: root.theme.bodyFont
+                font.pixelSize: root.theme.fontPageTitle
                 font.weight: root.theme.weightHeavy
                 Layout.fillWidth: true
-                renderType: Text.NativeRendering
+                renderType: root.theme.textRenderType
             }
 
             StatusChip {
@@ -38,8 +38,8 @@ Item {
             theme: root.theme
             padding: 28
             Layout.fillWidth: true
-            Layout.preferredHeight: 540
-            Layout.maximumHeight: 540
+            Layout.fillHeight: true
+            Layout.minimumHeight: 0
 
             ColumnLayout {
                 anchors.fill: parent
@@ -54,8 +54,8 @@ Item {
                     Text {
                         text: root.controller.processingTitle
                         color: root.theme.text
-                        font.family: root.theme.displayFont
-                        font.pixelSize: 44
+                        font.family: root.theme.bodyFont
+                        font.pixelSize: root.theme.fontBrand
                         font.weight: root.theme.weightHeavy
                         horizontalAlignment: Text.AlignHCenter
                         Layout.fillWidth: true
@@ -66,7 +66,7 @@ Item {
                         text: root.controller.processingSubtitle
                         color: root.theme.textMuted
                         font.family: root.theme.bodyFont
-                        font.pixelSize: 18
+                        font.pixelSize: root.theme.fontBody
                         font.weight: root.theme.weightRegular
                         horizontalAlignment: Text.AlignHCenter
                         Layout.fillWidth: true

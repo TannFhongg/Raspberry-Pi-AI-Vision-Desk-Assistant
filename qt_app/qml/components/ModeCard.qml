@@ -11,7 +11,7 @@ Button {
     property bool selected: false
     property bool navigationFocused: false
 
-    implicitHeight: 148
+    implicitHeight: 154
     hoverEnabled: true
     scale: down ? 0.985 : 1.0
 
@@ -41,14 +41,14 @@ Button {
             radius: 16
             color: root.selected ? Qt.rgba(1, 1, 1, 0.18) : root.theme.primarySoft
 
-            Text {
+            AppText {
+                theme: root.theme
+                role: "cardTitle"
+                decorative: true
+                forceQtRendering: true
                 anchors.centerIn: parent
                 text: root.iconText()
                 color: root.selected ? root.theme.surface : root.theme.primaryStrong
-                font.family: root.theme.displayFont
-                font.pixelSize: 24
-                font.weight: root.theme.weightHeavy
-                renderType: Text.NativeRendering
             }
         }
 
@@ -56,28 +56,26 @@ Button {
             Layout.fillWidth: true
             spacing: 5
 
-            Text {
+            AppText {
+                theme: root.theme
+                role: "cardTitle"
+                forceQtRendering: true
                 text: root.title
                 color: root.selected ? root.theme.surface : root.theme.text
-                font.family: root.theme.displayFont
-                font.pixelSize: 24
-                font.weight: root.theme.weightHeavy
                 Layout.fillWidth: true
                 elide: Text.ElideRight
-                renderType: Text.NativeRendering
             }
 
-            Text {
+            AppText {
+                theme: root.theme
+                role: "secondaryBody"
+                forceQtRendering: true
                 text: root.description
                 color: root.selected ? Qt.rgba(1, 1, 1, 0.84) : root.theme.textMuted
-                font.family: root.theme.bodyFont
-                font.pixelSize: 15
-                font.weight: root.theme.weightRegular
                 wrapMode: Text.WordWrap
                 Layout.fillWidth: true
                 maximumLineCount: 2
                 elide: Text.ElideRight
-                renderType: Text.NativeRendering
             }
         }
     }

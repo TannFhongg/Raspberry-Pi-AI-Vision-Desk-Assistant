@@ -20,10 +20,10 @@ Rectangle {
         anchors.centerIn: parent
         text: root.label
         color: root.theme.text
-        font.family: root.theme.displayFont
-        font.pixelSize: 22
+        font.family: root.theme.bodyFont
+        font.pixelSize: root.theme.fontCardTitle
         font.weight: root.theme.weightHeavy
-        renderType: Text.NativeRendering
+        renderType: root.theme.textRenderType
     }
 
     ToolTip.visible: hoverHandler.hovered

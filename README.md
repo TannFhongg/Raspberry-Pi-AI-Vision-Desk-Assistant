@@ -25,6 +25,12 @@ The current product profile is an 11.6-inch landscape HDMI display without
 touch input. Normal operation uses ten GPIO buttons. Keep a USB keyboard and
 mouse available for recovery and administrative text entry.
 
+The primary production display target is the panel's native **1366 x 768**
+geometry. VisionDesk renders directly into the fullscreen Qt window; it does not
+scale or stretch an older design canvas. The previously documented 1200 x 800
+target was an incorrect early assumption and is retained only in explicitly
+marked historical material.
+
 Not implemented: text-to-speech / “Hear printed text”. Do not present it as a
 delivered feature.
 
@@ -33,6 +39,9 @@ delivered feature.
 - Raspberry Pi 5 (8 GB), USB-C 5 V/5 A power supply, cooling, and microSD card.
 - Raspberry Pi OS Desktop 64-bit with a graphical session.
 - USB webcam and 11.6-inch HDMI display.
+- Native display output at 1366 x 768 with desktop scaling at 100%.
+- Noto Sans (installed by `install.sh`) or the automatic Inter, DejaVu Sans,
+  bundled Roboto fallback.
 - Ten momentary GPIO buttons; the exact BCM mapping is in
   [setup-en.md](setup-en.md) and [hardware_require.txt](hardware_require.txt).
 - Wi-Fi managed by NetworkManager. AP/hotspot support is required only for

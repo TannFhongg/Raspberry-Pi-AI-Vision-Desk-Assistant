@@ -7,12 +7,12 @@ Button {
     property string tone: "primary"
     property bool navigationFocused: false
 
-    implicitHeight: 50
+    implicitHeight: root.theme.controlHeight
     implicitWidth: 164
     leftPadding: 18
     rightPadding: 18
-    font.family: root.theme.displayFont
-    font.pixelSize: 18
+    font.family: root.theme.bodyFont
+    font.pixelSize: root.theme.fontButton
     font.weight: root.theme.weightStrong
     hoverEnabled: true
 
@@ -39,10 +39,13 @@ Button {
     contentItem: Text {
         text: root.text
         color: root.textColor
-        font: root.font
+        font.family: root.font.family
+        font.pixelSize: root.font.pixelSize
+        font.weight: root.font.weight
+        font.hintingPreference: root.theme.hintingPreference
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter
-        renderType: Text.NativeRendering
+        renderType: root.theme.textRenderType
     }
 
     background: Rectangle {
@@ -61,7 +64,7 @@ Button {
             anchors.topMargin: 1
             radius: parent.radius
             color: "transparent"
-            border.width: root.visualFocus || root.navigationFocused ? 2 : 0
+            border.width: root.visualFocus || root.navigationFocused ? root.theme.focusBorderWidth : 0
             border.color: "#9DC2FF"
             opacity: root.visualFocus || root.navigationFocused ? 1.0 : 0.0
         }

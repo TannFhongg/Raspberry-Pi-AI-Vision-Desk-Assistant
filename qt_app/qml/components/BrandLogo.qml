@@ -14,22 +14,22 @@ Item {
         id: logoRow
         spacing: 0
 
-        Text {
+        AppText {
+            theme: root.theme
+            role: "brand"
+            decorative: true
             text: "Vision"
             color: root.theme.text
-            font.family: root.theme.displayFont
-            font.pixelSize: root.compact ? 44 : 60
-            font.weight: root.theme.weightHeavy
-            renderType: Text.NativeRendering
+            font.pixelSize: root.compact ? root.theme.fontBrand : Math.round(root.theme.fontBrand * 1.25)
         }
 
-        Text {
+        AppText {
+            theme: root.theme
+            role: "brand"
+            decorative: true
             text: "Desk"
             color: root.theme.logoBlue
-            font.family: root.theme.displayFont
-            font.pixelSize: root.compact ? 44 : 60
-            font.weight: root.theme.weightHeavy
-            renderType: Text.NativeRendering
+            font.pixelSize: root.compact ? root.theme.fontBrand : Math.round(root.theme.fontBrand * 1.25)
         }
     }
 }

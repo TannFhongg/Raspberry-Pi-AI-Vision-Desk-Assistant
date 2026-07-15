@@ -36,8 +36,8 @@ Rectangle {
         Text {
             text: root.label
             color: root.theme.text
-            font.family: root.theme.displayFont
-            font.pixelSize: 17
+            font.family: root.theme.bodyFont
+            font.pixelSize: root.theme.fontButton
             font.weight: root.theme.weightStrong
             horizontalAlignment: Text.AlignHCenter
             Layout.alignment: Qt.AlignHCenter
@@ -46,8 +46,10 @@ Rectangle {
         Text {
             text: root.value
             color: root.theme.text
-            font.family: root.theme.displayFont
-            font.pixelSize: root.valueSize === "very-long" ? 18 : root.valueSize === "long" ? 22 : 28
+            font.family: root.theme.bodyFont
+            font.pixelSize: root.valueSize === "very-long" ? root.theme.fontBody
+                            : root.valueSize === "long" ? root.theme.fontCardTitle
+                            : root.theme.fontSectionTitle
             font.weight: root.theme.weightHeavy
             horizontalAlignment: Text.AlignHCenter
             elide: Text.ElideRight

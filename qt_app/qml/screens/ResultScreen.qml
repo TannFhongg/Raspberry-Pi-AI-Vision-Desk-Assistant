@@ -35,11 +35,11 @@ Item {
             Text {
                 text: "Result"
                 color: root.theme.text
-                font.family: root.theme.displayFont
-                font.pixelSize: 34
+                font.family: root.theme.bodyFont
+                font.pixelSize: root.theme.fontPageTitle
                 font.weight: root.theme.weightHeavy
                 Layout.fillWidth: true
-                renderType: Text.NativeRendering
+                renderType: root.theme.textRenderType
             }
 
             StatusChip {
@@ -54,14 +54,14 @@ Item {
 
         RowLayout {
             Layout.fillWidth: true
-            Layout.preferredHeight: 500
-            Layout.maximumHeight: 500
+            Layout.fillHeight: true
+            Layout.minimumHeight: 0
             spacing: 12
 
             ColumnLayout {
-                Layout.preferredWidth: 352
-                Layout.minimumWidth: 352
-                Layout.maximumWidth: 352
+                Layout.preferredWidth: root.theme.resultImagePanelWidth
+                Layout.minimumWidth: root.theme.resultImagePanelWidth
+                Layout.maximumWidth: root.theme.resultImagePanelWidth
                 Layout.fillHeight: true
                 spacing: 12
 
@@ -78,8 +78,8 @@ Item {
                         Text {
                             text: "Captured image"
                             color: root.theme.text
-                            font.family: root.theme.displayFont
-                            font.pixelSize: 21
+                            font.family: root.theme.bodyFont
+                            font.pixelSize: root.theme.fontCardTitle
                             font.weight: root.theme.weightHeavy
                             Layout.fillWidth: true
                         }
@@ -106,7 +106,7 @@ Item {
                                 text: "No preview image was retained for this result."
                                 color: root.theme.textMuted
                                 font.family: root.theme.bodyFont
-                                font.pixelSize: 16
+                                font.pixelSize: root.theme.fontSecondaryBody
                                 horizontalAlignment: Text.AlignHCenter
                                 wrapMode: Text.WordWrap
                             }
@@ -121,9 +121,9 @@ Item {
                     html: root.controller.resultDetailVisible
                           ? root.controller.resultDetailHtml
                           : "<p class='answer-empty'>No additional detail available.</p>"
-                    titlePixelSize: 20
-                    bodyPixelSize: 15
-                    notePixelSize: 13
+                    titlePixelSize: root.theme.fontCardTitle
+                    bodyPixelSize: root.theme.fontSecondaryBody
+                    notePixelSize: root.theme.fontCaption
                     Layout.fillWidth: true
                     Layout.preferredHeight: 188
                 }
@@ -137,9 +137,9 @@ Item {
                 html: root.controller.resultHtml
                 emphasizeError: root.controller.resultState === "ERROR"
                 emphasizeQueued: root.controller.resultState === "RETRY_PENDING"
-                titlePixelSize: 30
-                bodyPixelSize: 18
-                notePixelSize: 15
+                titlePixelSize: root.theme.fontPageTitle
+                bodyPixelSize: root.theme.fontResultContent
+                notePixelSize: root.theme.fontCaption
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 Layout.minimumWidth: 0
@@ -149,11 +149,12 @@ Item {
 
         RowLayout {
             Layout.fillWidth: true
+            Layout.preferredHeight: root.theme.footerHeight
             spacing: 12
 
             SecondaryButton {
                 theme: root.theme
-                text: "HOME"
+                text: "Home"
                 onClicked: root.controller.clearResult()
             }
 
@@ -166,7 +167,7 @@ Item {
             PrimaryButton {
                 theme: root.theme
                 tone: "success"
-                text: "NEW CAPTURE"
+                text: "New Capture"
                 onClicked: root.controller.clearResult()
             }
         }

@@ -41,9 +41,12 @@ Optional:
 - Power bank / UPS for portable demo setup
 
 Display configuration:
-- The QML interface uses a 1200x800 design canvas.
-- In kiosk mode, VisionDesk runs fullscreen at the HDMI panel's native resolution.
+- The production QML reference resolution is 1366x768 (approximately 16:9).
+- The earlier 1200x800 canvas was an incorrect display assumption and is legacy only.
+- In kiosk mode, VisionDesk renders directly at the HDMI panel's actual fullscreen geometry.
 - `display.size` in `config/device.yaml` and `UI_SCREEN_WIDTH` / `UI_SCREEN_HEIGHT`
   are the windowed-development size, not a command to change the monitor resolution.
+- The installer adds Noto Sans and fontconfig. VisionDesk falls back to Inter,
+  DejaVu Sans, or the bundled OFL Roboto face if Noto Sans is unavailable.
 - This display has no touch input. The ten GPIO buttons cover normal operation; keep a
   USB keyboard and mouse available for setup and administrative text entry.

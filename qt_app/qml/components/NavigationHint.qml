@@ -8,16 +8,15 @@ Item {
     implicitWidth: hintText.implicitWidth
     implicitHeight: hintText.implicitHeight
 
-    Text {
+    AppText {
         id: hintText
+        theme: root.theme
+        role: "caption"
         anchors.centerIn: parent
         text: root.text
         color: root.theme.textMuted
-        font.family: root.theme.bodyFont
-        font.pixelSize: 14
         font.weight: root.theme.weightStrong
         horizontalAlignment: Text.AlignHCenter
         wrapMode: Text.WordWrap
-        renderType: Text.NativeRendering
     }
 }

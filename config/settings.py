@@ -19,6 +19,8 @@ VALID_CAMERA_BACKENDS = ("opencv",)
 VALID_AUTOFOCUS_MODES = ("continuous", "auto", "off")
 VALID_SCREEN_OPTIMIZATIONS = ("auto", "on", "off")
 VALID_DISPLAY_ORIENTATIONS = ("landscape", "portrait", "auto")
+VALID_TEXT_SIZES = ("standard", "large", "extra_large")
+VALID_TEXT_RENDERING_POLICIES = ("auto", "qt", "native")
 VALID_STARTUP_BEHAVIORS = ("kiosk", "service_only", "manual")
 VALID_LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
 VALID_WIFI_MANAGERS = ("nmcli",)
@@ -54,6 +56,8 @@ DEFAULT_CAMERA_PREVIEW_WIDTH = 640
 DEFAULT_CAMERA_PREVIEW_HEIGHT = 360
 DEFAULT_CAMERA_PREVIEW_TARGET_FPS = 30.0
 DEFAULT_CAMERA_PREVIEW_FORCE_MJPEG = True
+DEFAULT_TEXT_SIZE = "standard"
+DEFAULT_TEXT_RENDERING_POLICY = "auto"
 DEFAULT_SETUP_VERSION = 1
 DEFAULT_WIFI_AUTO_CONNECT = True
 DEFAULT_WIFI_MANAGER = "nmcli"
@@ -139,6 +143,8 @@ class DisplaySettings:
 
     size: ResolutionSettings
     orientation: str
+    text_size: str = DEFAULT_TEXT_SIZE
+    text_rendering: str = DEFAULT_TEXT_RENDERING_POLICY
 
 
 @dataclass(slots=True)
@@ -421,6 +427,16 @@ def load_device_settings(
                 display.get("orientation"),
                 VALID_DISPLAY_ORIENTATIONS,
                 "display.orientation",
+            ),
+            text_size=_parse_choice(
+                display.get("text_size", DEFAULT_TEXT_SIZE),
+                VALID_TEXT_SIZES,
+                "display.text_size",
+            ),
+            text_rendering=_parse_choice(
+                display.get("text_rendering", DEFAULT_TEXT_RENDERING_POLICY),
+                VALID_TEXT_RENDERING_POLICIES,
+                "display.text_rendering",
             ),
         ),
         button=ButtonSettings(
@@ -862,6 +878,8 @@ def _apply_environment_overrides(
     _set_if_present(display_size, "width", env, "UI_SCREEN_WIDTH")
     _set_if_present(display_size, "height", env, "UI_SCREEN_HEIGHT")
     _set_if_present(display, "orientation", env, "UI_DISPLAY_ORIENTATION")
+    _set_if_present(display, "text_size", env, "UI_TEXT_SIZE")
+    _set_if_present(display, "text_rendering", env, "UI_TEXT_RENDERING")
 
     _set_if_present(setup_portal, "enabled", env, "SETUP_PORTAL_ENABLED")
     _set_if_present(

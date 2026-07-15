@@ -28,6 +28,7 @@ if PY_SIDE6_AVAILABLE:
     from qt_app.mock_backend import build_mock_preview_bytes
     from qt_app.pipeline_controller import PipelineController, _PipelineWorker
     from qt_app.runtime import RuntimePaths, VisionDeskRuntime
+    from qt_app.setup_controller import present_setup_diagnostic
     from system.offline_retry import OfflineRetryQueue, OfflineRetryQueueFullError
 
 
@@ -192,6 +193,19 @@ def test_completed_setup_routes_home_from_authoritative_state(qapp, tmp_path) ->
     controller.shutdown()
 
 
+def test_accessibility_text_size_persists_through_controller(qapp, tmp_path) -> None:
+    runtime, controller = build_controller(tmp_path)
+
+    controller.setTextSize("large")
+
+    assert controller.textSize == "large"
+    persisted = runtime.settings.config_path.read_text(encoding="utf-8")
+    assert "text_size: large" in persisted
+    controller.setTextSize("extra_large")
+    assert controller.textSize == "extra_large"
+    controller.shutdown()
+
+
 def test_corrupt_setup_state_routes_to_setup_and_quarantines_file(qapp, tmp_path) -> None:
     runtime = build_runtime(tmp_path, setup_completed=False)
     runtime.paths.setup_state_path.write_text("{not-json", encoding="utf-8")
@@ -222,8 +236,53 @@ def test_setup_scroll_source_reserves_footer_space_and_tracks_focus() -> None:
     source = Path("qt_app/qml/screens/SetupScreen.qml").read_text(encoding="utf-8")
 
     assert "Flickable {" in source
-    assert "contentHeight: Math.max(height, setupBodyLoader.height + 84)" in source
+    assert "root.theme.footerHeight + root.theme.pageSpacing * 2" in source
     assert "FocusScrollHelper.ensureVisible" in source
+
+
+def test_finish_setup_source_uses_content_driven_gate_cards_and_fixed_footer() -> None:
+    """Guard against reintroducing the fixed 88 px gate-card layout."""
+    setup_source = Path("qt_app/qml/screens/SetupScreen.qml").read_text(encoding="utf-8")
+    status_source = Path("qt_app/qml/components/StatusCard.qml").read_text(encoding="utf-8")
+    finish_source = setup_source.split("id: finishStepComponent", 1)[1].split(
+        "id: bodyComponentLoader", 1
+    )[0]
+
+    assert "Layout.preferredHeight: 88" not in finish_source
+    assert finish_source.count("Layout.fillHeight: true") == 4
+    assert 'objectName: "finishGateGrid"' in finish_source
+    assert "root.theme.diagnosticGridSpacing" in finish_source
+    assert "showFullMessage" in status_source
+    assert "wrapMode: Text.Wrap" in status_source
+    assert "Text.ElideNone" in status_source
+    assert "lineHeight: root.theme.bodyLineHeight" in status_source
+    assert "clip: false" not in status_source
+    assert 'objectName: "setupFooter"' in setup_source
+    assert 'objectName: "setupBackButton"' in setup_source
+    assert 'objectName: "setupReadyButton"' in setup_source
+    assert "if (root.controller.setupCurrentStep === \"finish\")" in setup_source
+
+
+def test_setup_diagnostics_distinguish_mock_limitations_and_hide_gpio_exception() -> None:
+    opencv_raw = (
+        "OpenCV is not available. On Raspberry Pi OS, install it with: "
+        "sudo apt install -y python3-opencv and create the virtual environment with: "
+        "python3 -m venv --system-site-packages .venv"
+    )
+    gpio_raw = "GPIO is not available on this system. Unable to load any default pin factory!"
+
+    mock_camera = present_setup_diagnostic("camera", opencv_raw, "desktop_mock")
+    mock_gpio = present_setup_diagnostic("gpio", gpio_raw, "desktop_mock")
+    pi_camera = present_setup_diagnostic("camera", opencv_raw, "raspberry_pi")
+
+    assert mock_camera.startswith("Not available in desktop mock mode.")
+    assert mock_gpio.startswith("Not available in desktop mock mode.")
+    assert "Unable to load any default pin factory" not in mock_gpio
+    assert "sudo apt install -y python3-opencv" in pi_camera
+    assert "\n" in pi_camera
+    assert present_setup_diagnostic(
+        "wifi", "Wi-Fi SSID cannot be empty.", "desktop_mock"
+    ) == "Choose or enter a Wi-Fi network before finishing setup."
 
 
 def test_setup_welcome_renders_only_real_device_check_results() -> None:
@@ -253,16 +312,16 @@ def test_review_screen_uses_one_compact_non_scrolling_adjustments_panel() -> Non
 
     assert "ScrollView" not in source
     assert "Flickable" not in source
-    assert "Layout.minimumWidth: 320" in source
-    assert "Layout.maximumWidth: 344" in source
-    assert source.count('text: "RETAKE"') == 1
-    assert '"CONFIRM AND ANALYZE"' in source
+    assert "Layout.minimumWidth: root.theme.sidePanelWidth" in source
+    assert "Layout.maximumWidth: root.theme.sidePanelWidth" in source
+    assert source.count('text: "Retake"') == 1
+    assert '"Confirm and Analyze"' in source
     for removed_text in (
         "ROTATE",
         "RESET ALL",
         "Image quality",
         "Final image preview",
-        "RESET PERSPECTIVE",
+        "Reset Perspective",
     ):
         assert removed_text not in source
     assert "function focusOrder()" in source

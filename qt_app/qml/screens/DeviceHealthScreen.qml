@@ -31,14 +31,14 @@ Item {
 
     ColumnLayout {
         anchors.fill: parent
-        spacing: 12
+        spacing: root.theme.pageSpacing
 
         RowLayout {
             Layout.fillWidth: true
             ColumnLayout {
                 Layout.fillWidth: true
-                Text { text: "Device Health"; color: root.theme.text; font.family: root.theme.displayFont; font.pixelSize: 34; font.weight: root.theme.weightHeavy }
-                Text { text: "Plain-language checks for this VisionDesk device."; color: root.theme.textMuted; font.family: root.theme.bodyFont; font.pixelSize: 15 }
+                HeadingText { theme: root.theme; text: "Device Health" }
+                AppText { theme: root.theme; role: "secondaryBody"; text: "Plain-language checks with non-sensitive display details below."; color: root.theme.textMuted }
             }
             AppStatusBadge { theme: root.theme; text: root.controller.globalStatusText; tone: root.controller.globalStatusTone }
         }
@@ -75,7 +75,7 @@ Item {
                             message: itemData.message || ""
                             tone: itemData.tone || "info"
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 132
+                            Layout.preferredHeight: 146
                         }
                     }
                 }
@@ -84,9 +84,10 @@ Item {
 
         RowLayout {
             Layout.fillWidth: true
-            SecondaryButton { theme: root.theme; text: "BACK"; navigationFocused: root.navigationIndex === 1; onClicked: root.controller.goBack() }
+            Layout.preferredHeight: root.theme.footerHeight
+            SecondaryButton { theme: root.theme; text: "Back"; navigationFocused: root.navigationIndex === 1; onClicked: root.controller.goBack() }
             NavigationHint { theme: root.theme; text: "UP/DOWN Choose  ·  SELECT Confirm  ·  BACK Settings"; Layout.fillWidth: true }
-            PrimaryButton { theme: root.theme; text: "REFRESH"; navigationFocused: root.navigationIndex === 0; onClicked: root.controller.refreshDeviceHealth() }
+            PrimaryButton { theme: root.theme; text: "Refresh"; navigationFocused: root.navigationIndex === 0; onClicked: root.controller.refreshDeviceHealth() }
         }
     }
 }

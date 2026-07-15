@@ -1,6 +1,5 @@
 import QtQuick
 import QtQuick.Controls
-import QtQuick.Layouts
 import QtQuick.Window
 
 import "theme"
@@ -14,14 +13,8 @@ ApplicationWindow {
     visible: true
     color: appTheme.pageBackground
     title: "VisionDesk Qt"
-    readonly property int designWidth: 1200
-    readonly property int designHeight: 800
-    readonly property real viewportWidth: visibility === Window.FullScreen ? Screen.width : width
-    readonly property real viewportHeight: visibility === Window.FullScreen ? Screen.height : height
-    readonly property real contentScale: Math.max(
-        0.1,
-        Math.min(viewportWidth / designWidth, viewportHeight / designHeight)
-    )
+    minimumWidth: 1024
+    minimumHeight: 640
 
     function dispatchNavigation(action) {
         if (screenLoader.item
@@ -59,6 +52,9 @@ ApplicationWindow {
 
     Theme {
         id: appTheme
+        bodyFontOverride: appController.bodyFontFamily
+        textSize: appController.textSize
+        renderingPolicy: appController.textRenderingPolicy
     }
 
     Component {
@@ -121,70 +117,61 @@ ApplicationWindow {
         color: appTheme.pageBackground
 
         Item {
-            id: designCanvas
-            width: window.designWidth
-            height: window.designHeight
-            scale: window.contentScale
-            transformOrigin: Item.TopLeft
-            x: Math.round((window.viewportWidth - (width * scale)) / 2)
-            y: Math.round((window.viewportHeight - (height * scale)) / 2)
+            id: shell
+            anchors.fill: parent
+            anchors.margins: appTheme.pageMargin
 
-            Item {
-                id: shell
-                anchors.fill: parent
-                anchors.margins: 20
+            AppHeader {
+                id: headerBar
+                theme: appTheme
+                controller: appController
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                height: appTheme.appHeaderHeight
+            }
 
-                AppHeader {
-                    id: headerBar
-                    theme: appTheme
-                    controller: appController
-                    anchors.top: parent.top
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                }
+            Rectangle {
+                id: divider
+                anchors.top: headerBar.bottom
+                anchors.topMargin: appTheme.headerDividerGap
+                anchors.left: parent.left
+                anchors.right: parent.right
+                height: appTheme.dividerStrong
+                color: appTheme.primary
+            }
 
-                Rectangle {
-                    id: divider
-                    anchors.top: headerBar.bottom
-                    anchors.topMargin: 16
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    height: appTheme.dividerStrong
-                    color: appTheme.primary
-                }
-
-                Loader {
-                    id: screenLoader
-                    anchors.top: divider.bottom
-                    anchors.topMargin: 18
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.bottom: parent.bottom
-                    sourceComponent: {
-                        switch (appController.currentScreen) {
-                        case "setup":
-                            return setupScreenComponent
-                        case "camera":
-                            return cameraScreenComponent
-                        case "review":
-                            return reviewScreenComponent
-                        case "settings":
-                            return settingsScreenComponent
-                        case "device_health":
-                            return deviceHealthScreenComponent
-                        case "processing":
-                            return processingScreenComponent
-                        case "result":
-                            return resultScreenComponent
-                        case "history":
-                            return historyScreenComponent
-                        case "history_detail":
-                            return historyDetailScreenComponent
-                        case "error":
-                            return errorScreenComponent
-                        default:
-                            return homeScreenComponent
-                        }
+            Loader {
+                id: screenLoader
+                anchors.top: divider.bottom
+                anchors.topMargin: appTheme.pageTopGap
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                sourceComponent: {
+                    switch (appController.currentScreen) {
+                    case "setup":
+                        return setupScreenComponent
+                    case "camera":
+                        return cameraScreenComponent
+                    case "review":
+                        return reviewScreenComponent
+                    case "settings":
+                        return settingsScreenComponent
+                    case "device_health":
+                        return deviceHealthScreenComponent
+                    case "processing":
+                        return processingScreenComponent
+                    case "result":
+                        return resultScreenComponent
+                    case "history":
+                        return historyScreenComponent
+                    case "history_detail":
+                        return historyDetailScreenComponent
+                    case "error":
+                        return errorScreenComponent
+                    default:
+                        return homeScreenComponent
                     }
                 }
             }

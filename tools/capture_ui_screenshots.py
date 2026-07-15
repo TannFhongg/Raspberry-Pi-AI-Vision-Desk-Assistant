@@ -22,13 +22,14 @@ if str(REPOSITORY_ROOT) not in sys.path:
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PIL import Image, ImageDraw, ImageFont
-from PySide6.QtCore import QEventLoop, QObject, QTimer, QUrl
+from PySide6.QtCore import QEventLoop, QObject, QPointF, QTimer, QUrl
 from PySide6.QtGui import QColor, QImage, QPainter
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuickControls2 import QQuickStyle
 from PySide6.QtWidgets import QApplication
 
 from qt_app.app_controller import AppController
+from qt_app.display_integration import configure_application_font
 from qt_app.image_provider import CachedImageStore, VisionDeskImageProvider
 from qt_app.mock_backend import build_mock_preview_bytes
 from qt_app.runtime import RuntimePaths, VisionDeskRuntime
@@ -40,9 +41,17 @@ SCREEN_ORDER = (
     "01a-setup-running",
     "01b-setup-results",
     "01c-setup-scrolled",
+    "01d-finish-short",
+    "01e-finish-opencv-long",
+    "01f-finish-gpio-long",
+    "01g-finish-desktop-mock",
+    "01h-finish-scrolled",
+    "01i-finish-large-text",
     "02-ready-header",
     "03-wifi-unavailable-header",
+    "04a-settings",
     "04-device-health",
+    "04b-large-text",
     "05-camera-document-guide",
     "06-camera-computer-screen",
     "07-review-and-adjust",
@@ -119,6 +128,37 @@ def _completed_setup_check_fixture() -> list[dict[str, object]]:
     ]
 
 
+def _finish_gate_fixture(*, wifi: str, openai: str, camera: str, gpio: str) -> dict[str, object]:
+    """Build an unfinished, truthful Finish Setup screenshot state."""
+    return {
+        "setup_complete": False,
+        "current_step": "finish",
+        "wifi": {
+            "scan_status": "fail",
+            "connect_status": "fail",
+            "ssid": "",
+            "connection_name": "",
+            "message": wifi,
+        },
+        "openai": {
+            "status": "fail",
+            "key_present": False,
+            "api_key_verified": False,
+            "message": openai,
+        },
+        "camera": {"status": "fail", "message": camera},
+        "gpio": {
+            "status": "fail",
+            "message": gpio,
+            "active": False,
+            "required": [],
+            "pressed_labels": [],
+            "all_pressed": False,
+            "validation_issues": [],
+        },
+    }
+
+
 def _save_window(root, destination: Path) -> None:
     image = root.grabWindow()
     if image.isNull():
@@ -134,8 +174,8 @@ def _save_window(root, destination: Path) -> None:
         raise RuntimeError(f"Could not capture {destination.name}.")
 
 
-def _repair_scroll_capture_artifact(destination: Path) -> None:
-    """Replace only large software-renderer black holes in a scrolled capture."""
+def _repair_boundary_capture_artifacts(destination: Path) -> None:
+    """Replace large offscreen-renderer black holes connected to an image edge."""
     image = Image.open(destination).convert("RGB")
     width, height = image.size
     pixels = image.load()
@@ -149,10 +189,12 @@ def _repair_scroll_capture_artifact(destination: Path) -> None:
             queue = [start]
             visited[start] = 1
             component: list[int] = []
+            touches_boundary = False
             while queue:
                 current = queue.pop()
                 component.append(current)
                 x, y = current % width, current // width
+                touches_boundary = touches_boundary or x == 0 or y == 0 or x == width - 1 or y == height - 1
                 for neighbor_x, neighbor_y in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
                     if neighbor_x < 0 or neighbor_y < 0 or neighbor_x >= width or neighbor_y >= height:
                         continue
@@ -161,7 +203,7 @@ def _repair_scroll_capture_artifact(destination: Path) -> None:
                         continue
                     visited[neighbor] = 1
                     queue.append(neighbor)
-            if len(component) >= 4000:
+            if touches_boundary and len(component) >= 4000:
                 for current in component:
                     pixels[current % width, current // width] = fill_color
     image.save(destination, "PNG")
@@ -169,7 +211,7 @@ def _repair_scroll_capture_artifact(destination: Path) -> None:
 
 def _write_contact_sheet(output_dir: Path) -> None:
     source_images = [output_dir / f"{name}.png" for name in SCREEN_ORDER]
-    thumbnail_size = (480, 320)
+    thumbnail_size = (480, 270)
     label_height = 34
     rows = (len(source_images) + 1) // 2
     canvas = Image.new("RGB", (thumbnail_size[0] * 2, (thumbnail_size[1] + label_height) * rows), "#eef3fa")
@@ -200,6 +242,7 @@ def main() -> int:
 
     QQuickStyle.setStyle("Basic")
     app = QApplication.instance() or QApplication(sys.argv)
+    configure_application_font(app)
     runtime_workspace = Path(tempfile.mkdtemp(prefix="visiondesk-ui-capture-"))
     runtime = _build_runtime(runtime_workspace)
     camera_store = CachedImageStore()
@@ -229,8 +272,8 @@ def main() -> int:
         controller.shutdown()
         raise RuntimeError("Could not load qt_app/qml/Main.qml.")
     root = engine.rootObjects()[0]
-    root.setWidth(1200)
-    root.setHeight(800)
+    root.setWidth(1366)
+    root.setHeight(768)
     root.show()
     # The setup wizard's ScrollView needs one full render cycle after its
     # Loader resolves on the software/offscreen backend.  Capturing sooner
@@ -244,8 +287,7 @@ def main() -> int:
         _wait(700)
         destination = output_dir / f"{name}.png"
         _save_window(root, destination)
-        if name == "01c-setup-scrolled":
-            _repair_scroll_capture_artifact(destination)
+        _repair_boundary_capture_artifacts(destination)
 
     def recreate_review_screen() -> None:
         """Settle a fresh Review Loader frame on the Qt offscreen backend."""
@@ -285,12 +327,170 @@ def main() -> int:
         capture("01b-setup-results")
 
         setup_scroll = root.findChild(QObject, "setupBodyFlickable")
-        if setup_scroll is not None:
+        if setup_scroll is None:
+            raise RuntimeError("Could not find the Setup Wizard Flickable for screenshot fixtures.")
+        content_height = float(setup_scroll.property("contentHeight") or 0)
+        viewport_height = float(setup_scroll.property("height") or 0)
+        setup_scroll.setProperty("contentY", max(0.0, content_height - viewport_height))
+        _wait()
+        capture("01c-setup-scrolled")
+
+        def show_finish_fixture(*, context: str, wifi: str, openai: str, camera: str, gpio: str) -> None:
+            controller.setup_controller._runtime_context = context
+            runtime.setup_state_store.write_state(
+                _finish_gate_fixture(wifi=wifi, openai=openai, camera=camera, gpio=gpio)
+            )
+            controller.setup_controller.refresh_state()
+            setup_scroll.setProperty("contentY", 0)
+            _wait(700)
+
+        def scroll_finish_to_bottom() -> None:
             content_height = float(setup_scroll.property("contentHeight") or 0)
             viewport_height = float(setup_scroll.property("height") or 0)
             setup_scroll.setProperty("contentY", max(0.0, content_height - viewport_height))
             _wait()
-        capture("01c-setup-scrolled")
+
+        def assert_finish_layout(*, require_scroll: bool = False) -> dict[str, float]:
+            """Fail the capture if rendered gate geometry clips or overlaps."""
+            def required_item(name: str):
+                item = root.findChild(QObject, name)
+                if item is None:
+                    raise RuntimeError(f"Finish Setup fixture is missing {name}.")
+                return item
+
+            grid = required_item("finishGateGrid")
+            wifi_gate = required_item("finishWifiGate")
+            openai_gate = required_item("finishOpenAiGate")
+            camera_gate = required_item("finishCameraGate")
+            gpio_gate = required_item("finishGpioGate")
+            footer = required_item("setupFooter")
+            buttons = (required_item("setupBackButton"), required_item("setupReadyButton"))
+            gates = (wifi_gate, openai_gate, camera_gate, gpio_gate)
+
+            for gate in gates:
+                description = required_item(gate.objectName() + "Description")
+                content_bottom = description.mapToItem(
+                    gate, QPointF(0, float(description.property("height")))
+                ).y()
+                padding = float(gate.property("padding") or 0)
+                height = float(gate.property("height") or 0)
+                if content_bottom + padding > height + 0.5:
+                    raise RuntimeError(
+                        f"{gate.objectName()} content exceeds its card bounds "
+                        f"(contentBottom={content_bottom:.1f}, padding={padding:.1f}, "
+                        f"height={height:.1f})."
+                    )
+            row_spacing = float(grid.property("rowSpacing") or 0)
+            if float(camera_gate.property("y")) < (
+                float(wifi_gate.property("y"))
+                + float(wifi_gate.property("height"))
+                + row_spacing
+                - 1
+            ):
+                raise RuntimeError("Finish Setup gate rows overlap.")
+            for first, second in ((wifi_gate, openai_gate), (camera_gate, gpio_gate)):
+                if abs(float(first.property("height")) - float(second.property("height"))) > 1:
+                    raise RuntimeError("Finish Setup cards in the same row do not share a clean height.")
+            if abs(float(wifi_gate.property("width")) - float(openai_gate.property("width"))) > 1:
+                raise RuntimeError("Finish Setup gate columns do not share a clean width.")
+            if require_scroll and not (
+                float(setup_scroll.property("contentHeight")) > float(setup_scroll.property("height"))
+            ):
+                raise RuntimeError("The long Finish Setup fixture is not scrollable.")
+
+            content_item = root.contentItem()
+            viewport_bottom = setup_scroll.mapToItem(
+                content_item, QPointF(0, float(setup_scroll.property("height")))
+            ).y()
+            footer_top = footer.mapToItem(content_item, QPointF(0, 0)).y()
+            if viewport_bottom > footer_top + 1:
+                raise RuntimeError("The fixed Setup footer overlaps the scroll viewport.")
+            for button in buttons:
+                if not bool(button.property("visible")) or float(button.property("height")) < 48:
+                    raise RuntimeError(f"{button.objectName()} is not a visible touch target.")
+
+            return {
+                "camera_height": float(camera_gate.property("height")),
+                "gpio_height": float(gpio_gate.property("height")),
+            }
+
+        short_camera = "Camera test required"
+        short_gpio = "GPIO test required"
+        long_opencv = (
+            "OpenCV is not available. On Raspberry Pi OS, install it with: "
+            "sudo apt install -y python3-opencv and create the virtual environment with: "
+            "python3 -m venv --system-site-packages .venv"
+        )
+        long_gpio = (
+            "GPIO setup needs attention. Check permissions for the GPIO device, confirm each configured "
+            "button pin, verify the common ground connection, and run the GPIO button test again."
+        )
+
+        show_finish_fixture(
+            context="raspberry_pi",
+            wifi="Network required",
+            openai="API verification required",
+            camera=short_camera,
+            gpio=short_gpio,
+        )
+        short_geometry = assert_finish_layout()
+        capture("01d-finish-short")
+
+        show_finish_fixture(
+            context="raspberry_pi",
+            wifi="Network required",
+            openai="API verification required",
+            camera=long_opencv,
+            gpio=short_gpio,
+        )
+        scroll_finish_to_bottom()
+        opencv_geometry = assert_finish_layout(require_scroll=True)
+        if opencv_geometry["camera_height"] <= short_geometry["camera_height"] + 20:
+            raise RuntimeError("The long OpenCV description did not increase its gate-card height.")
+        capture("01e-finish-opencv-long")
+
+        show_finish_fixture(
+            context="raspberry_pi",
+            wifi="Network required",
+            openai="API verification required",
+            camera=short_camera,
+            gpio=long_gpio,
+        )
+        scroll_finish_to_bottom()
+        gpio_geometry = assert_finish_layout(require_scroll=True)
+        if gpio_geometry["gpio_height"] <= short_geometry["gpio_height"] + 20:
+            raise RuntimeError("The long GPIO description did not increase its gate-card height.")
+        capture("01f-finish-gpio-long")
+
+        show_finish_fixture(
+            context="desktop_mock",
+            wifi="NetworkManager is unavailable on this desktop.",
+            openai="API verification required",
+            camera=long_opencv,
+            gpio="GPIO is not available on this system. Unable to load any default pin factory!",
+        )
+        scroll_finish_to_bottom()
+        assert_finish_layout(require_scroll=True)
+        capture("01g-finish-desktop-mock")
+
+        show_finish_fixture(
+            context="raspberry_pi",
+            wifi="Network required",
+            openai="API verification required",
+            camera=long_opencv,
+            gpio=long_gpio,
+        )
+        scroll_finish_to_bottom()
+        assert_finish_layout(require_scroll=True)
+        capture("01h-finish-scrolled")
+
+        setup_scroll.setProperty("contentY", 0)
+        controller.setTextSize("large")
+        _wait(700)
+        scroll_finish_to_bottom()
+        assert_finish_layout(require_scroll=True)
+        capture("01i-finish-large-text")
+        controller.setTextSize("standard")
 
         setup_state = runtime.setup_state_store.load_state()
         setup_state["setup_complete"] = True
@@ -308,8 +508,27 @@ def main() -> int:
         controller.health_controller.refresh()
 
         controller.openSettings()
+        capture("04a-settings")
         controller.openDeviceHealth()
+        controller.setDisplayDiagnostics(
+            {
+                "screen_name": "Mock 11-inch HDMI",
+                "geometry": "1366 x 768 at 0,0",
+                "available_geometry": "1366 x 768 at 0,0",
+                "fullscreen_geometry": "1366 x 768 at 0,0",
+                "device_pixel_ratio": "1.00",
+                "logical_dpi": "96.0",
+                "physical_dpi": "Not measured in mock mode",
+                "selected_font_family": controller.bodyFontFamily,
+                "font_fallback": controller.bodyFontFallback,
+                "qt_platform": "offscreen",
+            }
+        )
         capture("04-device-health")
+        controller.goBack()
+        controller.setTextSize("large")
+        capture("04b-large-text")
+        controller.setTextSize("standard")
 
         controller.selectMode("read_text")
         capture("05-camera-document-guide")

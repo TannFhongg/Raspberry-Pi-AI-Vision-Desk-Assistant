@@ -38,8 +38,8 @@ ColumnLayout {
                     visible: itemData.state === "complete"
                     text: "OK"
                     color: root.theme.success
-                    font.family: root.theme.displayFont
-                    font.pixelSize: 20
+                    font.family: root.theme.bodyFont
+                    font.pixelSize: root.theme.fontCardTitle
                     font.weight: root.theme.weightHeavy
                 }
             }
@@ -47,8 +47,8 @@ ColumnLayout {
             Text {
                 text: itemData.label || ""
                 color: root.theme.text
-                font.family: root.theme.displayFont
-                font.pixelSize: 32
+                font.family: root.theme.bodyFont
+                font.pixelSize: root.theme.fontPageTitle
                 font.weight: root.theme.weightStrong
                 Layout.fillWidth: true
             }

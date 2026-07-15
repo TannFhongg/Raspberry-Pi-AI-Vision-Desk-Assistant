@@ -9,6 +9,9 @@ InfoCard {
     property string tone: "info"
     property string eyebrow: ""
     property bool compact: false
+    property bool showFullMessage: !root.compact
+
+    padding: root.compact ? root.theme.spaceSm : root.theme.diagnosticCardPadding
 
     readonly property string normalizedTone: (root.tone || "").toLowerCase()
     readonly property color accentColor: {
@@ -28,7 +31,10 @@ InfoCard {
     borderColor: Qt.rgba(accentColor.r, accentColor.g, accentColor.b, 0.20)
 
     ColumnLayout {
-        spacing: root.compact ? 5 : 8
+        id: statusContent
+        Layout.fillWidth: true
+        Layout.minimumWidth: 0
+        spacing: root.compact ? 5 : root.theme.diagnosticCardSpacing
 
         RowLayout {
             spacing: 7
@@ -44,9 +50,10 @@ InfoCard {
                 text: root.eyebrow.length > 0 ? root.eyebrow : root.title
                 color: root.accentColor
                 font.family: root.theme.bodyFont
-                font.pixelSize: root.compact ? 11 : 12
+                font.pixelSize: root.theme.fontCaption
                 font.weight: root.theme.weightStrong
-                renderType: Text.NativeRendering
+                renderType: root.theme.textRenderType
+                font.hintingPreference: root.theme.hintingPreference
                 elide: Text.ElideRight
                 maximumLineCount: 1
                 Layout.fillWidth: true
@@ -57,27 +64,37 @@ InfoCard {
         Text {
             text: root.value.length > 0 ? root.value : root.title
             color: root.theme.text
-            font.family: root.theme.displayFont
-            font.pixelSize: root.compact ? 19 : 22
+            font.family: root.theme.bodyFont
+            font.pixelSize: root.compact ? root.theme.fontBody : root.theme.fontCardTitle
             font.weight: root.theme.weightHeavy
-            wrapMode: Text.WordWrap
-            renderType: Text.NativeRendering
-            maximumLineCount: root.compact ? 1 : 2
-            elide: Text.ElideRight
+            wrapMode: Text.Wrap
+            renderType: root.theme.textRenderType
+            font.hintingPreference: root.theme.hintingPreference
+            maximumLineCount: root.compact ? 1 : 2147483647
+            elide: root.compact ? Text.ElideRight : Text.ElideNone
+            lineHeightMode: Text.ProportionalHeight
+            lineHeight: root.theme.headingLineHeight
             Layout.fillWidth: true
             Layout.minimumWidth: 0
         }
 
         Text {
+            id: descriptionText
+            objectName: root.objectName.length > 0 ? root.objectName + "Description" : ""
             visible: root.message.length > 0
             text: root.message
             color: root.theme.textMuted
             font.family: root.theme.bodyFont
-            font.pixelSize: 13
+            font.pixelSize: root.compact ? root.theme.fontCaption : root.theme.fontSecondaryBody
             font.weight: root.theme.weightRegular
-            wrapMode: Text.WordWrap
-            maximumLineCount: root.compact ? 2 : 3
-            elide: Text.ElideRight
+            font.hintingPreference: root.theme.hintingPreference
+            renderType: root.theme.textRenderType
+            textFormat: Text.PlainText
+            wrapMode: Text.Wrap
+            maximumLineCount: root.showFullMessage ? 2147483647 : 2
+            elide: root.showFullMessage ? Text.ElideNone : Text.ElideRight
+            lineHeightMode: Text.ProportionalHeight
+            lineHeight: root.theme.bodyLineHeight
             Layout.fillWidth: true
             Layout.minimumWidth: 0
         }

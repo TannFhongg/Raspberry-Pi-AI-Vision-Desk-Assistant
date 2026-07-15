@@ -14,7 +14,7 @@ TextField {
     rightPadding: root.trailingText.length > 0 ? 54 : 18
     color: root.theme.text
     font.family: root.theme.bodyFont
-    font.pixelSize: 17
+    font.pixelSize: root.theme.fontButton
     font.weight: root.theme.weightRegular
     placeholderTextColor: "#98A2B3"
     selectionColor: root.theme.primaryStrong
@@ -47,10 +47,10 @@ TextField {
             anchors.centerIn: parent
             text: root.leadingText
             color: root.theme.primaryStrong
-            font.family: root.theme.displayFont
-            font.pixelSize: 13
+            font.family: root.theme.bodyFont
+            font.pixelSize: root.theme.fontCaption
             font.weight: root.theme.weightHeavy
-            renderType: Text.NativeRendering
+            renderType: root.theme.textRenderType
         }
     }
 
@@ -58,12 +58,12 @@ TextField {
         visible: root.trailingText.length > 0
         text: root.trailingText
         color: root.invalid ? root.theme.errorStrong : root.theme.textMuted
-        font.family: root.theme.displayFont
-        font.pixelSize: 14
+        font.family: root.theme.bodyFont
+        font.pixelSize: root.theme.fontCaption
         font.weight: root.theme.weightStrong
         anchors.right: parent.right
         anchors.rightMargin: 16
         anchors.verticalCenter: parent.verticalCenter
-        renderType: Text.NativeRendering
+        renderType: root.theme.textRenderType
     }
 }

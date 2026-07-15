@@ -7,21 +7,14 @@ Item {
     id: root
     required property QtObject theme
     required property var controller
-
-    // GPIO/keyboard focus is intentionally limited to controls which are
-    // actually visible and useful in the compact panel. Retake is available
-    // by Back and by the persistent touch button in the footer.
     property int navigationIndex: 7
     property real reviewZoom: 1.0
     property bool cropEditing: true
 
     function focusOrder() {
         var actions = [0, 1, 2, 3, 4]
-        if (root.controller.captureReview.perspectiveAvailable
-                && !root.controller.captureReview.perspectiveActive)
-            actions.push(5)
-        if (root.controller.captureReview.perspectiveActive)
-            actions.push(6)
+        if (root.controller.captureReview.perspectiveAvailable && !root.controller.captureReview.perspectiveActive) actions.push(5)
+        if (root.controller.captureReview.perspectiveActive) actions.push(6)
         actions.push(7)
         return actions
     }
@@ -35,8 +28,6 @@ Item {
     }
 
     function startCropEditing() {
-        // Return to an unscaled canvas before exposing drag handles so every
-        // handle remains inside the usable touch area.
         root.reviewZoom = 1.0
         root.cropEditing = true
     }
@@ -66,49 +57,33 @@ Item {
 
     ColumnLayout {
         anchors.fill: parent
-        spacing: 10
+        spacing: root.theme.pageSpacing
 
         RowLayout {
             Layout.fillWidth: true
-            Layout.minimumHeight: 52
-            spacing: 12
-
             ColumnLayout {
                 Layout.fillWidth: true
                 Layout.minimumWidth: 0
                 spacing: 2
-
-                Text {
-                    text: "Review and adjust"
-                    color: root.theme.text
-                    font.family: root.theme.displayFont
-                    font.pixelSize: 30
-                    font.weight: root.theme.weightHeavy
-                }
-                Text {
-                    text: "Task: " + root.controller.selectedModeLabel + "  •  Capture profile: " + root.controller.captureReview.captureProfileLabel
+                HeadingText { theme: root.theme; text: "Review and adjust" }
+                AppText {
+                    theme: root.theme
+                    role: "secondaryBody"
+                    text: "Task: " + root.controller.selectedModeLabel + "  •  Profile: " + root.controller.captureReview.captureProfileLabel
                     color: root.theme.textMuted
-                    font.family: root.theme.bodyFont
-                    font.pixelSize: 15
                     Layout.fillWidth: true
-                    Layout.minimumWidth: 0
-                    elide: Text.ElideRight
+                    wrapMode: Text.WordWrap
+                    maximumLineCount: 2
                 }
             }
-
-            StatusChip {
-                theme: root.theme
-                label: "Privacy"
-                value: "Not sent yet"
-                tone: "info"
-            }
+            StatusChip { theme: root.theme; label: "Privacy"; value: "Not sent yet"; tone: "info" }
         }
 
         RowLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
             Layout.minimumHeight: 0
-            spacing: 12
+            spacing: root.theme.cardSpacing
 
             ContentCard {
                 theme: root.theme
@@ -121,7 +96,6 @@ Item {
                 Item {
                     anchors.fill: parent
                     clip: true
-
                     ReviewImageCanvas {
                         id: reviewCanvas
                         width: parent.width
@@ -138,9 +112,9 @@ Item {
             ContentCard {
                 theme: root.theme
                 padding: 14
-                Layout.preferredWidth: 344
-                Layout.minimumWidth: 320
-                Layout.maximumWidth: 344
+                Layout.preferredWidth: root.theme.sidePanelWidth
+                Layout.minimumWidth: root.theme.sidePanelWidth
+                Layout.maximumWidth: root.theme.sidePanelWidth
                 Layout.fillHeight: true
                 Layout.minimumHeight: 0
                 clipContent: true
@@ -148,192 +122,97 @@ Item {
                 ColumnLayout {
                     anchors.fill: parent
                     spacing: 8
+                    AppText { theme: root.theme; role: "cardTitle"; text: "Adjustments" }
 
-                    Text {
-                        text: "Adjustments"
-                        color: root.theme.text
-                        font.family: root.theme.displayFont
-                        font.pixelSize: 21
-                        font.weight: root.theme.weightHeavy
-                    }
-
-                    ColumnLayout {
+                    GridLayout {
                         Layout.fillWidth: true
-                        spacing: 3
+                        columns: 2
+                        columnSpacing: 10
+                        rowSpacing: 8
 
-                        Text {
-                            text: "Camera"
-                            color: root.theme.text
-                            font.family: root.theme.displayFont
-                            font.pixelSize: 16
-                            font.weight: root.theme.weightHeavy
-                        }
-                        Text {
-                            text: "• " + root.controller.captureReview.autofocusSupportMessage
-                            color: root.controller.captureReview.autofocusSupported ? root.theme.successStrong : root.theme.textMuted
-                            font.family: root.theme.bodyFont
-                            font.pixelSize: 13
-                            wrapMode: Text.WordWrap
+                        AppText { theme: root.theme; role: "status"; text: "Camera"; Layout.alignment: Qt.AlignTop }
+                        BodyText {
+                            theme: root.theme
+                            role: "caption"
+                            text: "Focus: " + root.controller.captureReview.autofocusSupportMessage
+                                  + "\nExposure: " + root.controller.captureReview.exposureSupportMessage
+                            color: root.theme.textMuted
                             Layout.fillWidth: true
                         }
-                        Text {
-                            text: "• " + root.controller.captureReview.exposureSupportMessage
-                            color: root.controller.captureReview.exposureSupported ? root.theme.successStrong : root.theme.textMuted
-                            font.family: root.theme.bodyFont
-                            font.pixelSize: 13
-                            wrapMode: Text.WordWrap
+
+                        Rectangle { Layout.columnSpan: 2; Layout.fillWidth: true; Layout.preferredHeight: 1; color: root.theme.borderSoft }
+
+                        AppText { theme: root.theme; role: "status"; text: "Crop" }
+                        RowLayout {
                             Layout.fillWidth: true
+                            spacing: 8
+                            SecondaryButton { theme: root.theme; text: "Crop"; implicitWidth: 0; Layout.fillWidth: true; navigationFocused: root.navigationIndex === 0; onClicked: root.startCropEditing() }
+                            SecondaryButton { theme: root.theme; text: "Reset"; implicitWidth: 0; Layout.fillWidth: true; navigationFocused: root.navigationIndex === 1; onClicked: root.controller.captureReview.resetCrop() }
                         }
-                    }
 
-                    Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: root.theme.borderSoft }
+                        AppText { theme: root.theme; role: "status"; text: "Zoom" }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 8
+                            SecondaryButton { theme: root.theme; text: "Out"; implicitWidth: 0; Layout.fillWidth: true; navigationFocused: root.navigationIndex === 2; onClicked: root.zoomCanvas(-0.2) }
+                            SecondaryButton { theme: root.theme; text: "In"; implicitWidth: 0; Layout.fillWidth: true; navigationFocused: root.navigationIndex === 3; onClicked: root.zoomCanvas(0.2) }
+                        }
 
-                    Text {
-                        text: "Crop"
-                        color: root.theme.text
-                        font.family: root.theme.displayFont
-                        font.pixelSize: 16
-                        font.weight: root.theme.weightHeavy
-                    }
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: 8
+                        AppText { theme: root.theme; role: "status"; text: "Enhance" }
                         SecondaryButton {
                             theme: root.theme
-                            text: "CROP"
-                            implicitWidth: 0
-                            Layout.minimumWidth: 0
+                            text: root.controller.captureReview.autoEnhanceActive ? "Auto Enhance: On" : "Auto Enhance"
                             Layout.fillWidth: true
-                            navigationFocused: root.navigationIndex === 0
-                            onClicked: root.startCropEditing()
+                            navigationFocused: root.navigationIndex === 4
+                            onClicked: root.controller.captureReview.setAutoEnhance(!root.controller.captureReview.autoEnhanceActive)
                         }
-                        SecondaryButton {
-                            theme: root.theme
-                            text: "RESET CROP"
-                            implicitWidth: 0
-                            Layout.minimumWidth: 0
-                            Layout.fillWidth: true
-                            navigationFocused: root.navigationIndex === 1
-                            onClicked: root.controller.captureReview.resetCrop()
-                        }
-                    }
 
-                    Text {
-                        text: "Zoom"
-                        color: root.theme.text
-                        font.family: root.theme.displayFont
-                        font.pixelSize: 16
-                        font.weight: root.theme.weightHeavy
-                    }
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: 8
-                        SecondaryButton {
-                            theme: root.theme
-                            text: "ZOOM −"
-                            implicitWidth: 0
-                            Layout.minimumWidth: 0
-                            Layout.fillWidth: true
-                            navigationFocused: root.navigationIndex === 2
-                            onClicked: root.zoomCanvas(-0.2)
-                        }
-                        SecondaryButton {
-                            theme: root.theme
-                            text: "ZOOM +"
-                            implicitWidth: 0
-                            Layout.minimumWidth: 0
-                            Layout.fillWidth: true
-                            navigationFocused: root.navigationIndex === 3
-                            onClicked: root.zoomCanvas(0.2)
-                        }
-                    }
+                        Rectangle { Layout.columnSpan: 2; Layout.fillWidth: true; Layout.preferredHeight: 1; color: root.theme.borderSoft }
 
-                    Text {
-                        text: "Enhancement"
-                        color: root.theme.text
-                        font.family: root.theme.displayFont
-                        font.pixelSize: 16
-                        font.weight: root.theme.weightHeavy
-                    }
-                    SecondaryButton {
-                        theme: root.theme
-                        text: root.controller.captureReview.autoEnhanceActive ? "AUTO-ENHANCE ON" : "AUTO-ENHANCE"
-                        Layout.fillWidth: true
-                        navigationFocused: root.navigationIndex === 4
-                        onClicked: root.controller.captureReview.setAutoEnhance(!root.controller.captureReview.autoEnhanceActive)
-                    }
-
-                    Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: root.theme.borderSoft }
-
-                    Text {
-                        text: "Perspective correction"
-                        color: root.theme.text
-                        font.family: root.theme.displayFont
-                        font.pixelSize: 16
-                        font.weight: root.theme.weightHeavy
-                    }
-                    Text {
-                        text: root.controller.captureReview.perspectiveActive
-                              ? "Perspective correction is applied."
-                              : root.controller.captureReview.perspectiveAvailable
-                                ? "Document boundary detected."
-                                : "No document boundary detected."
-                        color: root.theme.textMuted
-                        font.family: root.theme.bodyFont
-                        font.pixelSize: 13
-                        wrapMode: Text.WordWrap
-                        Layout.fillWidth: true
-                    }
-                    RowLayout {
-                        visible: root.controller.captureReview.perspectiveAvailable
-                        Layout.fillWidth: true
-                        spacing: 8
-
-                        SecondaryButton {
-                            visible: !root.controller.captureReview.perspectiveActive
-                            theme: root.theme
-                            text: "APPLY"
-                            implicitWidth: 0
-                            Layout.minimumWidth: 0
+                        AppText { theme: root.theme; role: "status"; text: "Perspective"; Layout.alignment: Qt.AlignTop }
+                        ColumnLayout {
                             Layout.fillWidth: true
-                            navigationFocused: root.navigationIndex === 5
-                            onClicked: root.controller.captureReview.acceptPerspective()
-                        }
-                        SecondaryButton {
-                            visible: root.controller.captureReview.perspectiveActive
-                            theme: root.theme
-                            text: "CANCEL"
-                            implicitWidth: 0
-                            Layout.minimumWidth: 0
-                            Layout.fillWidth: true
-                            navigationFocused: root.navigationIndex === 6
-                            onClicked: root.controller.captureReview.rejectPerspective()
+                            spacing: 6
+                            BodyText {
+                                theme: root.theme
+                                role: "caption"
+                                text: root.controller.captureReview.perspectiveActive
+                                      ? "Correction applied."
+                                      : root.controller.captureReview.perspectiveAvailable
+                                        ? "Document boundary detected."
+                                        : "No boundary detected."
+                                color: root.theme.textMuted
+                                Layout.fillWidth: true
+                            }
+                            SecondaryButton {
+                                visible: root.controller.captureReview.perspectiveAvailable
+                                theme: root.theme
+                                text: root.controller.captureReview.perspectiveActive ? "Cancel" : "Apply"
+                                Layout.fillWidth: true
+                                navigationFocused: root.navigationIndex === (root.controller.captureReview.perspectiveActive ? 6 : 5)
+                                onClicked: root.controller.captureReview.perspectiveActive
+                                           ? root.controller.captureReview.rejectPerspective()
+                                           : root.controller.captureReview.acceptPerspective()
+                            }
                         }
                     }
+                    Item { Layout.fillHeight: true }
                 }
             }
         }
 
         RowLayout {
             Layout.fillWidth: true
-            spacing: 12
-
-            SecondaryButton {
-                theme: root.theme
-                text: "RETAKE"
-                onClicked: root.controller.retakeCapture()
-            }
-            NavigationHint {
-                theme: root.theme
-                text: "UP/DOWN Choose  •  SELECT Confirm  •  BACK Retake"
-                Layout.fillWidth: true
-            }
+            Layout.preferredHeight: root.theme.footerHeight
+            spacing: root.theme.cardSpacing
+            SecondaryButton { theme: root.theme; text: "Retake"; onClicked: root.controller.retakeCapture() }
+            NavigationHint { theme: root.theme; text: "UP/DOWN Choose  •  SELECT Confirm  •  BACK Retake"; Layout.fillWidth: true }
             PrimaryButton {
                 theme: root.theme
                 tone: "success"
-                text: root.controller.captureReview.state === "submitting" ? "ANALYZING…" : "CONFIRM AND ANALYZE"
+                text: root.controller.captureReview.state === "submitting" ? "Analyzing…" : "Confirm and Analyze"
                 enabled: root.controller.captureReview.canSubmit && root.controller.captureReview.state !== "submitting"
-                implicitWidth: 256
+                implicitWidth: 246
                 navigationFocused: root.navigationIndex === 7
                 onClicked: root.controller.confirmReviewedImage()
             }

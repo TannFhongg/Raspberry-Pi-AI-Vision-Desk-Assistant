@@ -6,20 +6,20 @@ Item {
     required property QtObject theme
     required property var controller
 
-    implicitHeight: headerRow.implicitHeight
+    implicitHeight: root.theme.appHeaderHeight
 
     RowLayout {
         id: headerRow
         anchors.fill: parent
-        spacing: 14
+        spacing: root.theme.standardSpacing
 
         BrandLogo {
             theme: root.theme
             compact: true
             Layout.alignment: Qt.AlignVCenter
-            Layout.preferredWidth: 250
+            Layout.preferredWidth: 280
             Layout.minimumWidth: 0
-            Layout.maximumWidth: 250
+            Layout.maximumWidth: 280
         }
 
         Item {
@@ -33,7 +33,7 @@ Item {
             text: root.controller.globalStatusText
             tone: root.controller.globalStatusTone
             Layout.alignment: Qt.AlignVCenter
-            Layout.maximumWidth: 330
+            Layout.maximumWidth: 420
         }
     }
 }

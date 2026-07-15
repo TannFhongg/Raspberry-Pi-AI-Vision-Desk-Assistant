@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
+import sys
 import threading
 from typing import Any
 
@@ -34,6 +36,81 @@ from system.setup_portal import SetupPortal, SetupPortalDetails, SetupPortalErro
 
 LOGGER = logging.getLogger(__name__)
 SUPPORTED_GPIO_PINS = frozenset({2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27})
+
+
+def detect_setup_runtime_context(runtime: VisionDeskRuntime) -> str:
+    """Classify setup diagnostics without pretending desktop hardware is a Pi."""
+    if runtime.mock_hardware:
+        return "desktop_mock"
+    if sys.platform.startswith("linux"):
+        try:
+            model = Path("/proc/device-tree/model").read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            model = ""
+        if "raspberry pi" in model.casefold():
+            return "raspberry_pi"
+    return "unsupported_platform"
+
+
+def present_setup_diagnostic(kind: str, message: str, runtime_context: str) -> str:
+    """Return a concise public setup message while preserving truthful status."""
+    raw = str(message or "").strip()
+    lowered = raw.casefold()
+
+    if kind == "wifi":
+        if "ssid cannot be empty" in lowered:
+            return "Choose or enter a Wi-Fi network before finishing setup."
+        unavailable = any(
+            marker in lowered
+            for marker in ("networkmanager", "network unavailable", "wi-fi unavailable", "wifi unavailable")
+        )
+        if unavailable and runtime_context == "desktop_mock":
+            return (
+                "Not available in desktop mock mode. "
+                "Wi-Fi readiness must be verified on the Raspberry Pi."
+            )
+
+    if kind == "camera" and "opencv" in lowered and (
+        "not available" in lowered or "unavailable" in lowered
+    ):
+        if runtime_context == "desktop_mock":
+            return (
+                "Not available in desktop mock mode. "
+                "Camera readiness must be verified on the Raspberry Pi."
+            )
+        if runtime_context == "raspberry_pi":
+            return (
+                "OpenCV unavailable.\n"
+                "Install the required package:\n"
+                "sudo apt install -y python3-opencv\n"
+                "Then recreate the VisionDesk environment:\n"
+                "python3 -m venv --system-site-packages .venv"
+            )
+        return (
+            "OpenCV unavailable. Install a supported OpenCV package for this platform, "
+            "then restart VisionDesk."
+        )
+
+    if kind == "gpio" and any(
+        marker in lowered
+        for marker in ("gpio is not available", "gpio unavailable", "default pin factory")
+    ):
+        if runtime_context == "desktop_mock":
+            return (
+                "Not available in desktop mock mode. "
+                "GPIO readiness must be verified on the Raspberry Pi."
+            )
+        if runtime_context == "raspberry_pi":
+            return (
+                "GPIO unavailable. Check GPIO permissions, configured pins, and the connected "
+                "button hardware, then run the GPIO test again."
+            )
+        return (
+            "GPIO access is unavailable on this platform. "
+            "Verify the configured buttons on the Raspberry Pi."
+        )
+
+    return raw
 
 
 class _OperationScopedSetupStateStore:
@@ -93,6 +170,7 @@ class SetupController(QObject):
     def __init__(self, runtime: VisionDeskRuntime, parent=None) -> None:
         super().__init__(parent)
         self.runtime = runtime
+        self._runtime_context = detect_setup_runtime_context(runtime)
         self._state = runtime.setup_state_store.load_state()
         self._warnings: list[str] = runtime.setup_state_store.build_warnings(self._state)
         self._wifi_networks_model = DictListModel(["ssid", "signal", "security"], self)
@@ -135,6 +213,10 @@ class SetupController(QObject):
         return str(self._state.get("current_step", "welcome"))
 
     @Property(str, notify=stateChanged)
+    def runtimeContext(self) -> str:
+        return self._runtime_context
+
+    @Property(str, notify=stateChanged)
     def finishMessage(self) -> str:
         return str(self._state.get("finish_message", ""))
 
@@ -169,7 +251,11 @@ class SetupController(QObject):
 
     @Property(str, notify=stateChanged)
     def wifiMessage(self) -> str:
-        return str(self._state.get("wifi", {}).get("message", ""))
+        return present_setup_diagnostic(
+            "wifi",
+            str(self._state.get("wifi", {}).get("message", "")),
+            self._runtime_context,
+        )
 
     @Property(str, notify=stateChanged)
     def wifiScanStatus(self) -> str:
@@ -193,7 +279,11 @@ class SetupController(QObject):
 
     @Property(str, notify=stateChanged)
     def cameraMessage(self) -> str:
-        return str(self._state.get("camera", {}).get("message", ""))
+        return present_setup_diagnostic(
+            "camera",
+            str(self._state.get("camera", {}).get("message", "")),
+            self._runtime_context,
+        )
 
     @Property(str, notify=stateChanged)
     def cameraStatus(self) -> str:
@@ -219,7 +309,11 @@ class SetupController(QObject):
 
     @Property(str, notify=stateChanged)
     def gpioMessage(self) -> str:
-        return str(self._state.get("gpio", {}).get("message", ""))
+        return present_setup_diagnostic(
+            "gpio",
+            str(self._state.get("gpio", {}).get("message", "")),
+            self._runtime_context,
+        )
 
     @Property(str, notify=stateChanged)
     def gpioStatus(self) -> str:

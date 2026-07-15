@@ -13,6 +13,11 @@ from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtWidgets import QApplication
 
 from qt_app.app_controller import AppController
+from qt_app.display_integration import (
+    collect_display_diagnostics,
+    configure_application_font,
+    log_display_diagnostics,
+)
 from qt_app.image_provider import CachedImageStore, VisionDeskImageProvider
 from qt_app.runtime import VisionDeskRuntime
 from system.readiness import clear_readiness_marker, write_readiness_marker
@@ -87,6 +92,7 @@ def main(argv: list[str] | None = None) -> int:
     app.setOrganizationName("VisionDesk")
     app.setApplicationVersion(__version__)
     QGuiApplication.setQuitOnLastWindowClosed(True)
+    selected_body_font = configure_application_font(app)
 
     # A restarted service must publish a fresh readiness marker for this process.
     startup_readiness_path = resolve_visiondesk_paths().readiness_path
@@ -128,6 +134,14 @@ def main(argv: list[str] | None = None) -> int:
         root.show()
     else:
         root.showFullScreen()
+
+    diagnostics = collect_display_diagnostics(
+        root.screen() or app.primaryScreen(),
+        fullscreen_geometry=root.geometry(),
+        selected_font=selected_body_font,
+    )
+    controller.setDisplayDiagnostics(diagnostics)
+    log_display_diagnostics(diagnostics)
 
     write_readiness_marker(
         runtime.paths.readiness_path,

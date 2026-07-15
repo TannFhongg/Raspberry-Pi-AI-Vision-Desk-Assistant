@@ -15,13 +15,18 @@ Item {
     readonly property real minCrop: 0.055
     // Leave room for the 22 px drag handles and the capture label. This keeps
     // a full-frame crop editable without clipping its touch targets.
-    readonly property int imageEdgeInset: 16
+    readonly property int imageEdgeInset: Math.ceil(root.theme.minimumTouchTarget / 2) + 2
     readonly property int imageTopInset: 46
+    readonly property real handleHitRadius: root.theme.minimumTouchTarget / 2
 
     function imageX() { return sourceImage.x + (sourceImage.width - sourceImage.paintedWidth) / 2 }
     function imageY() { return sourceImage.y + (sourceImage.height - sourceImage.paintedHeight) / 2 }
     function normalizedX(value) { return Math.max(0, Math.min(1, (value - imageX()) / Math.max(1, sourceImage.paintedWidth))) }
     function normalizedY(value) { return Math.max(0, Math.min(1, (value - imageY()) / Math.max(1, sourceImage.paintedHeight))) }
+    function containsImagePoint(x, y) {
+        return x >= imageX() && x <= imageX() + sourceImage.paintedWidth
+            && y >= imageY() && y <= imageY() + sourceImage.paintedHeight
+    }
     function setCrop(x, y, width, height) {
         var w = Math.max(root.minCrop, Math.min(1, width))
         var h = Math.max(root.minCrop, Math.min(1, height))
@@ -30,7 +35,7 @@ Item {
         root.review.setCropNormalized(left, top, w, h)
     }
     function handleAt(mouseX, mouseY) {
-        var radius = 26
+        var radius = root.handleHitRadius
         var points = [
             [cropBox.x, cropBox.y, "topLeft"], [cropBox.x + cropBox.width, cropBox.y, "topRight"],
             [cropBox.x, cropBox.y + cropBox.height, "bottomLeft"], [cropBox.x + cropBox.width, cropBox.y + cropBox.height, "bottomRight"]
@@ -107,6 +112,10 @@ Item {
         enabled: root.cropEditing && root.review.hasCapturedImage
         preventStealing: true
         onPressed: function(mouse) {
+            if (!root.containsImagePoint(mouse.x, mouse.y)) {
+                mouse.accepted = false
+                return
+            }
             root.dragMode = root.handleAt(mouse.x, mouse.y)
             root.startX = root.normalizedX(mouse.x)
             root.startY = root.normalizedY(mouse.y)
@@ -141,7 +150,7 @@ Item {
         anchors.left: parent.left; anchors.top: parent.top; anchors.margins: 12
         width: originalLabel.implicitWidth + 20; height: 30; radius: root.theme.radiusPill
         color: Qt.rgba(0.06, 0.09, 0.16, 0.78)
-        Text { id: originalLabel; anchors.centerIn: parent; text: "ORIGINAL CAPTURE"; color: "white"; font.family: root.theme.bodyFont; font.pixelSize: 12; font.weight: root.theme.weightHeavy }
+        AppText { id: originalLabel; anchors.centerIn: parent; theme: root.theme; role: "caption"; forceQtRendering: true; text: "Original capture"; color: "white"; font.weight: root.theme.weightStrong }
     }
 
     Connections {

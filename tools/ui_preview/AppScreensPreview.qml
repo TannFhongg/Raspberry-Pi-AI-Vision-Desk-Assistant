@@ -8,8 +8,8 @@ import "../../qt_app/qml/screens"
 
 Rectangle {
     id: window
-    width: 1200
-    height: 800
+    width: 1366
+    height: 768
     color: appTheme.pageBackground
 
     property string requestedScreen: "home"
@@ -27,6 +27,9 @@ Rectangle {
 
     Theme {
         id: appTheme
+        textSize: mockController.textSize
+        bodyFontOverride: mockController.bodyFontFamily
+        renderingPolicy: mockController.textRenderingPolicy
     }
 
     QtObject {
@@ -38,6 +41,10 @@ Rectangle {
         property string applicationState: "ANALYZING"
         property string globalStatusText: "Ready"
         property string globalStatusTone: "success"
+        property string textSize: "standard"
+        property string bodyFontFamily: "Roboto"
+        property string bodyFontFallback: "Noto Sans > Inter > DejaVu Sans > Roboto"
+        property string textRenderingPolicy: "qt"
         property bool deviceActionsBusy: false
         property string deviceActionsStatus: ""
         property string deviceActionsTone: "active"
@@ -169,6 +176,7 @@ Rectangle {
         function openSettings() { }
         function openDeviceHealth() { }
         function refreshDeviceHealth() { }
+        function setTextSize(value) { textSize = value }
         function clearResult() { }
         function retry() { }
         function openHistoryItem(entryId) { }
@@ -179,7 +187,7 @@ Rectangle {
     Item {
         id: shell
         anchors.fill: parent
-        anchors.margins: 20
+        anchors.margins: appTheme.pageMargin
 
         AppHeader {
             id: header
@@ -188,12 +196,13 @@ Rectangle {
             anchors.right: parent.right
             theme: appTheme
             controller: mockController
+            height: appTheme.appHeaderHeight
         }
 
         Rectangle {
             id: divider
             anchors.top: header.bottom
-            anchors.topMargin: 16
+            anchors.topMargin: appTheme.headerDividerGap
             anchors.left: parent.left
             anchors.right: parent.right
             height: appTheme.dividerStrong
@@ -203,7 +212,7 @@ Rectangle {
         Loader {
             id: screenLoader
             anchors.top: divider.bottom
-            anchors.topMargin: 18
+            anchors.topMargin: appTheme.pageTopGap
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.bottom: parent.bottom

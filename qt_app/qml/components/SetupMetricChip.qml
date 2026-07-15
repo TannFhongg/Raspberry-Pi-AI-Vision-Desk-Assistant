@@ -57,9 +57,9 @@ Rectangle {
                 text: root.label
                 color: root.theme.textMuted
                 font.family: root.theme.bodyFont
-                font.pixelSize: 12
+                font.pixelSize: root.theme.fontCaption
                 font.weight: root.theme.weightStrong
-                renderType: Text.NativeRendering
+                renderType: root.theme.textRenderType
                 elide: Text.ElideRight
                 maximumLineCount: 1
                 Layout.fillWidth: true
@@ -69,10 +69,12 @@ Rectangle {
             Text {
                 text: root.value
                 color: root.theme.text
-                font.family: root.theme.displayFont
-                font.pixelSize: root.value.length >= 8 ? 15 : root.value.length >= 6 ? 16 : 18
+                font.family: root.theme.bodyFont
+                font.pixelSize: root.value.length >= 8 ? root.theme.fontCaption
+                                : root.value.length >= 6 ? root.theme.fontSecondaryBody
+                                : root.theme.fontBody
                 font.weight: root.theme.weightHeavy
-                renderType: Text.NativeRendering
+                renderType: root.theme.textRenderType
                 elide: Text.ElideRight
                 maximumLineCount: 1
                 Layout.fillWidth: true

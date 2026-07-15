@@ -72,7 +72,7 @@ Item {
             text: "ZOOM REGION"
             color: "white"
             font.family: root.theme.bodyFont
-            font.pixelSize: 13
+            font.pixelSize: root.theme.fontCaption
             font.weight: root.theme.weightStrong
         }
     }

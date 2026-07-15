@@ -89,6 +89,19 @@ Item {
         return "info"
     }
 
+    function isMockLimitation(message) {
+        return root.controller.setupRuntimeContext === "desktop_mock"
+                && String(message || "").indexOf("Not available in desktop mock mode.") === 0
+    }
+
+    function gateStatusText(status, message) {
+        return root.isMockLimitation(message) ? "Mock limitation" : root.statusText(status)
+    }
+
+    function gateStatusTone(status, message) {
+        return root.isMockLimitation(message) ? "warning" : root.statusTone(status)
+    }
+
     function statusColor(status) {
         const tone = statusTone(status)
         if (tone === "success") return root.theme.successStrong
@@ -245,9 +258,9 @@ Item {
 
                 RowLayout {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 182
-                    Layout.minimumHeight: 182
-                    Layout.maximumHeight: 182
+                    Layout.preferredHeight: 210
+                    Layout.minimumHeight: 210
+                    Layout.maximumHeight: 210
                     spacing: root.cardGap
 
                     InfoCard {
@@ -296,12 +309,10 @@ Item {
                                 Text {
                                     text: "Before VisionDesk goes live, we verify the essentials that keep a kiosk deployment stable."
                                     color: root.theme.text
-                                    font.family: root.theme.displayFont
-                                    font.pixelSize: 16
+                                    font.family: root.theme.bodyFont
+                                    font.pixelSize: root.theme.fontSecondaryBody
                                     font.weight: root.theme.weightStrong
                                     wrapMode: Text.WordWrap
-                                    maximumLineCount: 2
-                                    elide: Text.ElideRight
                                     Layout.fillWidth: true
                                 }
 
@@ -331,7 +342,7 @@ Item {
                                             text: root.welcomeHighlights[index]
                                             color: root.theme.textMuted
                                             font.family: root.theme.bodyFont
-                                            font.pixelSize: 13
+                                            font.pixelSize: root.theme.fontCaption
                                             font.weight: root.theme.weightRegular
                                             wrapMode: Text.WordWrap
                                             maximumLineCount: 2
@@ -378,7 +389,7 @@ Item {
                                        ? root.statusColor(root.controller.setupDeviceChecksStatus)
                                        : root.theme.textMuted
                                 font.family: root.theme.bodyFont
-                                font.pixelSize: 13
+                                font.pixelSize: root.theme.fontCaption
                                 wrapMode: Text.WordWrap
                                 maximumLineCount: 3
                                 elide: Text.ElideRight
@@ -399,8 +410,8 @@ Item {
                                 Text {
                                     text: "Running device checks…"
                                     color: root.theme.text
-                                    font.family: root.theme.displayFont
-                                    font.pixelSize: 15
+                                    font.family: root.theme.bodyFont
+                                    font.pixelSize: root.theme.fontCaption
                                     font.weight: root.theme.weightStrong
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
@@ -411,7 +422,7 @@ Item {
                                 visible: !root.controller.setupDeviceChecksBusy
                                 theme: root.theme
                                 tone: "success"
-                                text: root.hasDeviceCheckResults ? "RUN AGAIN" : "RUN CHECKS"
+                                text: root.hasDeviceCheckResults ? "Run Again" : "Run Checks"
                                 enabled: !root.controller.setupDeviceChecksBusy
                                 Layout.fillWidth: true
                                 navigationFocused: root.navigationIndex === root.runChecksNavigationIndex
@@ -428,9 +439,9 @@ Item {
                                ? "#F4F8FF"
                                : "#FBFCFE"
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 142
-                    Layout.minimumHeight: 142
-                    Layout.maximumHeight: 142
+                    Layout.preferredHeight: 170
+                    Layout.minimumHeight: 170
+                    Layout.maximumHeight: 170
 
                     RowLayout {
                         anchors.fill: parent
@@ -448,8 +459,8 @@ Item {
                                 text: "PHONE\nSETUP"
                                 horizontalAlignment: Text.AlignHCenter
                                 color: root.theme.primaryStrong
-                                font.family: root.theme.displayFont
-                                font.pixelSize: 13
+                                font.family: root.theme.bodyFont
+                                font.pixelSize: root.theme.fontCaption
                                 font.weight: root.theme.weightStrong
                             }
                         }
@@ -483,7 +494,7 @@ Item {
 
                                 SecondaryButton {
                                     theme: root.theme
-                                    text: root.controller.setupPhonePortalActive ? "STOP" : "START"
+                                    text: root.controller.setupPhonePortalActive ? "Stop" : "Start"
                                     enabled: root.canControlPhoneSetup
                                     implicitWidth: 104
                                     navigationFocused: root.navigationIndex === root.phoneSetupNavigationIndex
@@ -501,7 +512,7 @@ Item {
                                 text: root.controller.setupPhonePortalMessage
                                 color: root.statusColor(root.controller.setupPhonePortalStatus)
                                 font.family: root.theme.bodyFont
-                                font.pixelSize: 13
+                                font.pixelSize: root.theme.fontCaption
                                 wrapMode: Text.WordWrap
                                 maximumLineCount: 2
                                 elide: Text.ElideRight
@@ -515,7 +526,7 @@ Item {
                                       + "    Code: " + root.controller.setupPhonePortalPairingCode
                                 color: root.theme.text
                                 font.family: root.theme.bodyFont
-                                font.pixelSize: 13
+                                font.pixelSize: root.theme.fontCaption
                                 font.weight: root.theme.weightStrong
                                 elide: Text.ElideRight
                                 Layout.fillWidth: true
@@ -526,7 +537,7 @@ Item {
                                 text: "Open " + root.controller.setupPhonePortalUrl + " or scan the QR code."
                                 color: root.theme.textMuted
                                 font.family: root.theme.bodyFont
-                                font.pixelSize: 12
+                                font.pixelSize: root.theme.fontCaption
                                 elide: Text.ElideRight
                                 Layout.fillWidth: true
                             }
@@ -538,7 +549,7 @@ Item {
                     id: deviceCheckGrid
                     readonly property int cardCount: root.controller.deviceChecksModel.count
                     readonly property int cardRows: Math.ceil(cardCount / 3)
-                    readonly property real resultsHeight: cardRows * 98
+                    readonly property real resultsHeight: cardRows * 112
                                                          + Math.max(0, cardRows - 1) * root.cardGap
                     visible: root.hasDeviceCheckResults && !root.controller.setupDeviceChecksBusy
                     Layout.fillWidth: true
@@ -562,7 +573,7 @@ Item {
                             Layout.fillWidth: true
                             Layout.fillHeight: true
                             Layout.minimumHeight: 0
-                            Layout.preferredHeight: 98
+                            Layout.preferredHeight: 112
                             title: (itemData.name || "").replace(/_/g, " ")
                             eyebrow: "Device check"
                             value: root.statusText(itemData.status || "")
@@ -629,7 +640,7 @@ Item {
                     SecondaryButton {
                         theme: root.theme
                         tone: "primary"
-                        text: "RESCAN"
+                        text: "Rescan"
                         implicitWidth: 122
                         onClicked: root.controller.scanWifi()
                     }
@@ -643,7 +654,7 @@ Item {
                             : "Nearby networks will appear here after a scan."
                     color: root.controller.setupWifiScanStatus === "fail" ? root.theme.errorStrong : root.theme.textMuted
                     font.family: root.theme.bodyFont
-                    font.pixelSize: 14
+                    font.pixelSize: root.theme.fontCaption
                     wrapMode: Text.WordWrap
                     Layout.fillWidth: true
                 }
@@ -693,8 +704,8 @@ Item {
                                         anchors.centerIn: parent
                                         text: root.securityLabel(itemData.security || "") === "OPEN" ? "O" : "L"
                                         color: selected ? root.theme.primaryStrong : root.theme.textMuted
-                                        font.family: root.theme.displayFont
-                                        font.pixelSize: 13
+                                        font.family: root.theme.bodyFont
+                                        font.pixelSize: root.theme.fontCaption
                                         font.weight: root.theme.weightHeavy
                                     }
                                 }
@@ -706,18 +717,18 @@ Item {
                                     Text {
                                         text: itemData.ssid || "Unnamed network"
                                         color: root.theme.text
-                                        font.family: root.theme.displayFont
-                                        font.pixelSize: 18
+                                        font.family: root.theme.bodyFont
+                                        font.pixelSize: root.theme.fontBody
                                         font.weight: root.theme.weightStrong
                                         elide: Text.ElideRight
-                                        renderType: Text.NativeRendering
+                                        renderType: root.theme.textRenderType
                                     }
 
                                     Text {
                                         text: root.securityLabel(itemData.security || "") + " | " + root.signalLabel(itemData.signal)
                                         color: root.theme.textMuted
                                         font.family: root.theme.bodyFont
-                                        font.pixelSize: 13
+                                        font.pixelSize: root.theme.fontCaption
                                     }
                                 }
 
@@ -778,7 +789,7 @@ Item {
                 PrimaryButton {
                     theme: root.theme
                     tone: "success"
-                    text: "CONNECT WI-FI"
+                    text: "Connect Wi-Fi"
                     Layout.fillWidth: true
                     onClicked: root.controller.connectWifi(root.selectedSsid, root.manualSsidText, root.wifiPasswordText)
                 }
@@ -842,7 +853,7 @@ Item {
                     SecondaryButton {
                         theme: root.theme
                         tone: "primary"
-                        text: root.showApiKey ? "HIDE KEY" : "SHOW KEY"
+                        text: root.showApiKey ? "Hide Key" : "Show Key"
                         implicitWidth: 132
                         onClicked: {
                             root.showApiKey = !root.showApiKey
@@ -853,7 +864,7 @@ Item {
                     SecondaryButton {
                         theme: root.theme
                         tone: "primary"
-                        text: "PASTE"
+                        text: "Paste"
                         implicitWidth: 100
                         onClicked: openAiKeyField.paste()
                     }
@@ -862,8 +873,8 @@ Item {
                         theme: root.theme
                         tone: "danger"
                         text: root.controller.setupApiKeyBusy && root.controller.setupHasApiKey
-                              ? "CLEARING..."
-                              : "CLEAR KEY"
+                              ? "Clearing..."
+                              : "Clear Key"
                         implicitWidth: 132
                         enabled: !root.controller.setupApiKeyBusy
                                  && (root.controller.setupHasApiKey || root.apiKeyDraft.trim().length > 0)
@@ -878,7 +889,7 @@ Item {
                 PrimaryButton {
                     theme: root.theme
                     tone: "success"
-                    text: root.controller.setupApiKeyBusy ? "WORKING..." : "SAVE + VERIFY"
+                    text: root.controller.setupApiKeyBusy ? "Working…" : "Save and Verify"
                     enabled: !root.controller.setupApiKeyBusy && root.apiKeyDraft.trim().length > 0
                     Layout.fillWidth: true
                     onClicked: {
@@ -916,8 +927,8 @@ Item {
                         Text {
                             text: "Secure API Setup"
                             color: root.theme.text
-                            font.family: root.theme.displayFont
-                            font.pixelSize: 17
+                            font.family: root.theme.bodyFont
+                            font.pixelSize: root.theme.fontButton
                             font.weight: root.theme.weightStrong
                         }
 
@@ -925,7 +936,7 @@ Item {
                             text: "VisionDesk stores the key in the protected environment file. QML receives only saved and verified status."
                             color: root.theme.textMuted
                             font.family: root.theme.bodyFont
-                            font.pixelSize: 13
+                            font.pixelSize: root.theme.fontCaption
                             wrapMode: Text.WordWrap
                             Layout.fillWidth: true
                         }
@@ -934,7 +945,7 @@ Item {
                             text: "Clear Key removes the stored secret without returning raw or masked key data to the UI."
                             color: root.controller.setupHasApiKey ? root.theme.successStrong : root.theme.warningStrong
                             font.family: root.theme.bodyFont
-                            font.pixelSize: 13
+                            font.pixelSize: root.theme.fontCaption
                             wrapMode: Text.WordWrap
                             Layout.fillWidth: true
                         }
@@ -985,7 +996,7 @@ Item {
                     PrimaryButton {
                         theme: root.theme
                         tone: "primary"
-                        text: "RUN CAMERA TEST"
+                        text: "Run Camera Test"
                         implicitWidth: 220
                         onClicked: root.controller.runCameraTest()
                     }
@@ -997,7 +1008,7 @@ Item {
                           : "Camera ready check"
                     color: root.statusColor(root.controller.setupCameraStatus)
                     font.family: root.theme.bodyFont
-                    font.pixelSize: 13
+                    font.pixelSize: root.theme.fontCaption
                     wrapMode: Text.WordWrap
                     Layout.fillWidth: true
                 }
@@ -1047,8 +1058,8 @@ Item {
                         Text {
                             text: root.controller.cameraPreviewTitle
                             color: root.theme.text
-                            font.family: root.theme.displayFont
-                            font.pixelSize: 18
+                            font.family: root.theme.bodyFont
+                            font.pixelSize: root.theme.fontBody
                             font.weight: root.theme.weightStrong
                             horizontalAlignment: Text.AlignHCenter
                             Layout.fillWidth: true
@@ -1058,7 +1069,7 @@ Item {
                             text: root.controller.cameraPreviewMessage
                             color: root.theme.textMuted
                             font.family: root.theme.bodyFont
-                            font.pixelSize: 13
+                            font.pixelSize: root.theme.fontCaption
                             wrapMode: Text.WordWrap
                             horizontalAlignment: Text.AlignHCenter
                             Layout.fillWidth: true
@@ -1099,7 +1110,7 @@ Item {
                     PrimaryButton {
                         theme: root.theme
                         tone: "success"
-                        text: root.controller.setupGpioActive ? "TEST RUNNING" : "START TEST"
+                        text: root.controller.setupGpioActive ? "Test Running" : "Start Test"
                         enabled: !root.controller.setupGpioActive
                         implicitWidth: 180
                         onClicked: root.controller.startGpioTest()
@@ -1108,7 +1119,7 @@ Item {
                     SecondaryButton {
                         theme: root.theme
                         tone: "neutral"
-                        text: "STOP TEST"
+                        text: "Stop Test"
                         enabled: root.controller.setupGpioActive
                         implicitWidth: 144
                         onClicked: root.controller.stopGpioTest()
@@ -1123,7 +1134,7 @@ Item {
                     text: "Press each configured hardware button once. Cards turn green as soon as VisionDesk detects the press."
                     color: root.theme.textMuted
                     font.family: root.theme.bodyFont
-                    font.pixelSize: 14
+                    font.pixelSize: root.theme.fontCaption
                     wrapMode: Text.WordWrap
                     Layout.fillWidth: true
                 }
@@ -1134,7 +1145,7 @@ Item {
                           : "Start the GPIO test and press each configured button once."
                     color: root.statusColor(root.controller.setupGpioStatus)
                     font.family: root.theme.bodyFont
-                    font.pixelSize: 13
+                    font.pixelSize: root.theme.fontCaption
                     wrapMode: Text.WordWrap
                     Layout.fillWidth: true
                 }
@@ -1192,10 +1203,10 @@ Item {
                                     Text {
                                         text: hasData ? (itemData.label || "").replace(/_/g, " ") : "No GPIO requirements"
                                         color: root.theme.text
-                                        font.family: root.theme.displayFont
-                                        font.pixelSize: 17
+                                        font.family: root.theme.bodyFont
+                                        font.pixelSize: root.theme.fontButton
                                         font.weight: root.theme.weightStrong
-                                        renderType: Text.NativeRendering
+                                        renderType: root.theme.textRenderType
                                         elide: Text.ElideRight
                                     }
 
@@ -1205,7 +1216,7 @@ Item {
                                               : "Nothing to verify for this profile."
                                         color: pressed ? root.theme.successStrong : root.theme.textMuted
                                         font.family: root.theme.bodyFont
-                                        font.pixelSize: 13
+                                        font.pixelSize: root.theme.fontCaption
                                         font.weight: root.theme.weightStrong
                                     }
                                 }
@@ -1217,8 +1228,8 @@ Item {
                                     Text {
                                         text: "GPIO " + (hasData ? (itemData.pin || "") : "")
                                         color: root.theme.text
-                                        font.family: root.theme.displayFont
-                                        font.pixelSize: 15
+                                        font.family: root.theme.bodyFont
+                                        font.pixelSize: root.theme.fontCaption
                                         font.weight: root.theme.weightStrong
                                     }
 
@@ -1226,7 +1237,7 @@ Item {
                                         text: pressed ? "OK" : "PENDING"
                                         color: pressed ? root.theme.successStrong : root.theme.textMuted
                                         font.family: root.theme.bodyFont
-                                        font.pixelSize: 12
+                                        font.pixelSize: root.theme.fontCaption
                                         font.weight: root.theme.weightStrong
                                     }
                                 }
@@ -1244,6 +1255,7 @@ Item {
 
         Item {
             id: finishStepRoot
+            objectName: "finishSetupContent"
             width: parent ? parent.width : 0
             implicitHeight: finishStepLayout.implicitHeight
             height: implicitHeight
@@ -1256,7 +1268,7 @@ Item {
 
                 InfoCard {
                     theme: root.theme
-                    padding: 16
+                    padding: root.theme.cardSpacing
                     fillColor: "#FBFCFE"
                     Layout.fillWidth: true
 
@@ -1268,17 +1280,17 @@ Item {
                             spacing: 14
 
                             Rectangle {
-                                Layout.preferredWidth: 72
-                                Layout.preferredHeight: 72
-                                radius: 36
+                                Layout.preferredWidth: 64
+                                Layout.preferredHeight: 64
+                                radius: 32
                                 color: root.controller.setupReadyToFinish ? root.theme.successFill : root.theme.warningFill
 
                                 Text {
                                     anchors.centerIn: parent
                                     text: root.controller.setupReadyToFinish ? "\u2713" : "!"
                                     color: root.controller.setupReadyToFinish ? root.theme.successStrong : root.theme.warningStrong
-                                    font.family: root.theme.displayFont
-                                    font.pixelSize: 34
+                                    font.family: root.theme.bodyFont
+                                    font.pixelSize: root.theme.fontPageTitle
                                     font.weight: root.theme.weightHeavy
                                 }
                             }
@@ -1291,8 +1303,8 @@ Item {
                                 Text {
                                     text: root.controller.setupReadyToFinish ? "VisionDesk is ready." : "Almost there."
                                     color: root.theme.text
-                                    font.family: root.theme.displayFont
-                                    font.pixelSize: 24
+                                    font.family: root.theme.bodyFont
+                                    font.pixelSize: root.theme.fontCardTitle
                                     font.weight: root.theme.weightHeavy
                                     Layout.fillWidth: true
                                 }
@@ -1303,84 +1315,98 @@ Item {
                                           : "Finish becomes available only after Wi-Fi, API key verification, camera test, and GPIO test all pass."
                                     color: root.theme.textMuted
                                     font.family: root.theme.bodyFont
-                                    font.pixelSize: 14
+                                    font.pixelSize: root.theme.fontCaption
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
                                 }
                             }
                         }
 
-                        PrimaryButton {
-                            theme: root.theme
-                            tone: "success"
-                            text: "LAUNCH VISIONDESK"
-                            enabled: root.controller.setupReadyToFinish
-                            Layout.fillWidth: true
-                            onClicked: root.controller.finishSetup()
-                        }
                     }
                 }
 
                 GridLayout {
+                    id: finishGateGrid
+                    objectName: "finishGateGrid"
                     Layout.fillWidth: true
                     columns: 2
-                    columnSpacing: root.cardGap
-                    rowSpacing: root.cardGap
+                    columnSpacing: root.theme.diagnosticGridSpacing
+                    rowSpacing: root.theme.diagnosticGridSpacing
 
                     StatusCard {
+                        objectName: "finishWifiGate"
+                        readonly property string displayMessage: root.controller.setupWifiSsid.length > 0
+                                                                 ? root.controller.setupWifiSsid
+                                                                 : root.controller.setupWifiMessage.length > 0
+                                                                   ? root.controller.setupWifiMessage
+                                                                   : "Network required"
                         theme: root.theme
-                        padding: 14
+                        padding: root.theme.diagnosticCardPadding
                         title: "Wi-Fi"
                         eyebrow: "Gate"
-                        value: root.statusText(root.controller.setupWifiStatus)
-                        message: root.controller.setupWifiSsid.length > 0 ? root.controller.setupWifiSsid : "Network required"
-                        tone: root.statusTone(root.controller.setupWifiStatus)
+                        value: root.gateStatusText(root.controller.setupWifiStatus, displayMessage)
+                        message: displayMessage
+                        tone: root.gateStatusTone(root.controller.setupWifiStatus, displayMessage)
                         Layout.fillWidth: true
+                        Layout.fillHeight: true
                         Layout.minimumWidth: 0
                         Layout.preferredWidth: 0
-                        Layout.preferredHeight: 88
                     }
 
                     StatusCard {
+                        objectName: "finishOpenAiGate"
+                        readonly property string displayMessage: root.controller.setupApiKeyVerified
+                                                                 ? "Verified successfully"
+                                                                 : root.controller.setupOpenAiMessage.length > 0
+                                                                   ? root.controller.setupOpenAiMessage
+                                                                   : "API verification required"
                         theme: root.theme
-                        padding: 14
+                        padding: root.theme.diagnosticCardPadding
                         title: "OpenAI"
                         eyebrow: "Gate"
-                        value: root.statusText(root.controller.setupOpenAiStatus)
-                        message: root.controller.setupApiKeyVerified ? "Verified successfully" : "API verification required"
-                        tone: root.statusTone(root.controller.setupOpenAiStatus)
+                        value: root.gateStatusText(root.controller.setupOpenAiStatus, displayMessage)
+                        message: displayMessage
+                        tone: root.gateStatusTone(root.controller.setupOpenAiStatus, displayMessage)
                         Layout.fillWidth: true
+                        Layout.fillHeight: true
                         Layout.minimumWidth: 0
                         Layout.preferredWidth: 0
-                        Layout.preferredHeight: 88
                     }
 
                     StatusCard {
+                        objectName: "finishCameraGate"
+                        readonly property string displayMessage: root.controller.setupCameraMessage.length > 0
+                                                                 ? root.controller.setupCameraMessage
+                                                                 : "Camera test required"
                         theme: root.theme
-                        padding: 14
+                        padding: root.theme.diagnosticCardPadding
                         title: "Camera"
                         eyebrow: "Gate"
-                        value: root.statusText(root.controller.setupCameraStatus)
-                        message: root.controller.setupCameraMessage.length > 0 ? root.controller.setupCameraMessage : "Camera test required"
-                        tone: root.statusTone(root.controller.setupCameraStatus)
+                        value: root.gateStatusText(root.controller.setupCameraStatus, displayMessage)
+                        message: displayMessage
+                        tone: root.gateStatusTone(root.controller.setupCameraStatus, displayMessage)
                         Layout.fillWidth: true
+                        Layout.fillHeight: true
                         Layout.minimumWidth: 0
                         Layout.preferredWidth: 0
-                        Layout.preferredHeight: 88
                     }
 
                     StatusCard {
+                        objectName: "finishGpioGate"
+                        readonly property string displayMessage: root.controller.setupGpioMessage.length > 0
+                                                                 ? root.controller.setupGpioMessage
+                                                                 : "GPIO test required"
                         theme: root.theme
-                        padding: 14
+                        padding: root.theme.diagnosticCardPadding
                         title: "GPIO"
                         eyebrow: "Gate"
-                        value: root.statusText(root.controller.setupGpioStatus)
-                        message: root.controller.setupGpioMessage.length > 0 ? root.controller.setupGpioMessage : "GPIO test required"
-                        tone: root.statusTone(root.controller.setupGpioStatus)
+                        value: root.gateStatusText(root.controller.setupGpioStatus, displayMessage)
+                        message: displayMessage
+                        tone: root.gateStatusTone(root.controller.setupGpioStatus, displayMessage)
                         Layout.fillWidth: true
+                        Layout.fillHeight: true
                         Layout.minimumWidth: 0
                         Layout.preferredWidth: 0
-                        Layout.preferredHeight: 88
                     }
                 }
 
@@ -1450,7 +1476,10 @@ Item {
                     Layout.fillHeight: true
                     clip: true
                     contentWidth: width
-                    contentHeight: Math.max(height, setupBodyLoader.height + 84)
+                    contentHeight: Math.max(
+                        height,
+                        setupBodyLoader.height + root.theme.footerHeight + root.theme.pageSpacing * 2
+                    )
                     flickableDirection: Flickable.VerticalFlick
                     boundsBehavior: Flickable.StopAtBounds
                     interactive: contentHeight > height
@@ -1487,12 +1516,16 @@ Item {
         }
 
         RowLayout {
+            id: setupFooter
+            objectName: "setupFooter"
             Layout.fillWidth: true
+            Layout.preferredHeight: root.theme.footerHeight
             spacing: 16
 
             SecondaryButton {
+                objectName: "setupBackButton"
                 theme: root.theme
-                text: "BACK"
+                text: "Back"
                 enabled: root.stepIndex(root.controller.setupCurrentStep) > 0
                 implicitWidth: 164
                 navigationFocused: root.navigationIndex === root.backNavigationIndex
@@ -1504,13 +1537,19 @@ Item {
             }
 
             PrimaryButton {
+                objectName: "setupReadyButton"
                 theme: root.theme
                 tone: "primary"
-                text: root.controller.setupCurrentStep === "finish" ? "READY" : "NEXT"
-                enabled: root.canAdvance() && root.controller.setupCurrentStep !== "finish"
+                text: root.controller.setupCurrentStep === "finish" ? "Ready" : "Next"
+                enabled: root.canAdvance()
                 implicitWidth: 164
                 navigationFocused: root.navigationIndex === root.nextNavigationIndex
-                onClicked: root.controller.goToSetupNextStep()
+                onClicked: {
+                    if (root.controller.setupCurrentStep === "finish")
+                        root.controller.finishSetup()
+                    else
+                        root.controller.goToSetupNextStep()
+                }
             }
         }
     }

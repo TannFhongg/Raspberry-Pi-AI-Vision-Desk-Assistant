@@ -34,8 +34,8 @@ Rectangle {
         Text {
             text: root.label
             color: root.theme.text
-            font.family: root.theme.displayFont
-            font.pixelSize: 15
+            font.family: root.theme.bodyFont
+            font.pixelSize: root.theme.fontCaption
             font.weight: root.theme.weightStrong
             Layout.alignment: Qt.AlignHCenter
         }
@@ -43,8 +43,8 @@ Rectangle {
         Text {
             text: root.value
             color: root.theme.text
-            font.family: root.theme.displayFont
-            font.pixelSize: 23
+            font.family: root.theme.bodyFont
+            font.pixelSize: root.theme.fontCardTitle
             font.weight: root.theme.weightHeavy
             Layout.alignment: Qt.AlignHCenter
         }

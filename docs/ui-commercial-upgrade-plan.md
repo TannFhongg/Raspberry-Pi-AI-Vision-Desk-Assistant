@@ -1,10 +1,15 @@
-# UI commercial upgrade plan
+# UI commercial upgrade plan (historical)
+
+> Historical note: this document recorded the earlier 1200 x 800 implementation.
+> That resolution was later confirmed to be an incorrect production assumption.
+> The current implementation and validation target are 1366 x 768; see
+> `display-1366x768-text-readability-plan.md`.
 
 ## Audit scope and findings
 
-The production UI is a PySide6/Qt Quick application rooted at
-`qt_app/qml/Main.qml`.  It renders into a fixed 1200 x 800 design canvas and
-uniformly scales that canvas when fullscreen.  `AppController` is the QML
+At the time of this audit, the PySide6/Qt Quick application rooted at
+`qt_app/qml/Main.qml` rendered into the now-obsolete fixed 1200 x 800 canvas and
+uniformly scaled that canvas when fullscreen. `AppController` is the QML
 facade.  It composes dedicated setup, camera, health, GPIO, history, and
 pipeline controllers over `VisionDeskRuntime`.
 
@@ -21,7 +26,7 @@ pipeline controllers over `VisionDeskRuntime`.
 | Device health | `system/health.py`, `qt_app/health_controller.py` | A shared monitor produces CPU temperature, memory, Wi-Fi and camera snapshots. It is already rate-limited by configured monitor and camera-probe intervals, but it has no dedicated user-facing health screen. |
 | Navigation | `qt_app/qml/Main.qml`, `qt_app/gpio_controller.py`, screen `handleNavigation()` methods | Keyboard arrows/Enter/Escape and GPIO are mapped to logical actions. Each screen implements its own navigation index. Setup has no logical focus handler/autoscroll; native input fields remain touch-first. |
 | Mock/runtime/config | `qt_app/runtime.py`, `qt_app/mock_backend.py`, `config/settings.py`, `config/device.yaml` | Mock mode has a live image and a mock health snapshot. Camera settings have static preferences but no detected capability abstraction. Retention already places working media under the private data root. |
-| Tests and UI previews | `tests/`, `test_*.py`, `tools/ui_preview/`, `tools/capture_ui_screenshots.py`, `docs/images/app-screens/` | Backend coverage exists for preview coordination, preprocessing, perspective geometry, status presenters, setup, pipeline and deployment. Existing screenshot tooling renders 1200 x 800 QML preview fixtures. |
+| Tests and UI previews | `tests/`, `test_*.py`, `tools/ui_preview/`, `tools/capture_ui_screenshots.py`, `docs/images/app-screens/` | This historical audit found screenshot tooling rendering obsolete 1200 x 800 fixtures. Current tooling renders 1366 x 768. |
 
 ## Existing layout and workflow
 
@@ -108,8 +113,8 @@ memory, temperature and camera metadata are retained for Device Health only.
   without touching configured credentials or unrelated private data.
 - Capability probing cannot assume OpenCV/V4L2 controls are supported by all
   USB cameras or Raspberry Pi camera stacks.
-- The fixed design canvas must remain usable at exactly 1200 x 800 and must
-  still scale in kiosk mode. Larger text and translations require wrap/layout
+- The historical delivery required the then-assumed 1200 x 800 fixed canvas.
+  That constraint is superseded by direct responsive rendering at 1366 x 768. Larger text and translations require wrap/layout
   rather than elision of actionable text.
 - Existing GPIO action routing works through screen-specific handlers. New
   review/settings handlers must preserve Back behavior and inhibit duplicate
@@ -128,7 +133,7 @@ double-submit prevention. Existing test modules remain part of the regression
 run.
 
 Visual verification will use the established QML preview/capture tooling at
-1200 x 800. It will produce safe fixture screenshots for the requested header,
+the then-assumed 1200 x 800. Current tooling instead produces safe 1366 x 768 fixture screenshots for the requested header,
 setup, health, preview, review/crop/perspective/warning, and unsupported-control
 states. Manual hardware validation remains required for physical autofocus,
 exposure, camera-driver control semantics, GPIO focus navigation, and

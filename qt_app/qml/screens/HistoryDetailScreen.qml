@@ -47,12 +47,12 @@ Item {
                 Text {
                     text: root.hasSelection ? root.controller.selectedHistoryModeLabel : "Saved result"
                     color: root.theme.text
-                    font.family: root.theme.displayFont
-                    font.pixelSize: 34
+                    font.family: root.theme.bodyFont
+                    font.pixelSize: root.theme.fontPageTitle
                     font.weight: root.theme.weightHeavy
                     Layout.fillWidth: true
                     elide: Text.ElideRight
-                    renderType: Text.NativeRendering
+                    renderType: root.theme.textRenderType
                 }
 
                 Text {
@@ -60,7 +60,7 @@ Item {
                     text: root.controller.selectedHistoryCreatedAt
                     color: root.theme.textMuted
                     font.family: root.theme.bodyFont
-                    font.pixelSize: 15
+                    font.pixelSize: root.theme.fontCaption
                     Layout.fillWidth: true
                     elide: Text.ElideRight
                 }
@@ -96,7 +96,7 @@ Item {
                     text: "Model: " + root.controller.selectedHistoryModelUsed
                     color: root.theme.textSecondary
                     font.family: root.theme.bodyFont
-                    font.pixelSize: 14
+                    font.pixelSize: root.theme.fontCaption
                 }
 
                 Text {
@@ -104,7 +104,7 @@ Item {
                     text: "Time: " + root.controller.selectedHistoryDurationLabel
                     color: root.theme.textSecondary
                     font.family: root.theme.bodyFont
-                    font.pixelSize: 14
+                    font.pixelSize: root.theme.fontCaption
                 }
 
                 Text {
@@ -112,7 +112,7 @@ Item {
                     text: "Retry: " + root.controller.selectedHistoryRetryStatus
                     color: root.theme.textSecondary
                     font.family: root.theme.bodyFont
-                    font.pixelSize: 14
+                    font.pixelSize: root.theme.fontCaption
                 }
 
                 Text {
@@ -120,7 +120,7 @@ Item {
                     text: "Note: " + root.controller.selectedHistoryErrorSummary
                     color: root.theme.textSecondary
                     font.family: root.theme.bodyFont
-                    font.pixelSize: 14
+                    font.pixelSize: root.theme.fontCaption
                 }
             }
         }
@@ -128,8 +128,8 @@ Item {
         RowLayout {
             visible: root.hasSelection
             Layout.fillWidth: true
-            Layout.preferredHeight: 385
-            Layout.maximumHeight: 385
+            Layout.fillHeight: true
+            Layout.minimumHeight: 0
             spacing: 12
 
             ScrollableResultCard {
@@ -140,9 +140,9 @@ Item {
                 html: root.controller.selectedHistoryResultHtml
                 emphasizeError: root.controller.selectedHistoryStatus === "error"
                 emphasizeQueued: root.controller.selectedHistoryStatus === "queued"
-                titlePixelSize: 28
-                bodyPixelSize: 17
-                notePixelSize: 14
+                titlePixelSize: root.theme.fontPageTitle
+                bodyPixelSize: root.theme.fontResultContent
+                notePixelSize: root.theme.fontCaption
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 Layout.minimumWidth: 0
@@ -154,9 +154,9 @@ Item {
                 title: "Additional detail"
                 note: ""
                 html: root.controller.selectedHistoryDetailHtml
-                titlePixelSize: 23
-                bodyPixelSize: 15
-                notePixelSize: 13
+                titlePixelSize: root.theme.fontCardTitle
+                bodyPixelSize: root.theme.fontSecondaryBody
+                notePixelSize: root.theme.fontCaption
                 Layout.preferredWidth: 360
                 Layout.minimumWidth: 360
                 Layout.maximumWidth: 360
@@ -179,8 +179,8 @@ Item {
                 Text {
                     text: "Saved result unavailable"
                     color: root.theme.text
-                    font.family: root.theme.displayFont
-                    font.pixelSize: 30
+                    font.family: root.theme.bodyFont
+                    font.pixelSize: root.theme.fontPageTitle
                     font.weight: root.theme.weightHeavy
                     horizontalAlignment: Text.AlignHCenter
                     Layout.fillWidth: true
@@ -191,7 +191,7 @@ Item {
                     text: "This record may have been removed during retention cleanup."
                     color: root.theme.textMuted
                     font.family: root.theme.bodyFont
-                    font.pixelSize: 16
+                    font.pixelSize: root.theme.fontSecondaryBody
                     horizontalAlignment: Text.AlignHCenter
                     Layout.fillWidth: true
                     wrapMode: Text.WordWrap
@@ -201,11 +201,12 @@ Item {
 
         RowLayout {
             Layout.fillWidth: true
+            Layout.preferredHeight: root.theme.footerHeight
             spacing: 12
 
             SecondaryButton {
                 theme: root.theme
-                text: "BACK"
+                text: "Back"
                 navigationFocused: true
                 onClicked: root.controller.goBack()
             }
@@ -219,7 +220,7 @@ Item {
             SecondaryButton {
                 theme: root.theme
                 tone: "danger"
-                text: "DELETE RESULT"
+                text: "Delete Result"
                 implicitWidth: 190
                 enabled: root.hasSelection
                 onClicked: deleteItemDialog.open()
@@ -248,8 +249,8 @@ Item {
             Text {
                 text: "Delete this saved result?"
                 color: root.theme.text
-                font.family: root.theme.displayFont
-                font.pixelSize: 28
+                font.family: root.theme.bodyFont
+                font.pixelSize: root.theme.fontCardTitle
                 font.weight: root.theme.weightHeavy
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
@@ -259,7 +260,7 @@ Item {
                 text: "This removes the selected history item only."
                 color: root.theme.textMuted
                 font.family: root.theme.bodyFont
-                font.pixelSize: 16
+                font.pixelSize: root.theme.fontSecondaryBody
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
             }
@@ -272,14 +273,14 @@ Item {
 
                 SecondaryButton {
                     theme: root.theme
-                    text: "CANCEL"
+                    text: "Cancel"
                     onClicked: deleteItemDialog.close()
                 }
 
                 PrimaryButton {
                     theme: root.theme
                     tone: "danger"
-                    text: "DELETE"
+                    text: "Delete"
                     onClicked: {
                         var entryId = root.controller.selectedHistoryId
                         deleteItemDialog.close()

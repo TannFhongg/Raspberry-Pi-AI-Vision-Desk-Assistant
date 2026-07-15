@@ -7,10 +7,13 @@ import logging
 from typing import Any
 
 from PySide6.QtCore import QObject, Property, QCoreApplication, QDateTime, QTimer, Qt, Signal, Slot
+from PySide6.QtGui import QGuiApplication
 
+from config.settings import SettingsError, VALID_TEXT_SIZES, update_device_config
 from hardware import DeviceState, clear_latest_result_file
 from qt_app.camera_controller import CameraController
 from qt_app.capture_review_controller import CaptureReviewController
+from qt_app.display_integration import BODY_FONT_FALLBACK_ORDER
 from qt_app.gpio_controller import GPIOController
 from qt_app.health_controller import HealthController
 from qt_app.history_controller import HistoryController
@@ -55,6 +58,7 @@ class AppController(QObject):
     deviceActionsChanged = Signal()
     factoryResetWorkerFinished = Signal()
     navigationRequested = Signal(str)
+    textSettingsChanged = Signal()
 
     def __init__(
         self,
@@ -296,6 +300,10 @@ class AppController(QObject):
         return self.setup_controller.currentStep
 
     @Property(str, notify=viewStateChanged)
+    def setupRuntimeContext(self) -> str:
+        return self.setup_controller.runtimeContext
+
+    @Property(str, notify=viewStateChanged)
     def setupFinishMessage(self) -> str:
         return self.setup_controller.finishMessage
 
@@ -506,6 +514,44 @@ class AppController(QObject):
     @Property(int, constant=True)
     def windowHeight(self) -> int:
         return self.runtime.screen_height
+
+    @Property(str, notify=textSettingsChanged)
+    def textSize(self) -> str:
+        return self.runtime.settings.display.text_size
+
+    @Property(str, constant=True)
+    def textRenderingPolicy(self) -> str:
+        configured = self.runtime.settings.display.text_rendering
+        return "native" if configured == "native" else "qt"
+
+    @Property(str, constant=True)
+    def bodyFontFamily(self) -> str:
+        return QGuiApplication.font().family()
+
+    @Property(str, constant=True)
+    def bodyFontFallback(self) -> str:
+        return " > ".join(BODY_FONT_FALLBACK_ORDER)
+
+    @Slot(str)
+    def setTextSize(self, value: str) -> None:
+        normalized = str(value or "").strip().lower().replace(" ", "_")
+        if normalized not in VALID_TEXT_SIZES or normalized == self.textSize:
+            return
+        try:
+            update_device_config(
+                {"display": {"text_size": normalized}},
+                config_path=self.runtime.settings.config_path,
+            )
+        except (OSError, SettingsError, ValueError) as exc:
+            LOGGER.warning("Could not persist display text size: %s", redact_technical_detail(exc))
+            return
+        self.runtime.settings.display.text_size = normalized
+        self.textSettingsChanged.emit()
+
+    @Slot("QVariantMap")
+    def setDisplayDiagnostics(self, values: dict[str, Any]) -> None:
+        self.health_controller.set_display_diagnostics(dict(values or {}))
+        self.viewStateChanged.emit()
 
     @Slot(str)
     def selectMode(self, mode: str) -> None:

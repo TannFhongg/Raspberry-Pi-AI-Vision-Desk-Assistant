@@ -120,18 +120,18 @@ Item {
                 Text {
                     text: "Recent results"
                     color: root.theme.text
-                    font.family: root.theme.displayFont
-                    font.pixelSize: 34
+                    font.family: root.theme.bodyFont
+                    font.pixelSize: root.theme.fontPageTitle
                     font.weight: root.theme.weightHeavy
-                    renderType: Text.NativeRendering
+                    renderType: root.theme.textRenderType
                 }
 
                 Text {
                     text: "Review saved VisionDesk answers on this device."
                     color: root.theme.textMuted
                     font.family: root.theme.bodyFont
-                    font.pixelSize: 15
-                    renderType: Text.NativeRendering
+                    font.pixelSize: root.theme.fontCaption
+                    renderType: root.theme.textRenderType
                 }
             }
 
@@ -162,8 +162,8 @@ Item {
             theme: root.theme
             padding: 14
             Layout.fillWidth: true
-            Layout.preferredHeight: 430
-            Layout.maximumHeight: 430
+            Layout.fillHeight: true
+            Layout.minimumHeight: 0
 
             Item {
                 anchors.fill: parent
@@ -185,8 +185,8 @@ Item {
                             anchors.centerIn: parent
                             text: "H"
                             color: root.theme.primaryStrong
-                            font.family: root.theme.displayFont
-                            font.pixelSize: 25
+                            font.family: root.theme.bodyFont
+                            font.pixelSize: root.theme.fontCardTitle
                             font.weight: root.theme.weightHeavy
                         }
                     }
@@ -196,8 +196,8 @@ Item {
                               ? "Loading recent results..."
                               : "No saved results yet"
                         color: root.theme.text
-                        font.family: root.theme.displayFont
-                        font.pixelSize: 28
+                        font.family: root.theme.bodyFont
+                        font.pixelSize: root.theme.fontCardTitle
                         font.weight: root.theme.weightHeavy
                         horizontalAlignment: Text.AlignHCenter
                         Layout.fillWidth: true
@@ -210,7 +210,7 @@ Item {
                               : root.controller.historyMessage
                         color: root.theme.textMuted
                         font.family: root.theme.bodyFont
-                        font.pixelSize: 16
+                        font.pixelSize: root.theme.fontSecondaryBody
                         horizontalAlignment: Text.AlignHCenter
                         Layout.fillWidth: true
                         wrapMode: Text.WordWrap
@@ -250,8 +250,8 @@ Item {
                                     anchors.centerIn: parent
                                     text: (itemData.mode_label || "R").slice(0, 1).toUpperCase()
                                     color: root.theme.primaryStrong
-                                    font.family: root.theme.displayFont
-                                    font.pixelSize: 20
+                                    font.family: root.theme.bodyFont
+                                    font.pixelSize: root.theme.fontCardTitle
                                     font.weight: root.theme.weightHeavy
                                 }
                             }
@@ -263,8 +263,8 @@ Item {
                                 Text {
                                     text: itemData.mode_label || "Saved Result"
                                     color: root.theme.text
-                                    font.family: root.theme.displayFont
-                                    font.pixelSize: 22
+                                    font.family: root.theme.bodyFont
+                                    font.pixelSize: root.theme.fontCardTitle
                                     font.weight: root.theme.weightHeavy
                                     Layout.fillWidth: true
                                     elide: Text.ElideRight
@@ -274,7 +274,7 @@ Item {
                                     text: itemData.summary || ""
                                     color: root.theme.textMuted
                                     font.family: root.theme.bodyFont
-                                    font.pixelSize: 15
+                                    font.pixelSize: root.theme.fontCaption
                                     Layout.fillWidth: true
                                     maximumLineCount: 2
                                     wrapMode: Text.WordWrap
@@ -285,7 +285,7 @@ Item {
                                     text: [itemData.created_at || "", root.formatDuration(itemData.duration_seconds || "")].filter(function(value) { return value.length > 0 }).join("  |  ")
                                     color: root.theme.textMuted
                                     font.family: root.theme.bodyFont
-                                    font.pixelSize: 13
+                                    font.pixelSize: root.theme.fontCaption
                                     Layout.fillWidth: true
                                     elide: Text.ElideRight
                                 }
@@ -309,11 +309,12 @@ Item {
 
         RowLayout {
             Layout.fillWidth: true
+            Layout.preferredHeight: root.theme.footerHeight
             spacing: 12
 
             SecondaryButton {
                 theme: root.theme
-                text: "BACK"
+                text: "Back"
                 onClicked: root.controller.goBack()
             }
 
@@ -328,7 +329,7 @@ Item {
             SecondaryButton {
                 theme: root.theme
                 tone: "danger"
-                text: "CLEAR HISTORY"
+                text: "Clear History"
                 implicitWidth: 190
                 enabled: root.hasEntries && root.controller.historyState !== "loading"
                 navigationFocused: root.hasEntries
@@ -359,8 +360,8 @@ Item {
             Text {
                 text: "Clear saved history?"
                 color: root.theme.text
-                font.family: root.theme.displayFont
-                font.pixelSize: 28
+                font.family: root.theme.bodyFont
+                font.pixelSize: root.theme.fontCardTitle
                 font.weight: root.theme.weightHeavy
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
@@ -370,7 +371,7 @@ Item {
                 text: "This removes stored text results only. Wi-Fi setup and your OpenAI key stay untouched."
                 color: root.theme.textMuted
                 font.family: root.theme.bodyFont
-                font.pixelSize: 16
+                font.pixelSize: root.theme.fontSecondaryBody
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
             }
@@ -383,7 +384,7 @@ Item {
 
                 SecondaryButton {
                     theme: root.theme
-                    text: "CANCEL"
+                    text: "Cancel"
                     navigationFocused: root.confirmationNavigationIndex === 0
                     onClicked: clearHistoryDialog.close()
                 }
@@ -391,7 +392,7 @@ Item {
                 PrimaryButton {
                     theme: root.theme
                     tone: "danger"
-                    text: "CLEAR"
+                    text: "Clear"
                     navigationFocused: root.confirmationNavigationIndex === 1
                     onClicked: {
                         clearHistoryDialog.close()

@@ -112,19 +112,19 @@ Item {
                 Text {
                     text: "Choose a task"
                     color: root.theme.text
-                    font.family: root.theme.displayFont
-                    font.pixelSize: 34
+                    font.family: root.theme.bodyFont
+                    font.pixelSize: root.theme.fontPageTitle
                     font.weight: root.theme.weightHeavy
-                    renderType: Text.NativeRendering
+                    renderType: root.theme.textRenderType
                 }
 
                 Text {
                     text: "Select the assistant mode that best matches what is in front of the camera."
                     color: root.theme.textMuted
                     font.family: root.theme.bodyFont
-                    font.pixelSize: 15
+                    font.pixelSize: root.theme.fontCaption
                     font.weight: root.theme.weightRegular
-                    renderType: Text.NativeRendering
+                    renderType: root.theme.textRenderType
                 }
             }
 
@@ -140,8 +140,8 @@ Item {
             theme: root.theme
             padding: 18
             Layout.fillWidth: true
-            Layout.preferredHeight: 430
-            Layout.maximumHeight: 430
+            Layout.fillHeight: true
+            Layout.minimumHeight: 0
 
             GridLayout {
                 anchors.fill: parent
@@ -177,18 +177,19 @@ Item {
             text: root.controller.deviceActionsStatus
             color: root.actionStatusColor()
             font.family: root.theme.bodyFont
-            font.pixelSize: 15
+            font.pixelSize: root.theme.fontCaption
             font.weight: root.theme.weightStrong
             wrapMode: Text.WordWrap
         }
 
         RowLayout {
             Layout.fillWidth: true
+            Layout.preferredHeight: root.theme.footerHeight
             spacing: 12
 
             SecondaryButton {
                 theme: root.theme
-                text: "RECENT RESULTS"
+                text: "Recent Results"
                 implicitWidth: 210
                 navigationFocused: root.navigationIndex === root.controller.modeCardsModel.count
                 onClicked: root.controller.openHistory()
@@ -203,7 +204,7 @@ Item {
             SecondaryButton {
                 theme: root.theme
                 tone: "danger"
-                text: "DEVICE ACTIONS"
+                text: "Device Actions"
                 implicitWidth: 210
                 enabled: !root.controller.deviceActionsBusy
                 navigationFocused: root.navigationIndex === root.controller.modeCardsModel.count + 1
@@ -212,7 +213,7 @@ Item {
 
             SecondaryButton {
                 theme: root.theme
-                text: "SETTINGS"
+                text: "Settings"
                 implicitWidth: 156
                 navigationFocused: root.navigationIndex === root.controller.modeCardsModel.count + 2
                 onClicked: root.controller.openSettings()
@@ -249,17 +250,17 @@ Item {
                     Text {
                         text: "Device Actions"
                         color: root.theme.text
-                        font.family: root.theme.displayFont
-                        font.pixelSize: 32
+                        font.family: root.theme.bodyFont
+                        font.pixelSize: root.theme.fontPageTitle
                         font.weight: root.theme.weightHeavy
-                        renderType: Text.NativeRendering
+                        renderType: root.theme.textRenderType
                     }
 
                     Text {
                         text: "Choose exactly what to reset. VisionDesk and its installed service remain in place."
                         color: root.theme.textMuted
                         font.family: root.theme.bodyFont
-                        font.pixelSize: 15
+                        font.pixelSize: root.theme.fontCaption
                         Layout.fillWidth: true
                         wrapMode: Text.WordWrap
                     }
@@ -304,8 +305,8 @@ Item {
                                     anchors.centerIn: parent
                                     text: "DATA"
                                     color: root.theme.primaryStrong
-                                    font.family: root.theme.displayFont
-                                    font.pixelSize: 11
+                                    font.family: root.theme.bodyFont
+                                    font.pixelSize: root.theme.fontTechnicalMetadata
                                     font.weight: root.theme.weightHeavy
                                 }
                             }
@@ -322,8 +323,8 @@ Item {
                         Text {
                             text: "Clear user data"
                             color: root.theme.text
-                            font.family: root.theme.displayFont
-                            font.pixelSize: 23
+                            font.family: root.theme.bodyFont
+                            font.pixelSize: root.theme.fontCardTitle
                             font.weight: root.theme.weightHeavy
                             Layout.fillWidth: true
                             wrapMode: Text.WordWrap
@@ -333,7 +334,7 @@ Item {
                             text: "Remove history, retry queue, cached previews, and private media."
                             color: root.theme.textMuted
                             font.family: root.theme.bodyFont
-                            font.pixelSize: 14
+                            font.pixelSize: root.theme.fontCaption
                             Layout.fillWidth: true
                             wrapMode: Text.WordWrap
                         }
@@ -342,7 +343,7 @@ Item {
 
                         PrimaryButton {
                             theme: root.theme
-                            text: "CLEAR DATA"
+                            text: "Clear User Data"
                             Layout.fillWidth: true
                             enabled: !root.controller.deviceActionsBusy
                             onClicked: {
@@ -380,8 +381,8 @@ Item {
                                     anchors.centerIn: parent
                                     text: "CFG"
                                     color: root.theme.warningStrong
-                                    font.family: root.theme.displayFont
-                                    font.pixelSize: 11
+                                    font.family: root.theme.bodyFont
+                                    font.pixelSize: root.theme.fontTechnicalMetadata
                                     font.weight: root.theme.weightHeavy
                                 }
                             }
@@ -398,8 +399,8 @@ Item {
                         Text {
                             text: "Reset configuration"
                             color: root.theme.text
-                            font.family: root.theme.displayFont
-                            font.pixelSize: 23
+                            font.family: root.theme.bodyFont
+                            font.pixelSize: root.theme.fontCardTitle
                             font.weight: root.theme.weightHeavy
                             Layout.fillWidth: true
                             wrapMode: Text.WordWrap
@@ -409,7 +410,7 @@ Item {
                             text: "Clear the OpenAI key, setup completion, and device overrides."
                             color: root.theme.textMuted
                             font.family: root.theme.bodyFont
-                            font.pixelSize: 14
+                            font.pixelSize: root.theme.fontCaption
                             Layout.fillWidth: true
                             wrapMode: Text.WordWrap
                         }
@@ -418,7 +419,7 @@ Item {
 
                         PrimaryButton {
                             theme: root.theme
-                            text: "RESET CONFIG"
+                            text: "Reset Configuration"
                             Layout.fillWidth: true
                             enabled: !root.controller.deviceActionsBusy
                             onClicked: {
@@ -456,8 +457,8 @@ Item {
                                     anchors.centerIn: parent
                                     text: "!"
                                     color: root.theme.errorStrong
-                                    font.family: root.theme.displayFont
-                                    font.pixelSize: 24
+                                    font.family: root.theme.bodyFont
+                                    font.pixelSize: root.theme.fontCardTitle
                                     font.weight: root.theme.weightHeavy
                                 }
                             }
@@ -474,8 +475,8 @@ Item {
                         Text {
                             text: "Full factory reset"
                             color: root.theme.text
-                            font.family: root.theme.displayFont
-                            font.pixelSize: 23
+                            font.family: root.theme.bodyFont
+                            font.pixelSize: root.theme.fontCardTitle
                             font.weight: root.theme.weightHeavy
                             Layout.fillWidth: true
                             wrapMode: Text.WordWrap
@@ -485,7 +486,7 @@ Item {
                             text: "Clear configuration and all private data, then return to Setup."
                             color: root.theme.textMuted
                             font.family: root.theme.bodyFont
-                            font.pixelSize: 14
+                            font.pixelSize: root.theme.fontCaption
                             Layout.fillWidth: true
                             wrapMode: Text.WordWrap
                         }
@@ -495,7 +496,7 @@ Item {
                         PrimaryButton {
                             theme: root.theme
                             tone: "danger"
-                            text: "FULL RESET"
+                            text: "Full Factory Reset"
                             Layout.fillWidth: true
                             enabled: !root.controller.deviceActionsBusy
                             onClicked: {
@@ -516,13 +517,13 @@ Item {
                     text: "All reset actions require confirmation."
                     color: root.theme.textMuted
                     font.family: root.theme.bodyFont
-                    font.pixelSize: 13
+                    font.pixelSize: root.theme.fontCaption
                     Layout.fillWidth: true
                 }
 
                 SecondaryButton {
                     theme: root.theme
-                    text: "CLOSE"
+                    text: "Close"
                     onClicked: deviceActionsDialog.close()
                 }
             }
@@ -560,8 +561,8 @@ Item {
                         anchors.centerIn: parent
                         text: "!"
                         color: root.pendingResetMode === "configuration" ? root.theme.warningStrong : root.theme.errorStrong
-                        font.family: root.theme.displayFont
-                        font.pixelSize: 24
+                        font.family: root.theme.bodyFont
+                        font.pixelSize: root.theme.fontCardTitle
                         font.weight: root.theme.weightHeavy
                     }
                 }
@@ -574,15 +575,15 @@ Item {
                         text: "Confirm action"
                         color: root.theme.textMuted
                         font.family: root.theme.bodyFont
-                        font.pixelSize: 13
+                        font.pixelSize: root.theme.fontCaption
                         font.weight: root.theme.weightStrong
                     }
 
                     Text {
                         text: root.pendingResetTitle
                         color: root.theme.text
-                        font.family: root.theme.displayFont
-                        font.pixelSize: 28
+                        font.family: root.theme.bodyFont
+                        font.pixelSize: root.theme.fontCardTitle
                         font.weight: root.theme.weightHeavy
                         Layout.fillWidth: true
                         wrapMode: Text.WordWrap
@@ -594,7 +595,7 @@ Item {
                 text: root.pendingResetDescription
                 color: root.theme.textSecondary
                 font.family: root.theme.bodyFont
-                font.pixelSize: 16
+                font.pixelSize: root.theme.fontSecondaryBody
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
             }
@@ -615,7 +616,7 @@ Item {
                         text: "Affected areas"
                         color: root.pendingResetMode === "configuration" ? root.theme.warningStrong : root.theme.errorStrong
                         font.family: root.theme.bodyFont
-                        font.pixelSize: 13
+                        font.pixelSize: root.theme.fontCaption
                         font.weight: root.theme.weightStrong
                     }
 
@@ -625,7 +626,7 @@ Item {
                             : "Private media, saved results, retry queue, and cached previews."
                         color: root.theme.text
                         font.family: root.theme.bodyFont
-                        font.pixelSize: 15
+                        font.pixelSize: root.theme.fontCaption
                         font.weight: root.theme.weightRegular
                         Layout.fillWidth: true
                         wrapMode: Text.WordWrap
@@ -641,14 +642,14 @@ Item {
 
                 SecondaryButton {
                     theme: root.theme
-                    text: "CANCEL"
+                    text: "Cancel"
                     onClicked: confirmResetDialog.close()
                 }
 
                 PrimaryButton {
                     theme: root.theme
                     tone: root.pendingResetMode === "configuration" ? "primary" : "danger"
-                    text: root.pendingResetMode === "configuration" ? "RESET NOW" : "CLEAR NOW"
+                    text: root.pendingResetMode === "configuration" ? "Reset now" : "Clear now"
                     enabled: !root.controller.deviceActionsBusy
                     onClicked: {
                         confirmResetDialog.close()
@@ -690,8 +691,8 @@ Item {
                         anchors.centerIn: parent
                         text: "!"
                         color: root.theme.errorStrong
-                        font.family: root.theme.displayFont
-                        font.pixelSize: 25
+                        font.family: root.theme.bodyFont
+                        font.pixelSize: root.theme.fontCardTitle
                         font.weight: root.theme.weightHeavy
                     }
                 }
@@ -703,8 +704,8 @@ Item {
                     Text {
                         text: "Full Factory Reset"
                         color: root.theme.text
-                        font.family: root.theme.displayFont
-                        font.pixelSize: 30
+                        font.family: root.theme.bodyFont
+                        font.pixelSize: root.theme.fontPageTitle
                         font.weight: root.theme.weightHeavy
                     }
 
@@ -712,7 +713,7 @@ Item {
                         text: "Strongest recovery path"
                         color: root.theme.errorStrong
                         font.family: root.theme.bodyFont
-                        font.pixelSize: 13
+                        font.pixelSize: root.theme.fontCaption
                         font.weight: root.theme.weightStrong
                     }
                 }
@@ -731,7 +732,7 @@ Item {
                     text: "This clears configuration, setup completion, saved history, retry data, and private media. VisionDesk remains installed and then relaunches into Setup."
                     color: root.theme.textSecondary
                     font.family: root.theme.bodyFont
-                    font.pixelSize: 15
+                    font.pixelSize: root.theme.fontCaption
                     wrapMode: Text.WordWrap
                     verticalAlignment: Text.AlignVCenter
                 }
@@ -759,8 +760,8 @@ Item {
                         visible: removeWifiCheckbox.checked
                         text: "OK"
                         color: root.theme.surface
-                        font.family: root.theme.displayFont
-                        font.pixelSize: 10
+                        font.family: root.theme.bodyFont
+                        font.pixelSize: root.theme.fontTechnicalMetadata
                         font.weight: root.theme.weightHeavy
                     }
                 }
@@ -770,7 +771,7 @@ Item {
                     leftPadding: removeWifiCheckbox.indicator.width + 10
                     color: root.theme.textSecondary
                     font.family: root.theme.bodyFont
-                    font.pixelSize: 15
+                    font.pixelSize: root.theme.fontCaption
                     wrapMode: Text.WordWrap
                     verticalAlignment: Text.AlignVCenter
                 }
@@ -784,7 +785,7 @@ Item {
                     text: "Safety phrase"
                     color: root.theme.text
                     font.family: root.theme.bodyFont
-                    font.pixelSize: 13
+                    font.pixelSize: root.theme.fontCaption
                     font.weight: root.theme.weightStrong
                 }
 
@@ -792,7 +793,7 @@ Item {
                     text: "Type ERASE VISIONDESK to unlock the final confirmation."
                     color: root.theme.textMuted
                     font.family: root.theme.bodyFont
-                    font.pixelSize: 14
+                    font.pixelSize: root.theme.fontCaption
                 }
 
                 TextField {
@@ -802,7 +803,7 @@ Item {
                     placeholderText: "ERASE VISIONDESK"
                     color: root.theme.text
                     font.family: root.theme.bodyFont
-                    font.pixelSize: 18
+                    font.pixelSize: root.theme.fontBody
                     leftPadding: 16
                     rightPadding: 16
                     background: Rectangle {
@@ -822,7 +823,7 @@ Item {
 
                 SecondaryButton {
                     theme: root.theme
-                    text: "CANCEL"
+                    text: "Cancel"
                     onClicked: {
                         fullResetPhraseField.text = ""
                         removeWifiCheckbox.checked = false
@@ -834,7 +835,7 @@ Item {
                 PrimaryButton {
                     theme: root.theme
                     tone: "danger"
-                    text: "CONTINUE"
+                    text: "Continue"
                     enabled: fullResetPhraseField.text.trim() === "ERASE VISIONDESK" && !root.controller.deviceActionsBusy
                     onClicked: {
                         fullResetDialog.close()
@@ -877,8 +878,8 @@ Item {
                         anchors.centerIn: parent
                         text: "!"
                         color: root.theme.errorStrong
-                        font.family: root.theme.displayFont
-                        font.pixelSize: 24
+                        font.family: root.theme.bodyFont
+                        font.pixelSize: root.theme.fontCardTitle
                         font.weight: root.theme.weightHeavy
                     }
                 }
@@ -890,8 +891,8 @@ Item {
                     Text {
                         text: "Final confirmation"
                         color: root.theme.text
-                        font.family: root.theme.displayFont
-                        font.pixelSize: 29
+                        font.family: root.theme.bodyFont
+                        font.pixelSize: root.theme.fontCardTitle
                         font.weight: root.theme.weightHeavy
                     }
 
@@ -899,7 +900,7 @@ Item {
                         text: "Press and hold is required"
                         color: root.theme.errorStrong
                         font.family: root.theme.bodyFont
-                        font.pixelSize: 13
+                        font.pixelSize: root.theme.fontCaption
                         font.weight: root.theme.weightStrong
                     }
                 }
@@ -911,7 +912,7 @@ Item {
                     : "Keep holding to erase VisionDesk and relaunch into Setup Wizard."
                 color: root.theme.textSecondary
                 font.family: root.theme.bodyFont
-                font.pixelSize: 16
+                font.pixelSize: root.theme.fontSecondaryBody
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
             }
@@ -930,10 +931,10 @@ Item {
                     spacing: 3
 
                     Text {
-                        text: root.controller.deviceActionsBusy ? "RESETTING..." : "PRESS AND HOLD TO ERASE"
+                        text: root.controller.deviceActionsBusy ? "Resetting..." : "Press and hold to erase"
                         color: root.controller.deviceActionsBusy ? root.theme.unavailable : root.theme.surface
-                        font.family: root.theme.displayFont
-                        font.pixelSize: 23
+                        font.family: root.theme.bodyFont
+                        font.pixelSize: root.theme.fontCardTitle
                         font.weight: root.theme.weightHeavy
                         Layout.alignment: Qt.AlignHCenter
                     }
@@ -943,7 +944,7 @@ Item {
                         text: "Hold for 1.6 seconds"
                         color: Qt.rgba(1, 1, 1, 0.78)
                         font.family: root.theme.bodyFont
-                        font.pixelSize: 13
+                        font.pixelSize: root.theme.fontCaption
                         Layout.alignment: Qt.AlignHCenter
                     }
                 }
@@ -969,7 +970,7 @@ Item {
                     : "Release at any time to cancel this final action."
                 color: root.actionStatusColor()
                 font.family: root.theme.bodyFont
-                font.pixelSize: 14
+                font.pixelSize: root.theme.fontCaption
                 font.weight: root.theme.weightStrong
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
@@ -982,7 +983,7 @@ Item {
 
                 SecondaryButton {
                     theme: root.theme
-                    text: "BACK"
+                    text: "Back"
                     enabled: !root.controller.deviceActionsBusy
                     onClicked: holdResetDialog.close()
                 }
