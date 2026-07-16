@@ -1,6 +1,6 @@
 # Phone-first provisioning
 
-This procedure applies to a new VisionDesk 1.0.2 appliance with the 11.6-inch
+This procedure applies to a new VisionDesk 1.0.3 appliance with the 11.6-inch
 non-touch display. The device panel shows the temporary network and progress;
 a phone supplies Wi-Fi credentials and the OpenAI API key.
 

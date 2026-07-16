@@ -1,6 +1,6 @@
 # Hướng dẫn cài đặt và demo VisionDesk
 
-Áp dụng cho VisionDesk **1.0.2** (`v1.0.2`).
+Áp dụng cho VisionDesk **1.0.3** (`v1.0.3`).
 
 Tài liệu này phản ánh trạng thái hiện tại của dự án: một appliance Raspberry Pi
 chạy ứng dụng native `PySide6 + Qt Quick/QML`, màn HDMI 11.6 inch không cảm ứng,
@@ -225,7 +225,7 @@ vào `/opt` và không dùng `sudo git clone`):
 
 ```bash
 sudo apt install -y git
-git clone --depth 1 --branch v1.0.2 \
+git clone --depth 1 --branch v1.0.3 \
   https://github.com/TannFhongg/Raspberry-Pi-AI-Vision-Desk-Assistant.git \
   ~/visiondesk
 cd ~/visiondesk
@@ -233,7 +233,7 @@ git describe --tags --exact-match
 chmod +x install.sh
 ```
 
-Production cài từ tag cố định `v1.0.2`, không dùng `master`. `master` chỉ dành
+Production cài từ tag cố định `v1.0.3`, không dùng `master`. `master` chỉ dành
 cho development. Nếu Pi không có Internet, chép source đã checkout đúng tag
 bằng USB hoặc `scp`, rồi `cd` vào thư mục đó trước khi cài.
 
@@ -255,6 +255,9 @@ sudo ./install.sh --skip-hardware-check
 sudo ./install.sh --reset-config
 sudo ./install.sh --force
 ```
+
+Dùng `--skip-hardware-check` khi camera hoặc GPIO chủ động chưa được kết nối.
+Ứng dụng vẫn cần các phần cứng này để hoạt động bình thường sau khi cài đặt.
 
 Installer sẽ cài system packages, tạo release virtualenv, service, thư mục bền
 vững và PolicyKit rule giới hạn quyền NetworkManager cho nhóm `visiondesk`.
@@ -326,8 +329,8 @@ Update và rollback:
 
 ```bash
 sudo ./update.sh --check
-sudo ./update.sh --local /path/to/visiondesk-1.0.2.tar.gz --version 1.0.2 --dry-run
-sudo ./update.sh --local /path/to/visiondesk-1.0.2.tar.gz --version 1.0.2
+sudo ./update.sh --local /path/to/visiondesk-1.0.3.tar.gz --version 1.0.3 --dry-run
+sudo ./update.sh --local /path/to/visiondesk-1.0.3.tar.gz --version 1.0.3
 sudo ./update.sh --rollback
 ```
 

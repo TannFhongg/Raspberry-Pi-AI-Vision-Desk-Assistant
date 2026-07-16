@@ -1,6 +1,6 @@
 # VisionDesk Setup and Demo Guide
 
-Applies to VisionDesk **1.0.2** (`v1.0.2`).
+Applies to VisionDesk **1.0.3** (`v1.0.3`).
 
 This document reflects the project’s current state: a Raspberry Pi appliance running a
 native `PySide6 + Qt Quick/QML` application, with an 11.6-inch non-touch HDMI display,
@@ -231,7 +231,7 @@ clone into `/opt` and do not use `sudo git clone`):
 
 ```bash
 sudo apt install -y git
-git clone --depth 1 --branch v1.0.2 \
+git clone --depth 1 --branch v1.0.3 \
   https://github.com/TannFhongg/Raspberry-Pi-AI-Vision-Desk-Assistant.git \
   ~/visiondesk
 cd ~/visiondesk
@@ -239,7 +239,7 @@ git describe --tags --exact-match
 chmod +x install.sh
 ```
 
-Production is installed from the fixed `v1.0.2` tag, not `master`. `master` is for
+Production is installed from the fixed `v1.0.3` tag, not `master`. `master` is for
 development only. If the Pi has no internet connection, copy source already checked out
 at the correct tag via USB or `scp`, then `cd` into that directory before installing.
 
@@ -261,6 +261,10 @@ sudo ./install.sh --skip-hardware-check
 sudo ./install.sh --reset-config
 sudo ./install.sh --force
 ```
+
+Use `--skip-hardware-check` when the camera or GPIO hardware is intentionally
+not connected yet. The application will still require that hardware for normal
+operation after installation.
 
 The installer installs system packages, creates the release virtual environment and
 service, creates persistent directories, and adds a PolicyKit rule that limits
@@ -338,8 +342,8 @@ Update and roll back:
 
 ```bash
 sudo ./update.sh --check
-sudo ./update.sh --local /path/to/visiondesk-1.0.2.tar.gz --version 1.0.2 --dry-run
-sudo ./update.sh --local /path/to/visiondesk-1.0.2.tar.gz --version 1.0.2
+sudo ./update.sh --local /path/to/visiondesk-1.0.3.tar.gz --version 1.0.3 --dry-run
+sudo ./update.sh --local /path/to/visiondesk-1.0.3.tar.gz --version 1.0.3
 sudo ./update.sh --rollback
 ```
 

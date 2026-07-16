@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
-import os
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -26,6 +27,30 @@ def test_install_script_includes_expected_flags_and_safety_guards() -> None:
     assert "install_networkmanager_policy" in script_text
     assert "ensure_path_within" in script_text
     assert "rollback_on_failure" in script_text
+    assert '"${SCRIPT_DIR}/system/__init__.py"' in script_text
+    assert '"${SCRIPT_DIR}/system/diagnostics.py"' in script_text
+
+
+def test_install_smoke_checks_run_from_staged_release() -> None:
+    script_text = Path("install.sh").read_text(encoding="utf-8")
+    smoke_check = script_text.split("run_smoke_checks() {", 1)[1].split("\n}", 1)[0]
+
+    working_directory = 'cd "${FINAL_RELEASE_DIR}"'
+    diagnostics_command = '"${FINAL_RELEASE_DIR}/.venv/bin/python" -m system.diagnostics'
+    assert working_directory in smoke_check
+    assert diagnostics_command in smoke_check
+    assert smoke_check.index(working_directory) < smoke_check.index(diagnostics_command)
+
+
+def test_diagnostics_module_does_not_load_twice() -> None:
+    completed = subprocess.run(
+        [sys.executable, "-W", "error::RuntimeWarning", "-m", "system.diagnostics", "--help"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
 
 
 def test_update_script_uses_manifest_checks_lockfile_and_rollback_state() -> None:

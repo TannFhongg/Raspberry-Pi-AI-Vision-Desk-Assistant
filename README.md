@@ -1,7 +1,7 @@
 # VisionDesk
 
-**Version 1.0.2** — Raspberry Pi AI Vision Desk Assistant. Documentation was
-synchronized with tag `v1.0.2` on 2026-07-15.
+**Version 1.0.3** — Raspberry Pi AI Vision Desk Assistant. Documentation was
+synchronized for tag `v1.0.3` on 2026-07-16.
 
 VisionDesk is a native `PySide6 + Qt Quick/QML` appliance for a Raspberry Pi 5.
 It captures a USB-camera image, prepares it locally, sends the image to OpenAI,
@@ -35,7 +35,7 @@ marked historical material.
 Not implemented: text-to-speech / “Hear printed text”. Do not present it as a
 delivered feature.
 
-Current `v1.0.2` UI status:
+Current `v1.0.3` UI status:
 
 - The application renders responsively at the 1366 x 768 production target
   without a root-level design-canvas transform.
@@ -134,7 +134,7 @@ first receive this repository or an equivalent checked source tree.
 ```bash
 sudo apt update
 sudo apt install -y git
-git clone --depth 1 --branch v1.0.2 \
+git clone --depth 1 --branch v1.0.3 \
   https://github.com/TannFhongg/Raspberry-Pi-AI-Vision-Desk-Assistant.git \
   ~/visiondesk
 cd ~/visiondesk
@@ -143,7 +143,14 @@ chmod +x install.sh
 sudo ./install.sh
 ```
 
-Production deployments use the fixed `v1.0.2` tag. Developers may use `master`
+If the camera or GPIO hardware is not connected yet, install the software first
+and defer those checks explicitly:
+
+```bash
+sudo ./install.sh --skip-hardware-check
+```
+
+Production deployments use the fixed `v1.0.3` tag. Developers may use `master`
 for ongoing work, but it is not a production deployment target.
 
 The factory configuration has `setup.completed: false`. After the first boot,

@@ -164,6 +164,8 @@ confirm_continue() {
 validate_project_shape() {
   local required_paths=(
     "${SCRIPT_DIR}/qt_app/main.py"
+    "${SCRIPT_DIR}/system/__init__.py"
+    "${SCRIPT_DIR}/system/diagnostics.py"
     "${SCRIPT_DIR}/visiondesk/version.py"
     "${SCRIPT_DIR}/requirements.txt"
     "${SERVICE_TEMPLATE}"
@@ -428,15 +430,18 @@ run_smoke_checks() {
   if (( SKIP_HARDWARE_CHECK == 1 )); then
     check_args+=(--skip-hardware)
   fi
-  runuser -u "${APP_USER}" -- env \
-    VISIONDESK_PATH_MODE=production \
-    VISIONDESK_APP_DIR="${FINAL_RELEASE_DIR}" \
-    VISIONDESK_RELEASES_DIR="${RELEASES_DIR}" \
-    VISIONDESK_ENV_FILE="${ENV_FILE}" \
-    VISIONDESK_DATA_DIR="${DATA_DIR}" \
-    VISIONDESK_LOG_DIR="${LOG_DIR}" \
-    DEVICE_CONFIG_PATH="${CONFIG_FILE}" \
-    "${FINAL_RELEASE_DIR}/.venv/bin/python" -m system.diagnostics "${check_args[@]}"
+  (
+    cd "${FINAL_RELEASE_DIR}"
+    runuser -u "${APP_USER}" -- env \
+      VISIONDESK_PATH_MODE=production \
+      VISIONDESK_APP_DIR="${FINAL_RELEASE_DIR}" \
+      VISIONDESK_RELEASES_DIR="${RELEASES_DIR}" \
+      VISIONDESK_ENV_FILE="${ENV_FILE}" \
+      VISIONDESK_DATA_DIR="${DATA_DIR}" \
+      VISIONDESK_LOG_DIR="${LOG_DIR}" \
+      DEVICE_CONFIG_PATH="${CONFIG_FILE}" \
+      "${FINAL_RELEASE_DIR}/.venv/bin/python" -m system.diagnostics "${check_args[@]}"
+  )
 }
 
 start_service() {

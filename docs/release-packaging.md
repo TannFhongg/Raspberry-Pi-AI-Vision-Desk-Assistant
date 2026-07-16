@@ -1,6 +1,6 @@
 # VisionDesk release packaging
 
-This document defines the appliance update package for VisionDesk 1.0.2. It is
+This document defines the appliance update package for VisionDesk 1.0.3. It is
 separate from GitHub's generated **Source code.zip** and **Source code.tar.gz**:
 those source snapshots do not contain the package manifest and checksum file
 required by `update.sh`.
@@ -35,7 +35,7 @@ files.
 ## Official package layout
 
 ```text
-visiondesk-1.0.2/
+visiondesk-1.0.3/
 ├── manifest.json
 ├── checksums.sha256
 ├── .env.example
@@ -53,7 +53,7 @@ The generated manifest is deliberately minimal and matches the current updater:
 
 ```json
 {
-  "version": "1.0.2",
+  "version": "1.0.3",
   "checksums_file": "checksums.sha256"
 }
 ```
@@ -65,7 +65,7 @@ regular file except itself, including `manifest.json`:
 <64 lowercase hexadecimal SHA-256>  ./relative/path
 ```
 
-## Build the v1.0.2 package
+## Build the v1.0.3 package
 
 Run the build utility from a clean maintenance checkout that contains `scripts/`.
 It exports source only from the named Git ref, so the package content comes from
@@ -74,14 +74,14 @@ the tag rather than the current working tree.
 ```bash
 git fetch --tags origin
 git status --short
-scripts/build-release.sh --git-ref v1.0.2
+scripts/build-release.sh --git-ref v1.0.3
 ```
 
 The command requires the source version, requested version, and exact tag to
-agree after normalizing `v1.0.2` to application version `1.0.2`. It writes:
+agree after normalizing `v1.0.3` to application version `1.0.3`. It writes:
 
 ```text
-dist/visiondesk-1.0.2.tar.gz
+dist/visiondesk-1.0.3.tar.gz
 ```
 
 The build is deterministic to a reasonable extent: it uses the tagged commit's
@@ -97,8 +97,8 @@ comes from `--git-ref`; do not use this bypass for a normal client release.
 ## Verify before upload
 
 ```bash
-scripts/verify-release.sh dist/visiondesk-1.0.2.tar.gz --expected-version 1.0.2
-sha256sum dist/visiondesk-1.0.2.tar.gz
+scripts/verify-release.sh dist/visiondesk-1.0.3.tar.gz --expected-version 1.0.3
+sha256sum dist/visiondesk-1.0.3.tar.gz
 ```
 
 Verification does not install the archive or modify `/opt`, `/etc`, systemd, or
@@ -108,11 +108,11 @@ checksum errors, missing release files, and version mismatches.
 
 ## Upload to GitHub Release
 
-Create or open the GitHub Release tagged `v1.0.2`, then attach the verified
-`dist/visiondesk-1.0.2.tar.gz`. With GitHub CLI installed and authenticated:
+Create or open the GitHub Release tagged `v1.0.3`, then attach the verified
+`dist/visiondesk-1.0.3.tar.gz`. With GitHub CLI installed and authenticated:
 
 ```bash
-gh release upload v1.0.2 dist/visiondesk-1.0.2.tar.gz
+gh release upload v1.0.3 dist/visiondesk-1.0.3.tar.gz
 ```
 
 Record the SHA-256 printed by the build in the release notes. Do not upload a
@@ -124,7 +124,7 @@ keys, Wi-Fi credentials, captured media, or data directories.
 For a fresh appliance, clone the fixed release tag and run the installer:
 
 ```bash
-git clone --depth 1 --branch v1.0.2 \
+git clone --depth 1 --branch v1.0.3 \
   https://github.com/TannFhongg/Raspberry-Pi-AI-Vision-Desk-Assistant.git \
   ~/visiondesk
 cd ~/visiondesk
@@ -138,8 +138,8 @@ workstation, copy that exact verified archive to the Pi, then run the updater
 from the checked source tree:
 
 ```bash
-sudo ./update.sh --local /path/to/visiondesk-1.0.2.tar.gz --version 1.0.2 --dry-run
-sudo ./update.sh --local /path/to/visiondesk-1.0.2.tar.gz --version 1.0.2
+sudo ./update.sh --local /path/to/visiondesk-1.0.3.tar.gz --version 1.0.3 --dry-run
+sudo ./update.sh --local /path/to/visiondesk-1.0.3.tar.gz --version 1.0.3
 ```
 
 The updater dry-run validates the archive, manifest, and checksums but does not
