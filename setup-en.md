@@ -1,6 +1,6 @@
 # VisionDesk Setup and Demo Guide
 
-Applies to VisionDesk **1.0.3** (`v1.0.3`).
+Applies to VisionDesk **1.0.4** (`v1.0.4`).
 
 This document reflects the project’s current state: a Raspberry Pi appliance running a
 native `PySide6 + Qt Quick/QML` application, with an 11.6-inch non-touch HDMI display,
@@ -231,7 +231,7 @@ clone into `/opt` and do not use `sudo git clone`):
 
 ```bash
 sudo apt install -y git
-git clone --depth 1 --branch v1.0.3 \
+git clone --depth 1 --branch v1.0.4 \
   https://github.com/TannFhongg/Raspberry-Pi-AI-Vision-Desk-Assistant.git \
   ~/visiondesk
 cd ~/visiondesk
@@ -239,7 +239,7 @@ git describe --tags --exact-match
 chmod +x install.sh
 ```
 
-Production is installed from the fixed `v1.0.3` tag, not `master`. `master` is for
+Production is installed from the fixed `v1.0.4` tag, not `master`. `master` is for
 development only. If the Pi has no internet connection, copy source already checked out
 at the correct tag via USB or `scp`, then `cd` into that directory before installing.
 
@@ -271,6 +271,10 @@ service, creates persistent directories, and adds a PolicyKit rule that limits
 NetworkManager permissions for the `visiondesk` group. Once complete, the source in
 `~/visiondesk` is only for maintenance/updates; the service runs the installed release
 at `/opt/visiondesk/current`.
+
+If the installer says that the dedicated `visiondesk` graphical session is not
+active yet, reboot once. The installer deliberately leaves the service stopped
+instead of trying to open the administrator's X11 session without authorization.
 
 After installation, confirm:
 
@@ -342,10 +346,14 @@ Update and roll back:
 
 ```bash
 sudo ./update.sh --check
-sudo ./update.sh --local /path/to/visiondesk-1.0.3.tar.gz --version 1.0.3 --dry-run
-sudo ./update.sh --local /path/to/visiondesk-1.0.3.tar.gz --version 1.0.3
+sudo ./update.sh --local /path/to/visiondesk-1.0.4.tar.gz --version 1.0.4 --dry-run
+sudo ./update.sh --local /path/to/visiondesk-1.0.4.tar.gz --version 1.0.4
 sudo ./update.sh --rollback
 ```
+
+Run `update.sh` from a checkout matching the target release. For the
+`1.0.3 -> 1.0.4` service-unit fix, fetch and check out `v1.0.4` before invoking
+the updater.
 
 Build and verify the archive on a maintenance workstation, upload it as a GitHub Release,
 and follow the `manifest.json` contract and checksum described in

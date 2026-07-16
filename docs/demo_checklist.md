@@ -1,6 +1,6 @@
 # VisionDesk demo checklist
 
-This checklist covers the features present in VisionDesk 1.0.3. It does not
+This checklist covers the features present in VisionDesk 1.0.4. It does not
 claim text-to-speech or any other feature absent from the application.
 
 ## Before the demo
@@ -69,7 +69,7 @@ See [phone_setup.md](phone_setup.md) for the exact workflow and fallback.
 ## Boundaries to state accurately
 
 - The 11.6-inch display is not touch-enabled; GPIO is the normal input method.
-- “Hear printed text” / TTS is not implemented in version 1.0.3.
+- “Hear printed text” / TTS is not implemented in version 1.0.4.
 - Desktop mock mode demonstrates UI states but does not prove camera, GPIO,
   display sharpness, or production readiness.
 - History defaults to text and safe metadata. Private captured/retry media is

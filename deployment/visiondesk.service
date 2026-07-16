@@ -24,7 +24,8 @@ KillSignal=SIGTERM
 UMask=0077
 SupplementaryGroups=video render input gpio dialout netdev
 NoNewPrivileges=true
-PrivateTmp=true
+# Qt/X11 connects through the host socket at /tmp/.X11-unix/X0.
+PrivateTmp=false
 ProtectSystem=strict
 ProtectHome=read-only
 ProtectKernelTunables=true

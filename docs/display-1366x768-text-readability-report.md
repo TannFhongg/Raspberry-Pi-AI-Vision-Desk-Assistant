@@ -1,6 +1,6 @@
 # 1366 x 768 display and text-readability migration report
 
-Applies to VisionDesk **1.0.3** (`v1.0.3`, documentation synchronized
+Applies to VisionDesk **1.0.4** (`v1.0.4`, documentation synchronized
 2026-07-15).
 
 ## Outcome

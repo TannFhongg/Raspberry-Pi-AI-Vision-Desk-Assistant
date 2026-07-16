@@ -1,6 +1,6 @@
 # VisionDesk project context
 
-Maintainer reference for VisionDesk **1.0.3** (`v1.0.3`, 2026-07-16). This is a
+Maintainer reference for VisionDesk **1.0.4** (`v1.0.4`, 2026-07-16). This is a
 code map, not an end-user installation guide; use [setup-en.md](setup-en.md) for
 deployment steps.
 
@@ -35,9 +35,9 @@ python -m pytest -q
 python tools/capture_ui_screenshots.py
 sudo ./install.sh
 sudo ./update.sh --check
-scripts/build-release.sh --git-ref v1.0.3
-scripts/verify-release.sh /path/to/visiondesk-1.0.3.tar.gz --expected-version 1.0.3
-sudo ./update.sh --local /path/to/visiondesk-1.0.3.tar.gz --version 1.0.3 --dry-run
+scripts/build-release.sh --git-ref v1.0.4
+scripts/verify-release.sh /path/to/visiondesk-1.0.4.tar.gz --expected-version 1.0.4
+sudo ./update.sh --local /path/to/visiondesk-1.0.4.tar.gz --version 1.0.4 --dry-run
 sudo ./update.sh --rollback
 sudo ./factory-reset.sh --mode user_data
 sudo ./uninstall.sh

@@ -15,6 +15,13 @@ def test_qt_service_sets_display_environment() -> None:
     assert 'export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-xcb}"' in launcher_text
 
 
+def test_qt_service_can_see_the_host_x11_socket() -> None:
+    service_text = Path("deployment/visiondesk.service").read_text(encoding="utf-8")
+
+    assert "PrivateTmp=false" in service_text
+    assert "PrivateTmp=true" not in service_text
+
+
 def test_qt_service_runs_qt_entrypoint_and_restarts() -> None:
     service_text = Path("deployment/visiondesk.service").read_text(encoding="utf-8")
 

@@ -21,6 +21,7 @@ SYSTEMD_UNIT="/etc/systemd/system/visiondesk.service"
 POLKIT_RULE="/etc/polkit-1/rules.d/49-visiondesk-networkmanager.rules"
 LIGHTDM_CONF_DIR="/etc/lightdm/lightdm.conf.d"
 LIGHTDM_CONF="${LIGHTDM_CONF_DIR}/99-visiondesk.conf"
+LIGHTDM_MAIN_CONF="/etc/lightdm/lightdm.conf"
 MIN_FREE_MB=1024
 SYSTEM_PACKAGES=(
   python3
@@ -65,6 +66,9 @@ FINAL_RELEASE_DIR=""
 INSTALL_CHANGED_CURRENT=0
 INSTALL_CHANGED_SERVICE=0
 INSTALL_CHANGED_POLKIT_RULE=0
+AUTOLOGIN_CONFIGURED=0
+REBOOT_REQUIRED=0
+SERVICE_STARTED=0
 
 usage() {
   cat <<'EOF'
@@ -285,13 +289,37 @@ configure_autologin() {
     log "[WARN] Skipping LightDM autologin because LightDM is not installed."
     return 0
   fi
+  AUTOLOGIN_CONFIGURED=1
   mkdir -p "${LIGHTDM_CONF_DIR}"
-  cat > "${LIGHTDM_CONF}" <<EOF
+  local temp_conf
+  temp_conf="$(mktemp)"
+  cat > "${temp_conf}" <<EOF
 [Seat:*]
 autologin-user=${APP_USER}
 autologin-user-timeout=0
 EOF
-  chmod 644 "${LIGHTDM_CONF}"
+  if [[ ! -f "${LIGHTDM_CONF}" ]] || ! cmp -s "${temp_conf}" "${LIGHTDM_CONF}"; then
+    install -o root -g root -m 644 "${temp_conf}" "${LIGHTDM_CONF}"
+    REBOOT_REQUIRED=1
+  fi
+  rm -f "${temp_conf}"
+
+  # LightDM loads its main configuration after lightdm.conf.d, so an existing
+  # autologin-user assignment there must be updated as the effective override.
+  if [[ -f "${LIGHTDM_MAIN_CONF}" ]] \
+    && grep -Eq '^[[:space:]]*autologin-user[[:space:]]*=' "${LIGHTDM_MAIN_CONF}"; then
+    local temp_main_conf
+    temp_main_conf="$(mktemp)"
+    sed -E \
+      -e "s/^[[:space:]]*autologin-user[[:space:]]*=.*/autologin-user=${APP_USER}/" \
+      -e 's/^[[:space:]]*autologin-user-timeout[[:space:]]*=.*/autologin-user-timeout=0/' \
+      "${LIGHTDM_MAIN_CONF}" > "${temp_main_conf}"
+    if ! cmp -s "${temp_main_conf}" "${LIGHTDM_MAIN_CONF}"; then
+      install -o root -g root -m 644 "${temp_main_conf}" "${LIGHTDM_MAIN_CONF}"
+      REBOOT_REQUIRED=1
+    fi
+    rm -f "${temp_main_conf}"
+  fi
 }
 
 backup_file_if_exists() {
@@ -370,6 +398,18 @@ stage_release() {
     --exclude='debug' \
     -cf - . | tar -C "${STAGING_RELEASE_DIR}" -xf -
 
+  python3 -m compileall -q \
+    "${STAGING_RELEASE_DIR}/ai" \
+    "${STAGING_RELEASE_DIR}/camera" \
+    "${STAGING_RELEASE_DIR}/config" \
+    "${STAGING_RELEASE_DIR}/gpio" \
+    "${STAGING_RELEASE_DIR}/hardware" \
+    "${STAGING_RELEASE_DIR}/pipeline" \
+    "${STAGING_RELEASE_DIR}/qt_app" \
+    "${STAGING_RELEASE_DIR}/system" \
+    "${STAGING_RELEASE_DIR}/vision" \
+    "${STAGING_RELEASE_DIR}/visiondesk"
+
   python3 -m venv --system-site-packages "${STAGING_RELEASE_DIR}/.venv"
   "${STAGING_RELEASE_DIR}/.venv/bin/pip" install --upgrade pip setuptools wheel
   "${STAGING_RELEASE_DIR}/.venv/bin/pip" install --no-cache-dir -r "${requirements_file}"
@@ -444,8 +484,31 @@ run_smoke_checks() {
   )
 }
 
+app_user_graphical_session_ready() {
+  local user_uid user_home
+  user_uid="$(id -u "${APP_USER}")"
+  if [[ -S "/run/user/${user_uid}/wayland-0" || -S "/run/user/${user_uid}/wayland-1" ]]; then
+    return 0
+  fi
+  user_home="$(getent passwd "${APP_USER}" | cut -d: -f6)"
+  [[ -S /tmp/.X11-unix/X0 && -n "${user_home}" && -f "${user_home}/.Xauthority" ]]
+}
+
 start_service() {
+  if ! app_user_graphical_session_ready; then
+    systemctl stop visiondesk.service >/dev/null 2>&1 || true
+    REBOOT_REQUIRED=1
+    if (( AUTOLOGIN_CONFIGURED == 1 )); then
+      log "[WARN] VisionDesk is installed and enabled, but the graphical session still belongs to another user."
+      log "[WARN] Reboot once to start the configured ${APP_USER} desktop session."
+    else
+      log "[WARN] VisionDesk is installed and enabled, but ${APP_USER} has no graphical session."
+      log "[WARN] Configure the display manager to log in ${APP_USER}, then start visiondesk.service."
+    fi
+    return 0
+  fi
   systemctl restart visiondesk.service
+  SERVICE_STARTED=1
 }
 
 cleanup_install_backups() {
@@ -512,13 +575,20 @@ print_summary() {
   log "[OK] Qt/QML runtime"
   log "[OK] Application files"
   log "[OK] Private storage"
-  log "[OK] systemd service"
+  if (( SERVICE_STARTED == 1 )); then
+    log "[OK] systemd service"
+  else
+    log "[OK] systemd service enabled (waiting for the ${APP_USER} graphical session)"
+  fi
   if (( SKIP_HARDWARE_CHECK == 1 )); then
     log "[OK] Camera (skipped)"
     log "[OK] GPIO (skipped)"
   else
     log "[OK] Camera"
     log "[OK] GPIO"
+  fi
+  if (( REBOOT_REQUIRED == 1 && AUTOLOGIN_CONFIGURED == 1 )); then
+    log "[WARN] Reboot required before the VisionDesk UI can start."
   fi
   log "[OK] Installation complete"
 }

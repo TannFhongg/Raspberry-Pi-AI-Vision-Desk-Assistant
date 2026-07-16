@@ -4,7 +4,7 @@ This checklist must be completed on the intended Raspberry Pi and the exact
 11-inch HDMI panel. Offscreen Windows screenshots and automated tests do not
 validate physical sharpness, touch alignment, overscan, or display scaling.
 
-Documentation baseline: VisionDesk 1.0.3 (`v1.0.3`). Leave every unchecked item
+Documentation baseline: VisionDesk 1.0.4 (`v1.0.4`). Leave every unchecked item
 pending until it is observed on the named physical test system.
 
 ## Record the test environment

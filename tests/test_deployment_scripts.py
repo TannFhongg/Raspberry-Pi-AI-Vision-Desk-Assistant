@@ -29,6 +29,13 @@ def test_install_script_includes_expected_flags_and_safety_guards() -> None:
     assert "rollback_on_failure" in script_text
     assert '"${SCRIPT_DIR}/system/__init__.py"' in script_text
     assert '"${SCRIPT_DIR}/system/diagnostics.py"' in script_text
+    assert "app_user_graphical_session_ready" in script_text
+    assert "systemctl stop visiondesk.service" in script_text
+    assert "Reboot required before the VisionDesk UI can start" in script_text
+    assert 'LIGHTDM_MAIN_CONF="/etc/lightdm/lightdm.conf"' in script_text
+    assert "LightDM loads its main configuration after lightdm.conf.d" in script_text
+    assert "python3 -m compileall -q" in script_text
+    assert '"${STAGING_RELEASE_DIR}/qt_app"' in script_text
 
 
 def test_install_smoke_checks_run_from_staged_release() -> None:
@@ -74,6 +81,12 @@ def test_update_script_uses_manifest_checks_lockfile_and_rollback_state() -> Non
     assert "MainPID" in script_text
     assert "Rollback service did not reach verified readiness" in script_text
     assert "switch_current_release" in script_text
+    assert 'cd "${STAGING_RELEASE_DIR}"' in script_text
+    assert 'activate_release_unit "${FINAL_RELEASE_DIR}"' in script_text
+    assert 'activate_release_unit "${PREVIOUS_CURRENT_TARGET}"' in script_text
+    assert 'activate_release_unit "${PREVIOUS_RELEASE}"' in script_text
+    assert "systemctl daemon-reload" in script_text
+    assert '"${PYTHON_BIN}" -m compileall -q' in script_text
 
 
 @pytest.mark.skipif(

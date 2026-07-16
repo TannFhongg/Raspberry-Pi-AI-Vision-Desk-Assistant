@@ -1,6 +1,6 @@
 # VisionDesk architecture
 
-Applies to VisionDesk **1.0.3**. VisionDesk is a native Raspberry Pi desktop
+Applies to VisionDesk **1.0.4**. VisionDesk is a native Raspberry Pi desktop
 appliance, not a browser kiosk. `visiondesk.service` starts the only production
 UI: the `PySide6 + Qt Quick/QML` application in `qt_app/`.
 

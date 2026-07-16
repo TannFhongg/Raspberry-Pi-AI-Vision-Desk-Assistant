@@ -305,6 +305,18 @@ validate_release_shape() {
   done
   [[ -f "${STAGING_RELEASE_DIR}/requirements.txt" || -f "${STAGING_RELEASE_DIR}/requirements.lock" ]] \
     || fail "Release is missing requirements.txt or requirements.lock."
+
+  "${PYTHON_BIN}" -m compileall -q \
+    "${STAGING_RELEASE_DIR}/ai" \
+    "${STAGING_RELEASE_DIR}/camera" \
+    "${STAGING_RELEASE_DIR}/config" \
+    "${STAGING_RELEASE_DIR}/gpio" \
+    "${STAGING_RELEASE_DIR}/hardware" \
+    "${STAGING_RELEASE_DIR}/pipeline" \
+    "${STAGING_RELEASE_DIR}/qt_app" \
+    "${STAGING_RELEASE_DIR}/system" \
+    "${STAGING_RELEASE_DIR}/vision" \
+    "${STAGING_RELEASE_DIR}/visiondesk"
 }
 
 build_release_environment() {
@@ -318,25 +330,28 @@ build_release_environment() {
 }
 
 run_release_checks() {
-  runuser -u "${APP_USER}" -- env \
-    VISIONDESK_PATH_MODE=production \
-    VISIONDESK_APP_DIR="${STAGING_RELEASE_DIR}" \
-    VISIONDESK_RELEASES_DIR="${RELEASES_DIR}" \
-    VISIONDESK_ENV_FILE="${ENV_FILE}" \
-    VISIONDESK_DATA_DIR="${DATA_DIR}" \
-    VISIONDESK_LOG_DIR="${LOG_DIR}" \
-    DEVICE_CONFIG_PATH="${CONFIG_FILE}" \
-    "${STAGING_RELEASE_DIR}/.venv/bin/python" -m system.migrations
+  (
+    cd "${STAGING_RELEASE_DIR}"
+    runuser -u "${APP_USER}" -- env \
+      VISIONDESK_PATH_MODE=production \
+      VISIONDESK_APP_DIR="${STAGING_RELEASE_DIR}" \
+      VISIONDESK_RELEASES_DIR="${RELEASES_DIR}" \
+      VISIONDESK_ENV_FILE="${ENV_FILE}" \
+      VISIONDESK_DATA_DIR="${DATA_DIR}" \
+      VISIONDESK_LOG_DIR="${LOG_DIR}" \
+      DEVICE_CONFIG_PATH="${CONFIG_FILE}" \
+      "${STAGING_RELEASE_DIR}/.venv/bin/python" -m system.migrations
 
-  runuser -u "${APP_USER}" -- env \
-    VISIONDESK_PATH_MODE=production \
-    VISIONDESK_APP_DIR="${STAGING_RELEASE_DIR}" \
-    VISIONDESK_RELEASES_DIR="${RELEASES_DIR}" \
-    VISIONDESK_ENV_FILE="${ENV_FILE}" \
-    VISIONDESK_DATA_DIR="${DATA_DIR}" \
-    VISIONDESK_LOG_DIR="${LOG_DIR}" \
-    DEVICE_CONFIG_PATH="${CONFIG_FILE}" \
-    "${STAGING_RELEASE_DIR}/.venv/bin/python" -m system.diagnostics
+    runuser -u "${APP_USER}" -- env \
+      VISIONDESK_PATH_MODE=production \
+      VISIONDESK_APP_DIR="${STAGING_RELEASE_DIR}" \
+      VISIONDESK_RELEASES_DIR="${RELEASES_DIR}" \
+      VISIONDESK_ENV_FILE="${ENV_FILE}" \
+      VISIONDESK_DATA_DIR="${DATA_DIR}" \
+      VISIONDESK_LOG_DIR="${LOG_DIR}" \
+      DEVICE_CONFIG_PATH="${CONFIG_FILE}" \
+      "${STAGING_RELEASE_DIR}/.venv/bin/python" -m system.diagnostics
+  )
 }
 
 write_rollback_state() {
@@ -492,6 +507,14 @@ flip_current_release() {
   write_rollback_state "${PREVIOUS_CURRENT_TARGET}" "${FINAL_RELEASE_DIR}"
 }
 
+activate_release_unit() {
+  local release_dir="$1"
+  local unit_template="${release_dir}/deployment/visiondesk.service"
+  [[ -f "${unit_template}" ]] || return 1
+  install -o root -g root -m 644 "${unit_template}" "${SYSTEMD_UNIT}"
+  systemctl daemon-reload
+}
+
 restart_service() {
   local expected_version="$1"
   local restart_baseline
@@ -511,6 +534,8 @@ rollback_update() {
     log "[WARN] Update failed. Rolling back to ${PREVIOUS_CURRENT_TARGET}..."
     rollback_version="$(read_release_version "${PREVIOUS_CURRENT_TARGET}" 2>/dev/null || true)"
     if [[ -z "${rollback_version}" ]] || ! switch_current_release "${PREVIOUS_CURRENT_TARGET}"; then
+      rollback_ready=0
+    elif ! activate_release_unit "${PREVIOUS_CURRENT_TARGET}"; then
       rollback_ready=0
     elif ! restart_service "${rollback_version}"; then
       rollback_ready=0
@@ -558,6 +583,8 @@ perform_manual_rollback() {
     return 0
   fi
   switch_current_release "${PREVIOUS_RELEASE}"
+  activate_release_unit "${PREVIOUS_RELEASE}" \
+    || fail "Could not restore the systemd unit from ${PREVIOUS_RELEASE}."
   local rollback_version
   rollback_version="$(read_release_version "${PREVIOUS_RELEASE}")"
   if ! restart_service "${rollback_version}"; then
@@ -606,6 +633,7 @@ main() {
   build_release_environment
   run_release_checks
   flip_current_release
+  activate_release_unit "${FINAL_RELEASE_DIR}"
   if ! restart_service "${REQUESTED_VERSION}"; then
     log_readiness_diagnostics
     fail "VisionDesk did not reach verified readiness after the update."
